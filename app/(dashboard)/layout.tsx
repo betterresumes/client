@@ -1,0 +1,30 @@
+import { Metadata } from 'next'
+import { AuthGuard } from '@/components/auth/auth-guard'
+import { DashboardHeader } from '@/components/layout/dashboard-header'
+import { DashboardProvider } from '@/components/providers/dashboard-provider'
+
+export const metadata: Metadata = {
+  title: 'Dashboard | FinRisk AI',
+  description: 'Financial risk prediction dashboard',
+}
+
+export default function DashboardLayout({
+  children,
+}: {
+  children: React.ReactNode
+}) {
+  return (
+    <AuthGuard requireAuth={true}>
+      <DashboardProvider>
+        <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
+          <DashboardHeader />
+          <main className="py-6">
+            <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+              {children}
+            </div>
+          </main>
+        </div>
+      </DashboardProvider>
+    </AuthGuard>
+  )
+}

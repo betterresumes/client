@@ -43,7 +43,7 @@ export const authApi = {
 
   // Profile management endpoints
   async getProfile(): Promise<ApiResponse<UserResponse>> {
-    return apiClient.get<UserResponse>('/users/profile')
+    return apiClient.get<UserResponse>('/users/me')
   },
 
   async updateProfile(data: UpdateProfileRequest): Promise<ApiResponse<UserResponse>> {

@@ -8,7 +8,8 @@ import { ApiResponse } from '../types/common'
  */
 class ApiClient {
   private client: AxiosInstance
-  private tokenRefreshPromise: Promise<string> | null = null
+  private accessToken: string | null = null
+  private refreshToken: string | null = null
 
   constructor() {
     this.client = axios.create({
@@ -26,9 +27,8 @@ class ApiClient {
     // Request interceptor to add auth token
     this.client.interceptors.request.use(
       (config) => {
-        const token = this.getToken()
-        if (token) {
-          config.headers.Authorization = `Bearer ${token}`
+        if (this.accessToken) {
+          config.headers.Authorization = `Bearer ${this.accessToken}`
         }
         return config
       },
@@ -45,9 +45,12 @@ class ApiClient {
           originalRequest._retry = true
 
           try {
-            const newToken = await this.refreshToken()
-            originalRequest.headers.Authorization = `Bearer ${newToken}`
-            return this.client(originalRequest)
+            // Try to refresh token using auth store
+            const refreshed = await this.refreshTokenViaStore()
+            if (refreshed) {
+              originalRequest.headers.Authorization = `Bearer ${this.accessToken}`
+              return this.client(originalRequest)
+            }
           } catch (refreshError) {
             this.handleAuthError()
             return Promise.reject(refreshError)
@@ -59,57 +62,48 @@ class ApiClient {
     )
   }
 
-  private getToken(): string | null {
-    if (typeof window === 'undefined') return null
-    return localStorage.getItem('auth_token')
-  }
-
-  private setToken(token: string): void {
-    if (typeof window === 'undefined') return
-    localStorage.setItem('auth_token', token)
-  }
-
-  private removeToken(): void {
-    if (typeof window === 'undefined') return
-    localStorage.removeItem('auth_token')
-    localStorage.removeItem('refresh_token')
-  }
-
-  private async refreshToken(): Promise<string> {
-    if (this.tokenRefreshPromise) {
-      return this.tokenRefreshPromise
-    }
-
-    this.tokenRefreshPromise = this.performTokenRefresh()
-
+  private async refreshTokenViaStore(): Promise<boolean> {
     try {
-      const newToken = await this.tokenRefreshPromise
-      return newToken
-    } finally {
-      this.tokenRefreshPromise = null
+      // Import auth store dynamically to avoid circular dependencies
+      const { useAuthStore } = await import('../stores/auth-store')
+      const store = useAuthStore.getState()
+
+      const refreshed = await store.refreshAccessToken()
+      if (refreshed) {
+        this.accessToken = store.accessToken
+        return true
+      }
+      return false
+    } catch (error) {
+      console.error('Token refresh via store failed:', error)
+      return false
     }
-  }
-
-  private async performTokenRefresh(): Promise<string> {
-    const refreshToken = localStorage.getItem('refresh_token')
-    if (!refreshToken) {
-      throw new Error('No refresh token available')
-    }
-
-    // Use the correct OpenAPI endpoint
-    const response = await axios.post(`${API_CONFIG.BASE_URL}/auth/refresh`)
-
-    const { access_token } = response.data
-    this.setToken(access_token)
-    return access_token
   }
 
   private handleAuthError(): void {
-    this.removeToken()
-    // Redirect to login page
+    this.clearAuth()
+
+    // Import and clear auth store
+    import('../stores/auth-store').then(({ useAuthStore }) => {
+      const store = useAuthStore.getState()
+      store.clearAuth()
+    })
+
+    // Force redirect to login
     if (typeof window !== 'undefined') {
-      window.location.href = '/auth/login'
+      window.location.href = '/login'
     }
+  }
+
+  // Public methods for token management
+  setAuthToken(accessToken: string, refreshToken: string): void {
+    this.accessToken = accessToken
+    this.refreshToken = refreshToken
+  }
+
+  clearAuth(): void {
+    this.accessToken = null
+    this.refreshToken = null
   }
 
   private formatError(error: any): ApiResponse<never> {
@@ -223,22 +217,9 @@ class ApiClient {
     }
   }
 
-  // Set auth token manually (for login)
-  setAuthToken(token: string, refreshToken?: string): void {
-    this.setToken(token)
-    if (refreshToken) {
-      localStorage.setItem('refresh_token', refreshToken)
-    }
-  }
-
-  // Clear auth tokens (for logout)
-  clearAuth(): void {
-    this.removeToken()
-  }
-
   // Check if user is authenticated
   isAuthenticated(): boolean {
-    return !!this.getToken()
+    return !!this.accessToken
   }
 
   // Get base URL for SSE connections
