@@ -72,7 +72,7 @@ export function DeletePredictionDialog({ isOpen, onClose, prediction, type }: De
                 {type === 'annual' ? `Annual ${prediction.reporting_year}` : `${prediction.reporting_quarter} ${prediction.reporting_year}`}
               </Badge>
             </div>
-            
+
             <div className="grid grid-cols-2 gap-4 text-sm">
               <div>
                 <p className="text-gray-500 font-bricolage">Default Rate</p>

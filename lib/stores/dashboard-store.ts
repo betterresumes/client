@@ -7,12 +7,17 @@ interface DashboardState {
   activeTab: string
   selectedCompany: string | null
   selectedPredictionType: 'annual' | 'quarterly' | null
-  
+
+  // Form pre-fill state
+  prefilledData: any | null
+
   // Actions
   setActiveTab: (tab: string) => void
   setSelectedCompany: (company: string | null, predictionType?: 'annual' | 'quarterly') => void
   navigateToCompanyDetails: (companySymbol: string, predictionType?: 'annual' | 'quarterly') => void
+  navigateToCustomAnalysisWithData: (predictionData: any, predictionType: 'annual' | 'quarterly') => void
   clearSelection: () => void
+  clearPrefilledData: () => void
 }
 
 export const useDashboardStore = create<DashboardState>((set, get) => ({
@@ -20,6 +25,7 @@ export const useDashboardStore = create<DashboardState>((set, get) => ({
   activeTab: 'dashboard',
   selectedCompany: null,
   selectedPredictionType: null,
+  prefilledData: null,
 
   // Actions
   setActiveTab: (tab: string) => {
@@ -27,17 +33,27 @@ export const useDashboardStore = create<DashboardState>((set, get) => ({
   },
 
   setSelectedCompany: (company: string | null, predictionType?: 'annual' | 'quarterly') => {
-    set({ 
+    set({
       selectedCompany: company,
       selectedPredictionType: predictionType || null
     })
   },
 
   navigateToCompanyDetails: (companySymbol: string, predictionType?: 'annual' | 'quarterly') => {
-    set({ 
+    set({
       activeTab: 'company-details',
       selectedCompany: companySymbol,
       selectedPredictionType: predictionType || null
+    })
+  },
+
+  navigateToCustomAnalysisWithData: (predictionData: any, predictionType: 'annual' | 'quarterly') => {
+    set({
+      activeTab: 'custom-analysis',
+      prefilledData: {
+        ...predictionData,
+        predictionType
+      }
     })
   },
 
@@ -45,6 +61,12 @@ export const useDashboardStore = create<DashboardState>((set, get) => ({
     set({
       selectedCompany: null,
       selectedPredictionType: null
+    })
+  },
+
+  clearPrefilledData: () => {
+    set({
+      prefilledData: null
     })
   }
 }))

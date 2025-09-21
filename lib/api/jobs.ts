@@ -209,4 +209,87 @@ export const jobsApi = {
       })
     },
   },
+
+  // Prediction-specific job operations
+  predictions: {
+    // Get bulk upload job status
+    async getBulkUploadJobStatus(jobId: string): Promise<ApiResponse<{
+      job_id: string
+      status: 'pending' | 'processing' | 'completed' | 'failed'
+      progress?: number
+      message?: string
+      created_at: string
+      updated_at: string
+      filename?: string
+      total_records?: number
+      processed_records?: number
+      successful_predictions?: number
+      failed_predictions?: number
+      errors?: string[]
+    }>> {
+      return apiClient.get<any>(`/predictions/jobs/${jobId}/status`)
+    },
+
+    // Get bulk upload job results
+    async getBulkUploadJobResults(jobId: string): Promise<ApiResponse<{
+      job_id: string
+      results: Array<{
+        company_symbol: string
+        company_name: string
+        default_probability: number
+        risk_category: string
+        status: string
+        error?: string
+      }>
+      summary: {
+        total_companies: number
+        successful_predictions: number
+        failed_predictions: number
+        processing_time_seconds: number
+      }
+      created_at: string
+    }>> {
+      return apiClient.get<any>(`/predictions/jobs/${jobId}/results`)
+    },
+
+    // List bulk upload jobs
+    async listBulkUploadJobs(params?: {
+      status?: string
+      limit?: number
+      offset?: number
+    }): Promise<ApiResponse<{
+      jobs: Array<{
+        job_id: string
+        status: string
+        filename?: string
+        created_at: string
+        progress?: number
+        total_records?: number
+        processed_records?: number
+      }>
+      total: number
+      limit: number
+      offset: number
+    }>> {
+      const searchParams = new URLSearchParams()
+
+      if (params) {
+        Object.entries(params).forEach(([key, value]) => {
+          if (value !== undefined && value !== null && value !== '') {
+            searchParams.append(key, String(value))
+          }
+        })
+      }
+
+      const queryString = searchParams.toString()
+      const url = queryString ? `/predictions/jobs?${queryString}` : '/predictions/jobs'
+
+      return apiClient.get<any>(url)
+    },
+
+    // Delete a bulk upload job
+    async deleteBulkUploadJob(jobId: string): Promise<ApiResponse<{ message: string }>> {
+      return apiClient.delete<{ message: string }>(`/predictions/jobs/${jobId}`)
+    }
+  },
 }

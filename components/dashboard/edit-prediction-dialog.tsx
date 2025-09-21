@@ -21,18 +21,18 @@ interface Prediction {
   market_cap?: number
   reporting_year: string
   reporting_quarter?: string
-  
+
   // Annual ratios
   long_term_debt_to_total_capital?: number
   total_debt_to_ebitda?: number
   net_income_margin?: number
   ebit_to_interest_expense?: number
   return_on_assets?: number
-  
+
   // Quarterly ratios
   sga_margin?: number
   return_on_capital?: number
-  
+
   // Prediction results
   probability?: number
   ensemble_probability?: number
@@ -60,14 +60,14 @@ export function EditPredictionDialog({ isOpen, onClose, prediction, type }: Edit
     market_cap: '',
     reporting_year: '',
     reporting_quarter: '',
-    
+
     // Annual ratios
     long_term_debt_to_total_capital: '',
     total_debt_to_ebitda: '',
     net_income_margin: '',
     ebit_to_interest_expense: '',
     return_on_assets: '',
-    
+
     // Quarterly ratios
     sga_margin: '',
     return_on_capital: ''
@@ -83,14 +83,14 @@ export function EditPredictionDialog({ isOpen, onClose, prediction, type }: Edit
         market_cap: prediction.market_cap?.toString() || '',
         reporting_year: prediction.reporting_year || '',
         reporting_quarter: prediction.reporting_quarter || '',
-        
+
         // Annual ratios
         long_term_debt_to_total_capital: prediction.long_term_debt_to_total_capital?.toString() || '',
         total_debt_to_ebitda: prediction.total_debt_to_ebitda?.toString() || '',
         net_income_margin: prediction.net_income_margin?.toString() || '',
         ebit_to_interest_expense: prediction.ebit_to_interest_expense?.toString() || '',
         return_on_assets: prediction.return_on_assets?.toString() || '',
-        
+
         // Quarterly ratios
         sga_margin: prediction.sga_margin?.toString() || '',
         return_on_capital: prediction.return_on_capital?.toString() || ''
@@ -127,7 +127,7 @@ export function EditPredictionDialog({ isOpen, onClose, prediction, type }: Edit
           ebit_to_interest_expense: parseFloat(formData.ebit_to_interest_expense) || 0,
           return_on_assets: parseFloat(formData.return_on_assets) || 0
         }
-        
+
         await updatePredictionMutation.mutateAsync({
           id: prediction.id,
           data,
@@ -142,14 +142,14 @@ export function EditPredictionDialog({ isOpen, onClose, prediction, type }: Edit
           sga_margin: parseFloat(formData.sga_margin) || 0,
           return_on_capital: parseFloat(formData.return_on_capital) || 0
         }
-        
+
         await updatePredictionMutation.mutateAsync({
           id: prediction.id,
           data,
           type: 'quarterly'
         })
       }
-      
+
       onClose()
     } catch (error) {
       // Error handled by mutation
@@ -206,7 +206,7 @@ export function EditPredictionDialog({ isOpen, onClose, prediction, type }: Edit
                   </Badge>
                 </div>
               </div>
-              
+
               <div className="grid grid-cols-3 gap-4 text-sm">
                 <div>
                   <p className="text-gray-500 font-bricolage">Current Default Rate</p>
@@ -322,7 +322,7 @@ export function EditPredictionDialog({ isOpen, onClose, prediction, type }: Edit
               <p className="text-sm text-gray-600 mb-4 font-bricolage">
                 Updating these ratios will recalculate the prediction using the latest model.
               </p>
-              
+
               {type === 'annual' ? (
                 <div className="grid grid-cols-2 gap-4">
                   <div>

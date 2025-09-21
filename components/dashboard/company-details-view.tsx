@@ -19,7 +19,7 @@ import {
 } from 'lucide-react'
 
 export function CompanyDetailsView() {
-  const { selectedCompany, selectedPredictionType, clearSelection } = useDashboardStore()
+  const { selectedCompany, selectedPredictionType, setSelectedCompany, clearSelection } = useDashboardStore()
   const [currentPage, setCurrentPage] = useState(1)
   const [activeTab, setActiveTab] = useState<'annual' | 'quarterly'>('annual')
   const itemsPerPage = 5
@@ -70,17 +70,29 @@ export function CompanyDetailsView() {
     return uniqueCompanies.sort((a: any, b: any) => parseFloat(a.defaultRate) - parseFloat(b.defaultRate))
   }, [allCompanies])
 
-  // Set first company as selected if none selected
+  // Set first company as selected if none selected, but allow flexibility
   useEffect(() => {
-    if (companies.length > 0 && !selectedCompany && companies[0]) {
-      const firstCompany = companies[0]
-      // Don't auto-select if coming from navigation, let user choose
-      if (!selectedPredictionType) {
-        // Only auto-select if not navigated from another view
-        // setSelectedCompany(firstCompany.id)
+    if (companies.length > 0) {
+      // If a company is pre-selected from navigation, check if it still exists
+      if (selectedCompany && companies.find(c => c?.id === selectedCompany)) {
+        return // Keep the selected company
       }
+      // If selected company no longer exists or none selected, default to first company
+      if ((!selectedCompany || !companies.find(c => c?.id === selectedCompany)) && companies[0]) {
+        setSelectedCompany(companies[0].id)
+      }
+    } else if (companies.length === 0 && selectedCompany) {
+      // Clear selection if no companies available
+      setSelectedCompany(null)
     }
-  }, [companies, selectedCompany, selectedPredictionType])
+  }, [companies, selectedCompany, setSelectedCompany])
+
+  // Clear selection when component unmounts or user navigates away
+  useEffect(() => {
+    return () => {
+      // Don't clear selection on unmount - let users browse freely
+    }
+  }, [])
 
   const currentCompany = companies.find((comp: any) => comp.id === selectedCompany)
 
@@ -185,6 +197,23 @@ export function CompanyDetailsView() {
           <p className="text-sm text-gray-600 dark:text-gray-400 mt-1 font-bricolage">
             Detailed analysis and risk assessment for individual companies
           </p>
+          {/* Show current selection with option to browse freely */}
+          {selectedCompany && currentCompany && (
+            <div className="flex items-center gap-2 mt-2">
+              <span className="text-sm text-gray-500 font-bricolage">Viewing:</span>
+              <Badge variant="outline" className="font-bricolage">
+                {currentCompany.name}
+              </Badge>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setSelectedCompany(null)}
+                className="text-xs text-gray-500 hover:text-gray-700 font-bricolage"
+              >
+                Browse All Companies
+              </Button>
+            </div>
+          )}
         </div>
 
         {/* Tabs - Show when company is selected and has data */}
@@ -385,9 +414,7 @@ export function CompanyDetailsView() {
                           ? 'bg-slate-900 text-white border-slate-900'
                           : 'border-gray-200 dark:border-gray-700'
                           }`}
-                        onClick={() => {
-                          useDashboardStore.getState().setSelectedCompany(company.id)
-                        }}
+                        onClick={() => setSelectedCompany(company.id)}
                       >
                         <div className="flex items-center justify-between">
                           <div>
