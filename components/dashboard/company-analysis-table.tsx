@@ -2,6 +2,7 @@
 
 import { useState, useMemo } from 'react'
 import { usePredictionsStore } from '@/lib/stores/predictions-store'
+import { useDashboardStore } from '@/lib/stores/dashboard-store'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -40,6 +41,8 @@ import {
   ChevronLeft,
   ChevronRight
 } from 'lucide-react'
+import { EditPredictionDialog } from './edit-prediction-dialog'
+import { DeletePredictionDialog } from './delete-prediction-dialog'
 
 interface CompanyAnalysisTableProps {
   data: any[]
@@ -69,10 +72,17 @@ export function CompanyAnalysisTable({
     formatPredictionDate
   } = usePredictionsStore()
 
+  const { navigateToCompanyDetails } = useDashboardStore()
+
   const [rowsPerPage, setRowsPerPage] = useState('10')
   const [currentPage, setCurrentPage] = useState(1)
   const [sortField, setSortField] = useState<SortField>('company')
   const [sortDirection, setSortDirection] = useState<SortDirection>('asc')
+
+  // Dialog states
+  const [editDialogOpen, setEditDialogOpen] = useState(false)
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
+  const [selectedPrediction, setSelectedPrediction] = useState<any>(null)
 
   // Filter and sort data
   const filteredAndSortedData = useMemo(() => {
@@ -193,6 +203,27 @@ export function CompanyAnalysisTable({
     return pages
   }
 
+  // Action handlers
+  const handleViewDetails = (item: any) => {
+    navigateToCompanyDetails(item.company_symbol, type)
+  }
+
+  const handleEdit = (item: any) => {
+    setSelectedPrediction(item)
+    setEditDialogOpen(true)
+  }
+
+  const handleDelete = (item: any) => {
+    setSelectedPrediction(item)
+    setDeleteDialogOpen(true)
+  }
+
+  const closeDialogs = () => {
+    setEditDialogOpen(false)
+    setDeleteDialogOpen(false)
+    setSelectedPrediction(null)
+  }
+
 
 
   if (data.length === 0 && !isLoading) {
@@ -221,6 +252,7 @@ export function CompanyAnalysisTable({
   }
 
   return (
+    <>
     <div className="space-y-4">
       {/* Table Header with Info and Pagination Controls */}
       <div className="flex items-center justify-between">
@@ -417,15 +449,24 @@ export function CompanyAnalysisTable({
                           </Button>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end">
-                          <DropdownMenuItem className="font-bricolage">
+                          <DropdownMenuItem 
+                            className="font-bricolage"
+                            onClick={() => handleViewDetails(item)}
+                          >
                             <Eye className="h-4 w-4 mr-2" />
                             View Details
                           </DropdownMenuItem>
-                          <DropdownMenuItem className="font-bricolage">
+                          <DropdownMenuItem 
+                            className="font-bricolage"
+                            onClick={() => handleEdit(item)}
+                          >
                             <Edit className="h-4 w-4 mr-2" />
                             Edit
                           </DropdownMenuItem>
-                          <DropdownMenuItem className="text-red-600 font-bricolage">
+                          <DropdownMenuItem 
+                            className="text-red-600 font-bricolage"
+                            onClick={() => handleDelete(item)}
+                          >
                             <Trash2 className="h-4 w-4 mr-2" />
                             Delete
                           </DropdownMenuItem>
@@ -531,5 +572,22 @@ export function CompanyAnalysisTable({
         </div>
       )}
     </div>
+
+    {/* Edit Dialog */}
+    <EditPredictionDialog
+      isOpen={editDialogOpen}
+      onClose={closeDialogs}
+      prediction={selectedPrediction}
+      type={type}
+    />
+
+    {/* Delete Dialog */}
+    <DeletePredictionDialog
+      isOpen={deleteDialogOpen}
+      onClose={closeDialogs}
+      prediction={selectedPrediction}
+      type={type}
+    />
+  </>
   )
 }

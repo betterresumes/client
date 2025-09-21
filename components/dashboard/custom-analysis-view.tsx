@@ -9,10 +9,10 @@ import { AnnualPredictionRequest, QuarterlyPredictionRequest } from '@/lib/types
 import { useCreatePredictionMutations } from '@/hooks/use-prediction-mutations'
 import { IndividualAnalysisForm } from './analysis/individual-analysis-form'
 import { CompanyAnalysisPanel } from './company-analysis-panel'
-import { BulkUploadSection } from './analysis/bulk-upload-section'
 import { ProcessingSteps } from './processing-steps'
 import { EmptyAnalysisState } from './empty-analysis-state'
 import { SAMPLE_DATA } from '@/lib/config/sectors'
+import { BulkUploadSection } from './analysis/bulk-upload-section'
 
 export function CustomAnalysisView() {
   const [activeTab, setActiveTab] = useState('individual')
@@ -374,14 +374,6 @@ export function CustomAnalysisView() {
 
         {/* Bulk Analysis */}
         <TabsContent value="bulk" className="mt-6 space-y-6">
-          {/* Prediction Type Tabs for Bulk */}
-          <Tabs value={predictionType} onValueChange={(value) => setPredictionType(value as 'annual' | 'quarterly')} className="w-full">
-            <TabsList className="grid grid-cols-2">
-              <TabsTrigger value="annual">Annual Prediction</TabsTrigger>
-              <TabsTrigger value="quarterly">Quarterly Prediction</TabsTrigger>
-            </TabsList>
-          </Tabs>
-
           <BulkUploadSection
             predictionType={predictionType}
             onFileUpload={handleFileUpload}
@@ -392,6 +384,7 @@ export function CustomAnalysisView() {
             uploadProgress={uploadProgress}
             bulkUploadPending={bulkUploadMutation.isPending}
             uploadResults={uploadResults}
+            onPredictionTypeChange={setPredictionType}
           />
         </TabsContent>
       </Tabs>

@@ -3,6 +3,7 @@
 import { useState, useEffect, useMemo } from 'react'
 import { ChevronLeft, ChevronRight } from 'lucide-react'
 import { usePredictionsStore } from '@/lib/stores/predictions-store'
+import { useDashboardStore } from '@/lib/stores/dashboard-store'
 import { Card } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -18,7 +19,7 @@ import {
 } from 'lucide-react'
 
 export function CompanyDetailsView() {
-  const [selectedCompany, setSelectedCompany] = useState<string>('')
+  const { selectedCompany, selectedPredictionType, clearSelection } = useDashboardStore()
   const [currentPage, setCurrentPage] = useState(1)
   const [activeTab, setActiveTab] = useState<'annual' | 'quarterly'>('annual')
   const itemsPerPage = 5
@@ -29,6 +30,13 @@ export function CompanyDetailsView() {
     isLoading,
     fetchPredictions
   } = usePredictionsStore()
+
+  // Set active tab based on selectedPredictionType when navigating from table
+  useEffect(() => {
+    if (selectedPredictionType) {
+      setActiveTab(selectedPredictionType)
+    }
+  }, [selectedPredictionType])
 
   // Fetch predictions on component mount if not already loaded
   useEffect(() => {
@@ -65,9 +73,14 @@ export function CompanyDetailsView() {
   // Set first company as selected if none selected
   useEffect(() => {
     if (companies.length > 0 && !selectedCompany && companies[0]) {
-      setSelectedCompany(companies[0].id)
+      const firstCompany = companies[0]
+      // Don't auto-select if coming from navigation, let user choose
+      if (!selectedPredictionType) {
+        // Only auto-select if not navigated from another view
+        // setSelectedCompany(firstCompany.id)
+      }
     }
-  }, [companies, selectedCompany])
+  }, [companies, selectedCompany, selectedPredictionType])
 
   const currentCompany = companies.find((comp: any) => comp.id === selectedCompany)
 
@@ -372,7 +385,9 @@ export function CompanyDetailsView() {
                           ? 'bg-slate-900 text-white border-slate-900'
                           : 'border-gray-200 dark:border-gray-700'
                           }`}
-                        onClick={() => setSelectedCompany(company.id)}
+                        onClick={() => {
+                          useDashboardStore.getState().setSelectedCompany(company.id)
+                        }}
                       >
                         <div className="flex items-center justify-between">
                           <div>

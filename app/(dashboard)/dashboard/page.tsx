@@ -1,15 +1,16 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect } from 'react'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { DashboardOverview } from '@/components/dashboard/dashboard-overview'
 import { AnalyticsView } from '@/components/dashboard/analytics-view'
 import { CompanyDetailsView } from '@/components/dashboard/company-details-view'
 import { CustomAnalysisView } from '@/components/dashboard/custom-analysis-view'
 import { RiskInsightsView } from '@/components/dashboard/risk-insights-view'
+import { useDashboardStore } from '@/lib/stores/dashboard-store'
 
 export default function DashboardPage() {
-  const [activeTab, setActiveTab] = useState('dashboard')
+  const { activeTab, setActiveTab } = useDashboardStore()
 
   return (
     <div className="space-y-6">
