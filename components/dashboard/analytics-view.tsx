@@ -1,27 +1,27 @@
 'use client'
 
-import { useMemo, useEffect } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { usePredictionsStore } from '@/lib/stores/predictions-store'
-import { Card } from '@/components/ui/card'
-import { Badge } from '@/components/ui/badge'
-import { Loader2 } from 'lucide-react'
+import { Bar, BarChart, CartesianGrid, XAxis, YAxis, PieChart, Pie, Cell, ScatterChart, Scatter } from "recharts"
 import {
-  BarChart,
-  Bar,
-  LineChart,
-  Line,
-  PieChart,
-  Pie,
-  Cell,
-  ScatterChart,
-  Scatter,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  Legend,
-  ResponsiveContainer
-} from 'recharts'
+  Card,
+  CardContent,
+  CardFooter,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card"
+import {
+  ChartConfig,
+  ChartContainer,
+  ChartLegend,
+  ChartLegendContent,
+  ChartTooltip,
+  ChartTooltipContent,
+} from "@/components/ui/chart"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { Badge } from '@/components/ui/badge'
+import { Skeleton } from '@/components/ui/skeleton'
+import { TrendingUp, PieChart as PieChartIcon, BarChart3, ChartScatter } from 'lucide-react'
 
 export function AnalyticsView() {
   const {
@@ -30,6 +30,8 @@ export function AnalyticsView() {
     isLoading,
     fetchPredictions
   } = usePredictionsStore()
+
+  const [activeTab, setActiveTab] = useState("annual")
 
   // Fetch predictions on component mount if not already loaded
   useEffect(() => {
@@ -42,283 +44,623 @@ export function AnalyticsView() {
   const safePredictions = Array.isArray(annualPredictions) ? annualPredictions : []
   const safeQuarterlyPredictions = Array.isArray(quarterlyPredictions) ? quarterlyPredictions : []
 
-  // Calculate analytics data from real API data
-  const analytics = useMemo(() => {
-    if (safePredictions.length === 0) return null
+  // Convert predictions to match expected format
+  const annualData = safePredictions.map((pred: any) => ({
+    sector: pred.sector || 'Unknown',
+    defaultRate: pred.default_probability * 100,
+    marketCap: `$${(Math.random() * 400 + 50).toFixed(1)}B`, // Random market cap for demo
+    riskCategory: pred.risk_category,
+    symbol: pred.company_symbol,
+    reportingYear: pred.reporting_year,
+    confidence: pred.confidence
+  }))
 
-    // Data for Average Default Rate by Sector chart
-    const sectorMap = new Map()
-    safePredictions.forEach((pred: any) => {
-      const sector = pred.sector
-      if (!sectorMap.has(sector)) {
-        sectorMap.set(sector, { total: 0, count: 0 })
-      }
-      const current = sectorMap.get(sector)
-      current.total += pred.default_probability * 100
-      current.count += 1
-    })
+  const quarterlyData = safeQuarterlyPredictions.map((pred: any) => ({
+    sector: pred.sector || 'Unknown',
+    defaultRate: pred.default_probability * 100,
+    marketCap: `$${(Math.random() * 400 + 50).toFixed(1)}B`, // Random market cap for demo
+    riskCategory: pred.risk_category,
+    symbol: pred.company_symbol,
+    reportingQuarter: pred.reporting_quarter,
+    reportingYear: pred.reporting_year,
+    confidence: pred.confidence
+  }))
 
-    const sectorData = Array.from(sectorMap.entries()).map(([sector, data]) => ({
-      sector,
-      defaultRate: Number((data.total / data.count).toFixed(2))
-    }))
+  interface AnalyticsDataItem {
+    sector?: string;
+    defaultRate: number;
+    marketCap: string;
+    riskCategory: string;
+    symbol: string;
+    reportingQuarter?: string;
+    reportingYear?: string;
+    confidence?: number;
+  }
 
-    // Data for Risk Category Distribution (Pie Chart)
-    const riskMap = new Map()
-    safePredictions.forEach((pred: any) => {
-      const risk = pred.risk_category
-      riskMap.set(risk, (riskMap.get(risk) || 0) + 1)
-    })
-
-    const riskColors = {
-      'LOW': '#10B981',
-      'MEDIUM': '#F59E0B',
-      'HIGH': '#EF4444',
-      'CRITICAL': '#DC2626'
+  const getAnalyticsData = (dataset: AnalyticsDataItem[]) => {
+    if (!dataset.length) return {
+      sectorData: [],
+      riskDistributionData: [],
+      defaultRateDistribution: [],
+      scatterData: []
     }
 
-    const riskDistributionData = Array.from(riskMap.entries()).map(([name, value]) => ({
-      name,
-      value: Number(((value / safePredictions.length) * 100).toFixed(1)),
-      color: riskColors[name as keyof typeof riskColors] || '#6B7280'
-    }))
+    // Sector analysis
+    const sectorMap = new Map<string, { sum: number; count: number }>()
+    dataset.forEach(item => {
+      if (item.sector &&
+        item.sector.trim() !== '' &&
+        item.sector !== 'Unknown') {
+        const key = item.sector
+        const entry = sectorMap.get(key) || { sum: 0, count: 0 }
+        entry.sum += item.defaultRate
+        entry.count += 1
+        sectorMap.set(key, entry)
+      }
+    })
 
-    // Data for Default Rate Distribution (Histogram)
-    const ranges = [
-      { min: 0, max: 1, label: '0-1%' },
-      { min: 1, max: 2, label: '1-2%' },
-      { min: 2, max: 5, label: '2-5%' },
-      { min: 5, max: 10, label: '5-10%' },
-      { min: 10, max: 100, label: '10%+' }
-    ]
+    const sectorData: Array<{ sector: string; defaultRate: number; count: number }> = Array.from(sectorMap.entries())
+      .map(([sector, agg]) => ({
+        sector,
+        defaultRate: agg.count ? +(agg.sum / agg.count).toFixed(2) : 0,
+        count: agg.count
+      }))
+      .filter(item => item.count > 0)
+      .sort((a, b) => b.defaultRate - a.defaultRate)
+      .slice(0, 5)
 
-    const defaultRateDistribution = ranges.map(range => ({
-      range: range.label,
-      companies: safePredictions.filter((pred: any) => {
-        const rate = pred.default_probability * 100
-        return rate >= range.min && rate < range.max
-      }).length
-    }))
+    // Risk distribution
+    const total = dataset.length || 1
+    const riskCounts: Record<string, number> = { LOW: 0, MEDIUM: 0, HIGH: 0, CRITICAL: 0 }
+    dataset.forEach(item => {
+      const riskKey = (item.riskCategory || 'LOW').toUpperCase()
+      riskCounts[riskKey] = (riskCounts[riskKey] || 0) + 1
+    })
 
-    // Data for Market Cap vs Default Rate (Scatter) - using random market cap since not in API
-    const marketCapData = safePredictions.slice(0, 10).map((pred: any) => ({
-      marketCap: Math.round(Math.random() * 400 + 50), // Random market cap 50-450B
-      defaultRate: Number((pred.default_probability * 100).toFixed(2)),
-      company: pred.company_symbol
-    }))
+    const riskDistributionData: Array<{ name: string; value: number; fill: string }> = [
+      { name: 'Low', value: +(riskCounts.LOW * 100 / total).toFixed(1), fill: '#10b981' },
+      { name: 'Medium', value: +(riskCounts.MEDIUM * 100 / total).toFixed(1), fill: '#f59e0b' },
+      { name: 'High', value: +(riskCounts.HIGH * 100 / total).toFixed(1), fill: '#f97316' },
+      { name: 'Critical', value: +(riskCounts.CRITICAL * 100 / total).toFixed(1), fill: '#ef4444' },
+    ].filter(item => item.value > 0)
+
+    // Default rate distribution
+    const buckets = {
+      '0-1%': 0,
+      '1-2%': 0,
+      '2-3%': 0,
+      '3%+': 0,
+    }
+    dataset.forEach(item => {
+      const p = item.defaultRate
+      if (p < 1) buckets['0-1%']++
+      else if (p < 2) buckets['1-2%']++
+      else if (p < 3) buckets['2-3%']++
+      else buckets['3%+']++
+    })
+    const defaultRateDistribution: Array<{ range: string; count: number }> = Object.entries(buckets).map(([range, count]) => ({ range, count }))
+
+    // Scatter plot data - market cap vs default rate
+    const scatterData: Array<{ marketCap: number; defaultRate: number; company: string }> = dataset.map(item => {
+      // Parse market cap from formatted string
+      let marketCapInBillions = 0
+      if (item.marketCap && typeof item.marketCap === 'string') {
+        const cleanStr = item.marketCap.replace(/[$,]/g, '')
+        const numValue = parseFloat(cleanStr)
+
+        if (cleanStr.includes('T')) {
+          marketCapInBillions = numValue * 1000
+        } else if (cleanStr.includes('B')) {
+          marketCapInBillions = numValue
+        } else if (cleanStr.includes('M')) {
+          marketCapInBillions = numValue / 1000
+        } else {
+          marketCapInBillions = numValue / 1000000000
+        }
+      }
+
+      return {
+        marketCap: +marketCapInBillions.toFixed(1),
+        defaultRate: +item.defaultRate.toFixed(2),
+        company: item.symbol,
+      }
+    })
 
     return {
       sectorData,
       riskDistributionData,
       defaultRateDistribution,
-      marketCapData
+      scatterData
     }
-  }, [safePredictions])
+  }
 
-  if (isLoading) {
+  const getQuarterlyAnalyticsData = (dataset: AnalyticsDataItem[]) => {
+    if (!dataset.length) return {
+      sectorData: [],
+      riskDistributionData: [],
+      defaultRateDistribution: [],
+      scatterData: [],
+      quarterlyRiskTrends: [],
+      quarterlySectorComparison: []
+    }
+
+    // Standard analytics using the existing function
+    const standardAnalytics = getAnalyticsData(dataset)
+
+    // Quarterly Risk Trends by Quarter (Stacked Chart)
+    const quarterRiskMap = new Map<string, { LOW: number; MEDIUM: number; HIGH: number; CRITICAL: number }>()
+    dataset.forEach(item => {
+      const key = `${item.reportingQuarter} ${item.reportingYear}`
+      const entry = quarterRiskMap.get(key) || { LOW: 0, MEDIUM: 0, HIGH: 0, CRITICAL: 0 }
+      const riskLevel = (item.riskCategory || 'LOW').toUpperCase()
+      entry[riskLevel as keyof typeof entry] = (entry[riskLevel as keyof typeof entry] || 0) + 1
+      quarterRiskMap.set(key, entry)
+    })
+
+    const quarterlyRiskTrends = Array.from(quarterRiskMap.entries())
+      .map(([quarter, risks]) => ({
+        quarter: quarter.replace(' ', ' '),
+        low: risks.LOW,
+        medium: risks.MEDIUM,
+        high: risks.HIGH,
+        critical: risks.CRITICAL
+      }))
+      .sort((a, b) => {
+        const [quarterA, yearA] = a.quarter.split(' ')
+        const [quarterB, yearB] = b.quarter.split(' ')
+        if (yearA !== yearB) return parseInt(yearA) - parseInt(yearB)
+        return quarterA.localeCompare(quarterB)
+      })
+      .slice(-6) // Show last 6 quarters
+
+    return {
+      ...standardAnalytics,
+      quarterlyRiskTrends
+    }
+  }
+
+  const annualAnalytics = getAnalyticsData(annualData)
+  const quarterlyAnalytics = getQuarterlyAnalyticsData(quarterlyData)
+
+  const chartConfigs = {
+    sector: {
+      defaultRate: {
+        label: "Default Rate",
+        color: "hsl(var(--chart-1))",
+      },
+    } satisfies ChartConfig,
+
+    distribution: {
+      count: {
+        label: "Number of Companies",
+        color: "hsl(var(--chart-2))",
+      },
+    } satisfies ChartConfig,
+
+    scatter: {
+      defaultRate: {
+        label: "Default Rate",
+        color: "hsl(var(--chart-3))",
+      },
+      marketCap: {
+        label: "Market Cap",
+        color: "hsl(var(--chart-4))",
+      },
+    } satisfies ChartConfig,
+
+    quarterlyRiskTrends: {
+      low: {
+        label: "Low Risk",
+        color: "hsl(var(--chart-1))",
+      },
+      medium: {
+        label: "Medium Risk",
+        color: "hsl(var(--chart-2))",
+      },
+      high: {
+        label: "High Risk",
+        color: "hsl(var(--chart-3))",
+      },
+      critical: {
+        label: "Critical Risk",
+        color: "hsl(var(--chart-4))",
+      },
+    } satisfies ChartConfig,
+  }
+
+  interface AnalyticsResults {
+    sectorData: Array<{ sector: string; defaultRate: number; count: number }>;
+    riskDistributionData: Array<{ name: string; value: number; fill: string }>;
+    defaultRateDistribution: Array<{ range: string; count: number }>;
+    scatterData: Array<{ defaultRate: number; marketCap: number; company: string }>;
+    quarterlyRiskTrends?: Array<{ quarter: string; low: number; medium: number; high: number; critical: number }>;
+  }
+
+  const renderAnalytics = (analytics: AnalyticsResults, dataType: string) => {
+    const { sectorData, riskDistributionData, defaultRateDistribution, scatterData, quarterlyRiskTrends } = analytics
+
+    if (!sectorData.length && !riskDistributionData.length) {
+      return (
+        <div className="flex items-center justify-center h-64 text-gray-500 font-bricolage">
+          No {dataType.toLowerCase()} data available for analytics
+        </div>
+      )
+    }
+
+    const isQuarterly = dataType === "Quarterly"
+    const sectorTitle = "Top 5 Sectors by Default Rate"
+    const riskTitle = "Risk Category Distribution"
+    const distributionTitle = "Default Rate Distribution"
+    const scatterTitle = "Default Rate vs Market Cap"
+
     return (
       <div className="space-y-6">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          {isQuarterly && quarterlyRiskTrends && quarterlyRiskTrends.length > 0 && (
+            <Card className="">
+              <CardHeader>
+                <CardTitle className="flex items-center space-x-2 font-bricolage">
+                  <span>Risk Distribution by Quarter</span>
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <ChartContainer config={chartConfigs.quarterlyRiskTrends}>
+                  <BarChart accessibilityLayer data={quarterlyRiskTrends}>
+                    <CartesianGrid vertical={false} />
+                    <XAxis
+                      dataKey="quarter"
+                      tickLine={false}
+                      tickMargin={10}
+                      axisLine={false}
+                      tickFormatter={(value) => value.replace(' ', '\n')}
+                    />
+                    <ChartTooltip content={<ChartTooltipContent hideLabel />} />
+                    <ChartLegend content={<ChartLegendContent />} />
+                    <Bar
+                      dataKey="low"
+                      stackId="risk"
+                      fill="#10b981"
+                      radius={[0, 0, 4, 4]}
+                    />
+                    <Bar
+                      dataKey="medium"
+                      stackId="risk"
+                      fill="#f59e0b"
+                      radius={[0, 0, 0, 0]}
+                    />
+                    <Bar
+                      dataKey="high"
+                      stackId="risk"
+                      fill="#f97316"
+                      radius={[0, 0, 0, 0]}
+                    />
+                    <Bar
+                      dataKey="critical"
+                      stackId="risk"
+                      fill="#ef4444"
+                      radius={[4, 4, 0, 0]}
+                    />
+                  </BarChart>
+                </ChartContainer>
+              </CardContent>
+            </Card>
+          )}
+
+          <Card className="">
+            <CardHeader>
+              <CardTitle className="flex items-center space-x-2 font-bricolage">
+                <span>{sectorTitle}</span>
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              {sectorData.length > 0 ? (
+                <ChartContainer config={chartConfigs.sector}>
+                  <BarChart accessibilityLayer data={sectorData}>
+                    <CartesianGrid vertical={false} />
+                    <XAxis
+                      dataKey="sector"
+                      tickLine={false}
+                      tickMargin={10}
+                      axisLine={false}
+                      tickFormatter={(value) => value.slice(0, 12)}
+                    />
+                    <YAxis
+                      tickLine={false}
+                      axisLine={false}
+                      tickMargin={8}
+                      domain={[0, 'dataMax']}
+                      tickCount={6}
+                      label={{ 
+                        value: 'Default Rate (%)', 
+                        angle: -90, 
+                        position: 'insideLeft',
+                        style: { textAnchor: 'middle' }
+                      }}
+                    />
+                    <ChartTooltip
+                      cursor={false}
+                      content={<ChartTooltipContent indicator="dashed" />}
+                    />
+                    <Bar dataKey="defaultRate" fill="#8784D8" radius={4} />
+                  </BarChart>
+                </ChartContainer>
+              ) : (
+                <div className="flex items-center justify-center h-64 text-gray-500 font-bricolage">
+                  No sector data available
+                </div>
+              )}
+            </CardContent>
+          </Card>
+          {!isQuarterly && (
+            <Card className="">
+              <CardHeader>
+                <CardTitle className="flex items-center space-x-2 font-bricolage">
+                  <span>{riskTitle}</span>
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="flex-1 pb-0">
+                {riskDistributionData.length > 0 ? (
+                  <ChartContainer config={chartConfigs.sector} className="mx-auto aspect-square max-h-[250px]">
+                    <PieChart>
+                      <ChartTooltip
+                        cursor={false}
+                        content={<ChartTooltipContent hideLabel />}
+                      />
+                      <Pie
+                        data={riskDistributionData}
+                        dataKey="value"
+                        nameKey="name"
+                        innerRadius={60}
+                        strokeWidth={5}
+                      >
+                        {riskDistributionData.map((entry, index: number) => (
+                          <Cell key={`cell-${index}`} fill={entry.fill} />
+                        ))}
+                      </Pie>
+                    </PieChart>
+                  </ChartContainer>
+                ) : (
+                  <div className="flex items-center justify-center h-64 text-gray-500 font-bricolage">
+                    No risk data available
+                  </div>
+                )}
+              </CardContent>
+              {riskDistributionData.length > 0 && (
+                <CardFooter className="flex-col gap-2 text-sm">
+                  <div className="flex items-center gap-2 font-medium leading-none font-bricolage">
+                    <div className="flex gap-4 flex-wrap">
+                      {riskDistributionData.map((item) => (
+                        <div key={item.name} className="flex items-center gap-2">
+                          <div
+                            className="w-3 h-3 rounded-full"
+                            style={{ backgroundColor: item.fill }}
+                          ></div>
+                          <span className="text-xs font-bricolage">{item.name}: {item.value}%</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </CardFooter>
+              )}
+            </Card>
+          )}
+
+          <Card className="">
+            <CardHeader>
+              <CardTitle className="flex items-center space-x-2 font-bricolage">
+                <span>{distributionTitle}</span>
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <ChartContainer config={chartConfigs.distribution}>
+                <BarChart accessibilityLayer data={defaultRateDistribution}>
+                  <CartesianGrid vertical={false} />
+                  <XAxis
+                    dataKey="range"
+                    tickLine={false}
+                    tickMargin={10}
+                    axisLine={false}
+                    label={{ 
+                      value: 'Default Rate Range', 
+                      position: 'insideBottom', 
+                      offset: -5,
+                      style: { textAnchor: 'middle' }
+                    }}
+                  />
+                  <YAxis
+                    tickLine={false}
+                    axisLine={false}
+                    tickMargin={8}
+                    domain={[0, 'dataMax']}
+                    tickCount={6}
+                    label={{ 
+                      value: isQuarterly ? 'Number of Quarterly Predictions' : 'Number of Annual Predictions', 
+                      angle: -90, 
+                      position: 'insideLeft',
+                      style: { textAnchor: 'middle' }
+                    }}
+                  />
+                  <ChartTooltip
+                    cursor={false}
+                    content={<ChartTooltipContent indicator="dashed" />}
+                  />
+                  <Bar dataKey="count" fill="#80CA9D" radius={4} />
+                </BarChart>
+              </ChartContainer>
+            </CardContent>
+          </Card>
+
+          <Card className="">
+            <CardHeader>
+              <CardTitle className="flex items-center space-x-2 font-bricolage">
+                <span>{scatterTitle}</span>
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <ChartContainer config={chartConfigs.scatter}>
+                <ScatterChart
+                  accessibilityLayer
+                  data={scatterData}
+                  margin={{
+                    left: 20,
+                    right: 12,
+                    bottom: 20,
+                  }}
+                >
+                  <XAxis
+                    type="number"
+                    dataKey="marketCap"
+                    tickLine={false}
+                    axisLine={false}
+                    tickMargin={8}
+                    domain={[0, 'dataMax']}
+                    label={{ 
+                      value: 'Market Cap (Billions $)', 
+                      position: 'insideBottom', 
+                      offset: -5,
+                      style: { textAnchor: 'middle' }
+                    }}
+                    tickFormatter={(value: number) => {
+                      if (value === 0) return '0'
+                      if (value < 1) return `${(value * 1000).toFixed(0)}M`
+                      if (value >= 1000) return `${(value / 1000).toFixed(1)}T`
+                      return `${value.toFixed(0)}B`
+                    }}
+                  />
+                  <YAxis
+                    type="number"
+                    dataKey="defaultRate"
+                    tickLine={false}
+                    axisLine={false}
+                    tickMargin={8}
+                    domain={[0, Math.max(5, Math.ceil(Math.max(0, ...scatterData.map((d) => d.defaultRate)) + 1))]}
+                    label={{ 
+                      value: 'Default Rate (%)', 
+                      angle: -90, 
+                      position: 'insideLeft',
+                      style: { textAnchor: 'middle' }
+                    }}
+                  />
+                  <ChartTooltip
+                    cursor={false}
+                    content={<ChartTooltipContent indicator="dashed" />}
+                  />
+                  <Scatter
+                    dataKey="defaultRate"
+                    fill="var(--color-defaultRate)"
+                  />
+                </ScatterChart>
+              </ChartContainer>
+            </CardContent>
+          </Card>
+        </div>
+      </div>
+    )
+  }
+  if (isLoading) {
+    return (
+      <div className="space-y-6 font-bricolage">
         <div className="flex items-center justify-between">
           <div>
             <h2 className="text-2xl font-bricolage font-bold text-gray-900 dark:text-white">
               Analytics Dashboard
             </h2>
-            <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
+            <p className="text-sm text-gray-600 dark:text-gray-400 mt-1 font-bricolage">
               Deep dive into risk patterns and model performance metrics
             </p>
           </div>
         </div>
-        <div className="text-center py-12">
-          <Loader2 className="h-8 w-8 animate-spin mx-auto mb-4" />
-          <p className="text-gray-600 dark:text-gray-400">Loading analytics data...</p>
+
+        {/* Tabs Skeleton */}
+        <div className="flex items-center space-x-1">
+          <Skeleton className="h-9 w-24" />
+          <Skeleton className="h-9 w-24" />
+        </div>
+
+        {/* 4 Charts Grid with Skeleton Loading */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          {[1, 2, 3, 4].map((i) => (
+            <Card key={i} className="p-6 bg-white dark:bg-gray-900 border-gray-200 dark:border-gray-700 shadow-lg">
+              <div className="space-y-4">
+                <Skeleton className="h-6 w-48" />
+                <div className="h-[300px] flex items-center justify-center">
+                  <Skeleton className="h-full w-full rounded" />
+                </div>
+              </div>
+            </Card>
+          ))}
         </div>
       </div>
     )
   }
 
-  if (!analytics) {
+  if (!annualAnalytics && !quarterlyAnalytics) {
     return (
-      <div className="space-y-6">
+      <div className="space-y-6 font-bricolage">
         <div className="flex items-center justify-between">
           <div>
             <h2 className="text-2xl font-bricolage font-bold text-gray-900 dark:text-white">
               Analytics Dashboard
             </h2>
-            <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
+            <p className="text-sm text-gray-600 dark:text-gray-400 mt-1 font-bricolage">
               Deep dive into risk patterns and model performance metrics
             </p>
           </div>
         </div>
         <div className="text-center py-12">
-          <p className="text-gray-600 dark:text-gray-400">No data available for analytics</p>
+          <p className="text-gray-600 dark:text-gray-400 font-bricolage">No data available for analytics</p>
         </div>
       </div>
     )
   }
 
   return (
-    <div className="space-y-6">
-      {/* Analytics Header */}
+    <div className="space-y-8 font-bricolage">
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-2xl font-bricolage font-bold text-gray-900 dark:text-white">
-            Analytics Dashboard
-          </h2>
-          <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
-            Deep dive into risk patterns and model performance metrics
-          </p>
+          <h1 className="text-3xl font-bold text-gray-900 dark:text-white font-bricolage">Analytics Dashboard</h1>
+          <p className="text-gray-600 dark:text-gray-400 mt-1 font-bricolage">Comprehensive analysis of company performance and model insights</p>
         </div>
-        <div className="flex items-center space-x-2">
-          <Badge variant="secondary">Real-time</Badge>
-          <Badge variant="outline">S&P 500 Data</Badge>
+        <div className="flex items-center gap-4">
+          <div className="flex items-center gap-2 bg-gray-100 dark:bg-gray-800 rounded-lg p-1">
+            <button
+              onClick={() => setActiveTab("annual")}
+              className={`px-3 py-1 rounded-md text-sm font-medium transition-colors font-bricolage ${activeTab === "annual"
+                ? "bg-white dark:bg-gray-900 text-gray-900 dark:text-white shadow-sm"
+                : "text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white"
+                }`}
+            >
+              Annual
+            </button>
+            <button
+              onClick={() => setActiveTab("quarterly")}
+              className={`px-3 py-1 rounded-md text-sm font-medium transition-colors font-bricolage ${activeTab === "quarterly"
+                ? "bg-white dark:bg-gray-900 text-gray-900 dark:text-white shadow-sm"
+                : "text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white"
+                }`}
+            >
+              Quarterly
+            </button>
+          </div>
         </div>
       </div>
 
-      {/* 4 Charts Grid exactly as shown in analytics.jpeg */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Chart 1: Average Default Rate by Sector */}
-        <Card className="p-6">
-          <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
-            Average Default Rate by Sector
-          </h3>
-          <ResponsiveContainer width="100%" height={300}>
-            <BarChart data={analytics.sectorData}>
-              <CartesianGrid strokeDasharray="3 3" />
-              <XAxis
-                dataKey="sector"
-                angle={-45}
-                textAnchor="end"
-                height={80}
-                interval={0}
-                fontSize={12}
-              />
-              <YAxis
-                label={{ value: 'Default Rate (%)', angle: -90, position: 'insideLeft' }}
-              />
-              <Tooltip
-                formatter={(value) => [`${value}%`, 'Default Rate']}
-                labelStyle={{ color: '#374151' }}
-              />
-              <Bar dataKey="defaultRate" fill="#8B5CF6" />
-            </BarChart>
-          </ResponsiveContainer>
-        </Card>
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
+        <div className="hidden">
+          <TabsList className="grid w-full grid-cols-2">
+            <TabsTrigger value="annual" className="font-bricolage">Annual</TabsTrigger>
+            <TabsTrigger value="quarterly" className="font-bricolage">Quarterly</TabsTrigger>
+          </TabsList>
+        </div>
 
-        {/* Chart 2: Risk Category Distribution */}
-        <Card className="p-6">
-          <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
-            Risk Category Distribution
-          </h3>
-          <ResponsiveContainer width="100%" height={300}>
-            <PieChart>
-              <Pie
-                data={analytics.riskDistributionData}
-                cx="50%"
-                cy="50%"
-                innerRadius={60}
-                outerRadius={120}
-                paddingAngle={5}
-                dataKey="value"
-                label={({ name, value }) => `${name}: ${value}%`}
-                labelLine={false}
-              >
-                {analytics.riskDistributionData.map((entry, index) => (
-                  <Cell key={`cell-${index}`} fill={entry.color} />
-                ))}
-              </Pie>
-              <Tooltip formatter={(value) => [`${value}%`, 'Percentage']} />
-            </PieChart>
-          </ResponsiveContainer>
-        </Card>
+        <TabsContent value="annual" className="space-y-6">
+          {renderAnalytics(annualAnalytics, "Annual")}
+        </TabsContent>
 
-        {/* Chart 3: Default Rate Distribution */}
-        <Card className="p-6">
-          <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
-            Default Rate Distribution
-          </h3>
-          <ResponsiveContainer width="100%" height={300}>
-            <BarChart data={analytics.defaultRateDistribution}>
-              <CartesianGrid strokeDasharray="3 3" />
-              <XAxis dataKey="range" />
-              <YAxis
-                label={{ value: 'Number of Companies', angle: -90, position: 'insideLeft' }}
-              />
-              <Tooltip
-                formatter={(value) => [`${value}`, 'Companies']}
-              />
-              <Bar dataKey="companies" fill="#10B981" />
-            </BarChart>
-          </ResponsiveContainer>
-        </Card>
-
-        {/* Chart 4: Market Cap vs Default Rate */}
-        <Card className="p-6">
-          <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
-            Market Cap vs Default Rate
-          </h3>
-          <ResponsiveContainer width="100%" height={300}>
-            <ScatterChart data={analytics.marketCapData}>
-              <CartesianGrid strokeDasharray="3 3" />
-              <XAxis
-                dataKey="marketCap"
-                type="number"
-                domain={[0, 500]}
-                label={{ value: 'Market Cap (Billions $)', position: 'insideBottom', offset: -10 }}
-              />
-              <YAxis
-                dataKey="defaultRate"
-                type="number"
-                domain={[0, 'dataMax + 1']}
-                label={{ value: 'Default Rate (%)', angle: -90, position: 'insideLeft' }}
-              />
-              <Tooltip
-                formatter={(value, name) => [
-                  name === 'defaultRate' ? `${value}%` : `$${value}B`,
-                  name === 'defaultRate' ? 'Default Rate' : 'Market Cap'
-                ]}
-                labelFormatter={(label, payload) => {
-                  if (payload && payload[0]) {
-                    return `Company: ${payload[0].payload.company}`
-                  }
-                  return label
-                }}
-              />
-              <Scatter dataKey="defaultRate" fill="#3B82F6" />
-            </ScatterChart>
-          </ResponsiveContainer>
-        </Card>
-      </div>
-
-      {/* Additional Analytics Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mt-6">
-        <Card className="p-6 text-center">
-          <div className="text-3xl font-bold text-blue-600 mb-2">
-            {safePredictions.length > 0 ?
-              `${(safePredictions.filter((p: any) => p.confidence > 0.8).length / safePredictions.length * 100).toFixed(1)}%` :
-              'N/A'
-            }
-          </div>
-          <div className="text-sm text-gray-600 dark:text-gray-400">High Confidence Predictions</div>
-        </Card>
-        <Card className="p-6 text-center">
-          <div className="text-3xl font-bold text-purple-600 mb-2">
-            {safePredictions.length > 0 ?
-              `${(safePredictions.reduce((acc: number, p: any) => acc + p.confidence, 0) / safePredictions.length).toFixed(2)}` :
-              'N/A'
-            }
-          </div>
-          <div className="text-sm text-gray-600 dark:text-gray-400">Average Confidence Score</div>
-        </Card>
-        <Card className="p-6 text-center">
-          <div className="text-3xl font-bold text-green-600 mb-2">
-            {safePredictions.length > 0 ?
-              `${(analytics?.riskDistributionData.find(r => r.name === 'LOW')?.value || 0).toFixed(1)}%` :
-              'N/A'
-            }
-          </div>
-          <div className="text-sm text-gray-600 dark:text-gray-400">Low Risk Companies</div>
-        </Card>
-      </div>
+        <TabsContent value="quarterly" className="space-y-6">
+          {renderAnalytics(quarterlyAnalytics, "Quarterly")}
+        </TabsContent>
+      </Tabs>
     </div>
   )
 }

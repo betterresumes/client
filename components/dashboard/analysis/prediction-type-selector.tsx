@@ -28,7 +28,7 @@ export function PredictionTypeSelector({
             onChange={(e) => onTypeChange(e.target.value as 'annual' | 'quarterly')}
             className="text-blue-600"
           />
-          <span className="text-sm font-medium">📅 Annual Model (5 ratios)</span>
+          <span className="text-sm font-medium">Annual Model</span>
         </label>
         <label className="flex items-center space-x-2 cursor-pointer">
           <input
@@ -39,7 +39,7 @@ export function PredictionTypeSelector({
             onChange={(e) => onTypeChange(e.target.value as 'annual' | 'quarterly')}
             className="text-blue-600"
           />
-          <span className="text-sm font-medium">📊 Quarterly Model (4 ratios)</span>
+          <span className="text-sm font-medium">Quarterly Model</span>
         </label>
       </div>
     </div>

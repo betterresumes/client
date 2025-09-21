@@ -7,10 +7,10 @@ import { Badge } from '@/components/ui/badge'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { AnnualPredictionRequest, QuarterlyPredictionRequest } from '@/lib/types/prediction'
 import { useCreatePredictionMutations } from '@/hooks/use-prediction-mutations'
-import { PredictionTypeSelector } from './analysis/prediction-type-selector'
-import { IndividualAnalysisForm } from './analysis/individual-analysis-form'
-import { AnalysisResults } from './analysis/analysis-results'
-import { BulkUploadSection } from './analysis/bulk-upload-section'
+import { PredictionTypeSelector } from '../components/dashboard/analysis/prediction-type-selector'
+import { IndividualAnalysisForm } from '../components/dashboard/analysis/individual-analysis-form'
+import { AnalysisResults } from '../components/dashboard/analysis/analysis-results'
+import { BulkUploadSection } from '../components/dashboard/analysis/bulk-upload-section'
 
 export function CustomAnalysisView() {
   const [activeTab, setActiveTab] = useState('individual')

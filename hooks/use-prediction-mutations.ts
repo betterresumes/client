@@ -9,14 +9,15 @@ import { usePredictionsStore } from '@/lib/stores/predictions-store'
 
 export function useCreatePredictionMutations() {
   const queryClient = useQueryClient()
-  const { addPrediction } = usePredictionsStore()
+  const { addPrediction, replacePrediction } = usePredictionsStore()
 
   // Annual prediction mutation
   const createAnnualPredictionMutation = useMutation({
     mutationFn: async (data: AnnualPredictionRequest) => {
-      // Optimistic update
+      // Create optimistic prediction with temporary ID
+      const tempId = `temp-${Date.now()}`
       const optimisticPrediction = {
-        id: `temp-${Date.now()}`,
+        id: tempId,
         company_id: data.company_symbol,
         company_symbol: data.company_symbol,
         company_name: data.company_name,
@@ -39,10 +40,14 @@ export function useCreatePredictionMutations() {
         model_type: 'Annual'
       }
 
+      // Add optimistic prediction instantly
       addPrediction(optimisticPrediction as any, 'annual')
-      return await predictionsApi.annual.createAnnualPrediction(data)
+
+      // Make API call and return both response and tempId
+      const response = await predictionsApi.annual.createAnnualPrediction(data)
+      return { response, tempId }
     },
-    onSuccess: (response) => {
+    onSuccess: ({ response, tempId }) => {
       const prediction = response.data?.prediction || response.data
 
       const realPrediction = {
@@ -57,9 +62,22 @@ export function useCreatePredictionMutations() {
         }
       }
 
-      addPrediction(realPrediction as any, 'annual')
+      // Replace optimistic prediction with real data (no duplicate!)
+      replacePrediction(realPrediction as any, 'annual', tempId)
       queryClient.invalidateQueries({ queryKey: predictionKeys.annual() })
       toast.success('Annual prediction created successfully! 🎉')
+
+      return {
+        company: prediction.company_name,
+        symbol: prediction.company_symbol,
+        sector: prediction.sector || 'N/A',
+        defaultRate: `${((prediction.probability || prediction.default_probability || 0) * 100).toFixed(2)}%`,
+        riskLevel: prediction.risk_level || prediction.risk_category || 'MEDIUM',
+        modelConfidence: `${((prediction.confidence || 0) * 100).toFixed(1)}%`,
+        financialRatios: prediction.financial_ratios || {},
+        reportingPeriod: `Annual ${prediction.reporting_year}`,
+        marketCap: `$${prediction.market_cap || 0}M`
+      }
     },
     onError: (error) => {
       console.error('Annual analysis failed:', error)
@@ -72,9 +90,10 @@ export function useCreatePredictionMutations() {
   // Quarterly prediction mutation
   const createQuarterlyPredictionMutation = useMutation({
     mutationFn: async (data: QuarterlyPredictionRequest) => {
-      // Optimistic update
+      // Create optimistic prediction with temporary ID
+      const tempId = `temp-${Date.now()}`
       const optimisticPrediction = {
-        id: `temp-${Date.now()}`,
+        id: tempId,
         company_id: data.company_symbol,
         company_symbol: data.company_symbol,
         company_name: data.company_name,
@@ -96,10 +115,14 @@ export function useCreatePredictionMutations() {
         model_type: 'Quarterly'
       }
 
+      // Add optimistic prediction instantly
       addPrediction(optimisticPrediction as any, 'quarterly')
-      return await predictionsApi.quarterly.createQuarterlyPrediction(data)
+
+      // Make API call and return both response and tempId
+      const response = await predictionsApi.quarterly.createQuarterlyPrediction(data)
+      return { response, tempId }
     },
-    onSuccess: (response) => {
+    onSuccess: ({ response, tempId }) => {
       const prediction = response.data?.prediction || response.data
 
       const realPrediction = {
@@ -114,9 +137,22 @@ export function useCreatePredictionMutations() {
         }
       }
 
-      addPrediction(realPrediction as any, 'quarterly')
+      // Replace optimistic prediction with real data (no duplicate!)
+      replacePrediction(realPrediction as any, 'quarterly', tempId)
       queryClient.invalidateQueries({ queryKey: predictionKeys.quarterly() })
       toast.success('Quarterly prediction created successfully! 🎉')
+
+      return {
+        company: prediction.company_name,
+        symbol: prediction.company_symbol,
+        sector: prediction.sector || 'N/A',
+        defaultRate: `${((prediction.ensemble_probability || prediction.logistic_probability || prediction.gbm_probability || 0) * 100).toFixed(2)}%`,
+        riskLevel: prediction.risk_level || prediction.risk_category || 'MEDIUM',
+        modelConfidence: `${((prediction.confidence || 0) * 100).toFixed(1)}%`,
+        financialRatios: prediction.financial_ratios || {},
+        reportingPeriod: `${prediction.reporting_quarter} ${prediction.reporting_year}`,
+        marketCap: `$${prediction.market_cap || 0}M`
+      }
     },
     onError: (error) => {
       console.error('Quarterly analysis failed:', error)

@@ -7,7 +7,6 @@ interface DashboardProviderProps {
 }
 
 export function DashboardProvider({ children }: DashboardProviderProps) {
-  // Automatically refresh tokens when needed
   useTokenRefresh()
 
   return <>{children}</>

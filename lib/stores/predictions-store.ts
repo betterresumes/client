@@ -67,6 +67,7 @@ interface PredictionsState {
   reset: () => void
   invalidateCache: () => void
   addPrediction: (prediction: Prediction, type: 'annual' | 'quarterly') => void
+  replacePrediction: (prediction: Prediction, type: 'annual' | 'quarterly', tempId: string) => void
 
   // Utility functions
   getPredictionProbability: (prediction: Prediction) => number
@@ -201,7 +202,27 @@ export const usePredictionsStore = create<PredictionsState>((set, get) => {
       console.log(`✅ Added ${type} prediction instantly to store`)
     },
 
-    // Utility functions
+    replacePrediction: (prediction: Prediction, type: 'annual' | 'quarterly', tempId: string) => {
+      const state = get()
+      if (type === 'annual') {
+        const updatedPredictions = state.annualPredictions.map(p =>
+          p.id === tempId ? prediction : p
+        )
+        set({
+          annualPredictions: updatedPredictions,
+          lastFetched: Date.now()
+        })
+      } else {
+        const updatedPredictions = state.quarterlyPredictions.map(p =>
+          p.id === tempId ? prediction : p
+        )
+        set({
+          quarterlyPredictions: updatedPredictions,
+          lastFetched: Date.now()
+        })
+      }
+      console.log(`🔄 Replaced temporary ${type} prediction with real data`)
+    },    // Utility functions
     getPredictionProbability: (prediction: Prediction) => {
       // Return the appropriate probability based on prediction type
       return prediction.default_probability ||

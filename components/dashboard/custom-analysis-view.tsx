@@ -1,21 +1,25 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { toast } from 'sonner'
 import { Card } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { AnnualPredictionRequest, QuarterlyPredictionRequest } from '@/lib/types/prediction'
 import { useCreatePredictionMutations } from '@/hooks/use-prediction-mutations'
-import { PredictionTypeSelector } from './analysis/prediction-type-selector'
 import { IndividualAnalysisForm } from './analysis/individual-analysis-form'
-import { AnalysisResults } from './analysis/analysis-results'
+import { CompanyAnalysisPanel } from './company-analysis-panel'
 import { BulkUploadSection } from './analysis/bulk-upload-section'
+import { ProcessingSteps } from './processing-steps'
+import { EmptyAnalysisState } from './empty-analysis-state'
+import { SAMPLE_DATA } from '@/lib/config/sectors'
 
 export function CustomAnalysisView() {
   const [activeTab, setActiveTab] = useState('individual')
   const [predictionType, setPredictionType] = useState<'annual' | 'quarterly'>('annual')
   const [showResults, setShowResults] = useState(false)
+  const [processingStep, setProcessingStep] = useState(0)
+  const [isProcessing, setIsProcessing] = useState(false)
 
   // File upload states
   const [uploadedFile, setUploadedFile] = useState<File | null>(null)
@@ -24,15 +28,15 @@ export function CustomAnalysisView() {
   const [uploadResults, setUploadResults] = useState<any>(null)
 
   const [analysisResults, setAnalysisResults] = useState<{
-    company: string
-    symbol: string
-    sector: string
-    defaultRate: string
-    riskLevel: string
-    modelConfidence: string
-    financialRatios: any
-    reportingPeriod: string
-    marketCap: string
+    company: {
+      id: string
+      name: string
+      subtitle: string
+      sector: string
+      defaultRate: string
+      riskCategory: string
+    }
+    predictions: any[]
   } | null>(null)
 
   // Form data states (supports both annual and quarterly)
@@ -63,11 +67,14 @@ export function CustomAnalysisView() {
   } = useCreatePredictionMutations()
 
   // Handle form submission for individual analysis
-  const handleAnalysis = () => {
+  const handleAnalysis = async () => {
     if (!formData.stockSymbol || !formData.companyName || !formData.sector || !formData.marketCap) {
       toast.error('Please fill in all required fields')
       return
     }
+
+    // Start processing simulation
+    await simulateProcessing()
 
     if (predictionType === 'annual') {
       const requestData: AnnualPredictionRequest = {
@@ -86,8 +93,36 @@ export function CustomAnalysisView() {
 
       createAnnualPredictionMutation.mutate(requestData, {
         onSuccess: (results) => {
-          setAnalysisResults(results.data)
-          setShowResults(true)
+          // Format the API response for CompanyAnalysisPanel
+          // API returns: { prediction: { ... } }
+          const predictionData = results.response?.data?.prediction || results.response?.data
+          const formattedResults = {
+            company: {
+              id: predictionData.company_symbol || formData.stockSymbol,
+              name: predictionData.company_symbol || formData.stockSymbol,
+              subtitle: predictionData.company_name || formData.companyName,
+              sector: predictionData.sector || formData.sector,
+              defaultRate: `${((predictionData.ensemble_probability || predictionData.probability || 0) * 100).toFixed(2)}%`,
+              riskCategory: predictionData.risk_level || 'MEDIUM'
+            },
+            predictions: [predictionData] // Wrap single result in array
+          }
+
+          // Complete the processing - no step 5, just finish
+          setTimeout(() => {
+            setAnalysisResults(formattedResults)
+            setShowResults(true)
+            setIsProcessing(false)
+            setProcessingStep(0)
+          }, 500)
+          toast.success('Annual analysis completed successfully!')
+        },
+        onError: (error: any) => {
+          setIsProcessing(false)
+          setProcessingStep(0)
+          // Extract error message from API response
+          const errorMessage = error?.response?.data?.detail || error?.message || 'Analysis failed. Please try again.'
+          toast.error(errorMessage)
         }
       })
     } else {
@@ -106,8 +141,36 @@ export function CustomAnalysisView() {
 
       createQuarterlyPredictionMutation.mutate(requestData, {
         onSuccess: (results) => {
-          setAnalysisResults(results.data)
-          setShowResults(true)
+          // Format the API response for CompanyAnalysisPanel
+          // API returns: { prediction: { ... } }
+          const predictionData = results.response?.data?.prediction || results.response?.data
+          const formattedResults = {
+            company: {
+              id: predictionData.company_symbol || formData.stockSymbol,
+              name: predictionData.company_symbol || formData.stockSymbol,
+              subtitle: predictionData.company_name || formData.companyName,
+              sector: predictionData.sector || formData.sector,
+              defaultRate: `${((predictionData.ensemble_probability || predictionData.probability || 0) * 100).toFixed(2)}%`,
+              riskCategory: predictionData.risk_level || 'MEDIUM'
+            },
+            predictions: [predictionData] // Wrap single result in array
+          }
+
+          // Complete the processing - no step 5, just finish
+          setTimeout(() => {
+            setAnalysisResults(formattedResults)
+            setShowResults(true)
+            setIsProcessing(false)
+            setProcessingStep(0)
+          }, 500)
+          toast.success('Quarterly analysis completed successfully!')
+        },
+        onError: (error: any) => {
+          setIsProcessing(false)
+          setProcessingStep(0)
+          // Extract error message from API response
+          const errorMessage = error?.response?.data?.detail || error?.message || 'Analysis failed. Please try again.'
+          toast.error(errorMessage)
         }
       })
     }
@@ -185,6 +248,64 @@ export function CustomAnalysisView() {
     }))
   }
 
+  // Helper functions
+  const handleSampleData = () => {
+    const sampleData = SAMPLE_DATA[predictionType]
+    Object.entries(sampleData).forEach(([key, value]) => {
+      setFormData(prev => ({ ...prev, [key]: value }))
+    })
+    toast.success('Sample data loaded!')
+  }
+
+  const handleReset = () => {
+    setFormData({
+      stockSymbol: '',
+      marketCap: '',
+      companyName: '',
+      sector: '',
+      reportingYear: '2024',
+      reportingQuarter: 'Q1',
+      ebitInterestExpense: '',
+      totalDebtEbitda: '',
+      returnOnAssets: '',
+      netIncomeMargin: '',
+      longTermDebtTotalCapital: '',
+      sgaMargin: '',
+      returnOnCapital: ''
+    })
+    setShowResults(false)
+    setAnalysisResults(null)
+    setProcessingStep(0)
+    setIsProcessing(false)
+    toast.success('Form reset!')
+  }
+
+  const handlePredictionTypeChange = (type: 'annual' | 'quarterly') => {
+    setPredictionType(type)
+    // Reset results to show empty state when switching tabs
+    setShowResults(false)
+    setAnalysisResults(null)
+    setProcessingStep(0)
+    setIsProcessing(false)
+  }
+
+  // Processing simulation
+  const simulateProcessing = async () => {
+    setIsProcessing(true)
+    setShowResults(false)
+    setAnalysisResults(null)
+
+    // Run through steps 1-3 quickly
+    const steps = [1, 2, 3]
+    for (const step of steps) {
+      await new Promise(resolve => setTimeout(resolve, 2000))
+      setProcessingStep(step)
+    }
+
+    // Move to step 4 (Final Processing) and stay there until API call completes
+    setProcessingStep(4)
+  }
+
   const isAnalysisLoading = createAnnualPredictionMutation.isPending || createQuarterlyPredictionMutation.isPending
 
   return (
@@ -208,21 +329,13 @@ export function CustomAnalysisView() {
 
       {/* Analysis Type Tabs */}
       <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-        <TabsList className="grid w-full grid-cols-2">
-          <TabsTrigger value="individual">📊 Individual Analysis</TabsTrigger>
-          <TabsTrigger value="bulk">📤 Bulk Analysis</TabsTrigger>
+        <TabsList className="grid grid-cols-2">
+          <TabsTrigger value="individual">Individual Analysis</TabsTrigger>
+          <TabsTrigger value="bulk">Bulk Analysis</TabsTrigger>
         </TabsList>
 
         {/* Individual Analysis */}
         <TabsContent value="individual" className="mt-6 space-y-6">
-          {/* Prediction Type Selection */}
-          <Card className="p-4">
-            <PredictionTypeSelector
-              predictionType={predictionType}
-              onTypeChange={setPredictionType}
-            />
-          </Card>
-
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             {/* Analysis Form */}
             <IndividualAnalysisForm
@@ -230,27 +343,44 @@ export function CustomAnalysisView() {
               predictionType={predictionType}
               onInputChange={handleInputChange}
               onAnalysis={handleAnalysis}
+              onSampleData={handleSampleData}
+              onReset={handleReset}
+              onPredictionTypeChange={handlePredictionTypeChange}
               isLoading={isAnalysisLoading}
             />
 
             {/* Analysis Results */}
-            <AnalysisResults
-              showResults={showResults}
-              analysisResults={analysisResults}
-            />
+            {!isProcessing && !showResults && (
+              <EmptyAnalysisState predictionType={predictionType} />
+            )}
+            {isProcessing && (
+              <ProcessingSteps
+                currentStep={processingStep}
+                predictionType={predictionType}
+                isApiProcessing={isAnalysisLoading && processingStep === 4}
+              />
+            )}
+            {showResults && analysisResults && (
+              <CompanyAnalysisPanel
+                company={analysisResults.company}
+                annualPredictions={predictionType === 'annual' ? analysisResults.predictions : []}
+                quarterlyPredictions={predictionType === 'quarterly' ? analysisResults.predictions : []}
+                activeTab={predictionType}
+                isLoading={false}
+              />
+            )}
           </div>
         </TabsContent>
 
         {/* Bulk Analysis */}
         <TabsContent value="bulk" className="mt-6 space-y-6">
-          {/* Prediction Type Selection for Bulk */}
-          <Card className="p-4">
-            <PredictionTypeSelector
-              predictionType={predictionType}
-              onTypeChange={setPredictionType}
-              title="Select Bulk Analysis Model"
-            />
-          </Card>
+          {/* Prediction Type Tabs for Bulk */}
+          <Tabs value={predictionType} onValueChange={(value) => setPredictionType(value as 'annual' | 'quarterly')} className="w-full">
+            <TabsList className="grid grid-cols-2">
+              <TabsTrigger value="annual">Annual Prediction</TabsTrigger>
+              <TabsTrigger value="quarterly">Quarterly Prediction</TabsTrigger>
+            </TabsList>
+          </Tabs>
 
           <BulkUploadSection
             predictionType={predictionType}

@@ -9,7 +9,6 @@ export default function Home() {
   const { isAuthenticated } = useAuthStore()
   const [isClient, setIsClient] = useState(false)
 
-  // Prevent hydration mismatch by ensuring client-side only rendering
   useEffect(() => {
     setIsClient(true)
   }, [])
@@ -17,7 +16,6 @@ export default function Home() {
   useEffect(() => {
     if (!isClient) return
 
-    // Immediate redirect - no loading state, no delays
     if (isAuthenticated) {
       router.replace('/dashboard')
     } else {
@@ -25,11 +23,9 @@ export default function Home() {
     }
   }, [isAuthenticated, router, isClient])
 
-  // Don't render anything until client is ready - prevents hydration mismatch
   if (!isClient) {
     return null
   }
 
-  // Return null - no UI should be shown during redirect
   return null
 }
