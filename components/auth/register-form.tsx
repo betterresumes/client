@@ -62,9 +62,6 @@ export function RegisterForm() {
       })
 
       if (response.success) {
-        toast.success('Account created successfully!', {
-          description: 'Please check your email to verify your account.',
-        })
 
         router.push('/login')
       } else {
@@ -89,7 +86,7 @@ export function RegisterForm() {
           Create your account
         </h1>
         <p className="mt-2 text-gray-600 dark:text-gray-400">
-          Join FinRisk AI and start predicting financial risks
+          Join AccuNode AI and start predicting financial risks
         </p>
       </div>
 

@@ -154,6 +154,8 @@ export function CompanyAnalysisTable({
   const endIndex = startIndex + itemsPerPage
   const currentData = filteredAndSortedData.slice(startIndex, endIndex)
 
+  console.log("currentdta", currentData)
+
   const handleSort = (field: SortField) => {
     if (sortField === field) {
       setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc')
@@ -221,8 +223,6 @@ export function CompanyAnalysisTable({
     setSelectedPrediction(null)
   }
 
-
-
   if (data.length === 0 && !isLoading) {
     return (
       <div className="text-center py-12">
@@ -258,10 +258,7 @@ export function CompanyAnalysisTable({
               {type === 'annual' ? 'Annual Analysis' : 'Quarterly Analysis'}
             </h3>
             <p className="text-sm text-gray-600 dark:text-gray-400 font-bricolage">
-              {isLoading
-                ? "Loading companies..."
-                : `Showing ${startIndex + 1}-${Math.min(endIndex, totalItems)} of ${totalItems} companies with ${type} predictions`
-              }
+              {!isLoading && `Showing ${startIndex + 1}-${Math.min(endIndex, totalItems)} of ${totalItems} companies with ${type} predictions`}
             </p>
           </div>
           <div className="flex items-center space-x-2">
@@ -402,6 +399,7 @@ export function CompanyAnalysisTable({
                   ))
                 ) : (
                   currentData.map((item: any, index: number) => (
+                    console.log("item", item),
                     <TableRow key={index}>
                       <TableCell className='pl-5'>
                         <div>
@@ -428,11 +426,21 @@ export function CompanyAnalysisTable({
                       <TableCell>
                         <div className="text-xs space-y-1 font-bricolage">
                           {item.financial_ratios ? (
-                            <>
-                              <div>ROA: {item.financial_ratios.roa || 'N/A'}</div>
-                              <div>LTD/TC: {item.financial_ratios.ltdtc || 'N/A'}</div>
-                              <div>EBIT/Int: {item.financial_ratios.ebitint || 'N/A'}</div>
-                            </>
+                            type === 'annual' ? (
+                              // Annual ratios: ROA, LTDTC, EBIT/Int
+                              <>
+                                <div>ROA: {item.financial_ratios.roa || 'N/A'}</div>
+                                <div>LTDTC: {item.financial_ratios.ltdtc || 'N/A'}</div>
+                                <div>EBIT/Int: {item.financial_ratios.ebitint || 'N/A'}</div>
+                              </>
+                            ) : (
+                              // Quarterly ratios: ROC, SGA, LTDTC, Debt/EBITDA
+                              <>
+                                <div>ROC: {item.financial_ratios.roa || 'N/A'}</div>
+                                <div>SGA: {item.financial_ratios.sga || 'N/A'}</div>
+                                <div>LTDTC: {item.financial_ratios.ltdtc || 'N/A'}</div>
+                              </>
+                            )
                           ) : (
                             <div>No ratios available</div>
                           )}

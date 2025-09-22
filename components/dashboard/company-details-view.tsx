@@ -3,6 +3,7 @@
 import { useState, useEffect, useMemo } from 'react'
 import { ChevronLeft, ChevronRight } from 'lucide-react'
 import { usePredictionsStore } from '@/lib/stores/predictions-store'
+import { useAuthStore } from '@/lib/stores/auth-store'
 import { useDashboardStore } from '@/lib/stores/dashboard-store'
 import { Card } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -20,6 +21,7 @@ import {
 
 export function CompanyDetailsView() {
   const { selectedCompany, selectedPredictionType, setSelectedCompany, clearSelection } = useDashboardStore()
+  const { isAuthenticated, user } = useAuthStore()
   const [currentPage, setCurrentPage] = useState(1)
   const [activeTab, setActiveTab] = useState<'annual' | 'quarterly'>('annual')
   const itemsPerPage = 5
@@ -28,7 +30,8 @@ export function CompanyDetailsView() {
     annualPredictions,
     quarterlyPredictions,
     isLoading,
-    fetchPredictions
+    fetchPredictions,
+    getFilteredPredictions
   } = usePredictionsStore()
 
   // Set active tab based on selectedPredictionType when navigating from table
@@ -38,16 +41,24 @@ export function CompanyDetailsView() {
     }
   }, [selectedPredictionType])
 
-  // Fetch predictions on component mount if not already loaded
+  // Only fetch predictions if we don't have any data and user is authenticated
   useEffect(() => {
-    if (annualPredictions.length === 0 && quarterlyPredictions.length === 0 && !isLoading) {
+    if (isAuthenticated && user && annualPredictions.length === 0 && quarterlyPredictions.length === 0 && !isLoading) {
+      console.log('🏢 Company details view - fetching predictions as none exist')
       fetchPredictions()
     }
-  }, [annualPredictions.length, quarterlyPredictions.length, isLoading, fetchPredictions])
+  }, [isAuthenticated, user, annualPredictions.length, quarterlyPredictions.length, isLoading, fetchPredictions])
 
-  // Ensure predictions are arrays
-  const safePredictions = Array.isArray(annualPredictions) ? annualPredictions : []
-  const safeQuarterlyPredictions = Array.isArray(quarterlyPredictions) ? quarterlyPredictions : []
+  // Ensure predictions are arrays - use filtered data
+  const filteredAnnualPredictions = getFilteredPredictions('annual')
+  const filteredQuarterlyPredictions = getFilteredPredictions('quarterly')
+  const safePredictions = Array.isArray(filteredAnnualPredictions) ? filteredAnnualPredictions : []
+  const safeQuarterlyPredictions = Array.isArray(filteredQuarterlyPredictions) ? filteredQuarterlyPredictions : []
+
+  console.log('🔍 Company details using filtered predictions:', {
+    annual: safePredictions.length,
+    quarterly: safeQuarterlyPredictions.length
+  })
 
   // Get all companies from both annual and quarterly predictions
   const allCompanies = [...safePredictions, ...safeQuarterlyPredictions]
@@ -197,24 +208,28 @@ export function CompanyDetailsView() {
           <p className="text-sm text-gray-600 dark:text-gray-400 mt-1 font-bricolage">
             Detailed analysis and risk assessment for individual companies
           </p>
-          {/* Show current selection with option to browse freely */}
-          {selectedCompany && currentCompany && (
-            <div className="flex items-center gap-2 mt-2">
-              <span className="text-sm text-gray-500 font-bricolage">Viewing:</span>
-              <Badge variant="outline" className="font-bricolage">
-                {currentCompany.name}
-              </Badge>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => setSelectedCompany(null)}
-                className="text-xs text-gray-500 hover:text-gray-700 font-bricolage"
-              >
-                Browse All Companies
-              </Button>
-            </div>
-          )}
         </div>
+      </div>
+
+      {/* Company selection and browsing */}
+      <div className="space-y-4">
+        {/* Show current selection with option to browse freely */}
+        {selectedCompany && currentCompany && (
+          <div className="flex items-center gap-2">
+            <span className="text-sm text-gray-500 font-bricolage">Viewing:</span>
+            <Badge variant="outline" className="font-bricolage">
+              {currentCompany.name}
+            </Badge>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setSelectedCompany(null)}
+              className="text-xs text-gray-500 hover:text-gray-700 font-bricolage"
+            >
+              Browse All Companies
+            </Button>
+          </div>
+        )}
 
         {/* Tabs - Show when company is selected and has data */}
         {currentCompany && (hasAnnualData || hasQuarterlyData) && (
@@ -245,7 +260,6 @@ export function CompanyDetailsView() {
         )}
       </div>
 
-      {/* Loading State for entire component */}
       {isLoading && companies.length === 0 ? (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 font-bricolage">
           {/* Left Panel Skeleton */}

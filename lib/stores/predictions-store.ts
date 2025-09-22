@@ -38,7 +38,7 @@ interface Prediction {
   // Organization and access
   organization_id?: string | null
   organization_name?: string | null
-  organization_access: string // "personal" | "organization"
+  organization_access: string // "personal" | "organization" | "system" (simplified from backend)
 
   // Audit fields
   created_by: string
@@ -59,9 +59,13 @@ interface PredictionsState {
   error: string | null
   lastFetched: number | null
   isInitialized: boolean
+  isFetching: boolean // Add flag to prevent multiple simultaneous calls
+
+  // Data access filter state  
+  activeDataFilter: string // 'personal', 'organization', 'system', or 'all' for viewing
 
   // Actions
-  fetchPredictions: () => Promise<void>
+  fetchPredictions: (forceRefresh?: boolean) => Promise<void>
   refetchPredictions: () => Promise<void>
   clearError: () => void
   reset: () => void
@@ -69,19 +73,47 @@ interface PredictionsState {
   addPrediction: (prediction: Prediction, type: 'annual' | 'quarterly') => void
   replacePrediction: (prediction: Prediction, type: 'annual' | 'quarterly', tempId: string) => void
   removePrediction: (predictionId: string, type: 'annual' | 'quarterly') => void
+  setDataFilter: (filter: string) => void
+  getDefaultFilterForUser: (user: any) => string
 
   // Utility functions
   getPredictionProbability: (prediction: Prediction) => number
   getRiskBadgeColor: (riskLevel: string | undefined | null) => string
   formatPredictionDate: (prediction: Prediction) => string
+  getFilteredPredictions: (type: 'annual' | 'quarterly') => Prediction[]
 }
 
 export const usePredictionsStore = create<PredictionsState>((set, get) => {
-  // Set up event listener for automatic refresh
+  // Set up event listeners for automatic refresh and auth events
   if (typeof window !== 'undefined') {
     window.addEventListener('predictions-updated', () => {
       console.log('🔄 Predictions updated - auto-refreshing data...')
       get().invalidateCache()
+    })
+
+    // Listen for successful login to refresh data
+    window.addEventListener('auth-login-success', () => {
+      console.log('🔑 Login successful - forcing prediction refresh')
+      setTimeout(() => {
+        get().invalidateCache()
+      }, 200) // Small delay to ensure API client has tokens
+    })
+
+    // Listen for logout to clear data
+    window.addEventListener('auth-logout', () => {
+      console.log('🔓 Logout detected - clearing prediction data')
+      get().reset()
+    })
+
+    // Listen for token refresh success to retry failed requests
+    window.addEventListener('auth-token-refreshed', () => {
+      console.log('🔄 Token refreshed - retrying prediction fetch if needed')
+      const state = get()
+      if (state.error && state.error.includes('Authentication issue')) {
+        setTimeout(() => {
+          get().fetchPredictions(true)
+        }, 500)
+      }
     })
   }
 
@@ -92,19 +124,27 @@ export const usePredictionsStore = create<PredictionsState>((set, get) => {
     error: null,
     lastFetched: null,
     isInitialized: false,
+    isFetching: false,
+    activeDataFilter: 'system', // Start with 'system' for user role
 
 
-    fetchPredictions: async () => {
+    fetchPredictions: async (forceRefresh = false) => {
       const state = get()
 
-      // Don't fetch if we already have recent data (less than 30 minutes old) and app is initialized
-      if (state.isInitialized && state.lastFetched && Date.now() - state.lastFetched < 30 * 60 * 1000) {
-        console.log('Using cached predictions data - no API call needed')
+      // Prevent multiple simultaneous calls
+      if (state.isFetching) {
+        console.log('📦 Predictions already being fetched - skipping duplicate call')
         return
       }
 
-      console.log('Fetching fresh predictions data from API...')
-      set({ isLoading: true, error: null })
+      // Don't fetch if we already have recent data (less than 30 minutes old) and app is initialized, unless forcing refresh
+      if (!forceRefresh && state.isInitialized && state.lastFetched && Date.now() - state.lastFetched < 30 * 60 * 1000) {
+        console.log('📋 Using cached predictions data - no API call needed')
+        return
+      }
+
+      console.log('🚀 Fetching fresh predictions data from API...')
+      set({ isLoading: true, error: null, isFetching: true })
 
       try {
         const [annualResponse, quarterlyResponse] = await Promise.all([
@@ -116,37 +156,59 @@ export const usePredictionsStore = create<PredictionsState>((set, get) => {
         const annualData = annualResponse?.data?.predictions || annualResponse?.data || []
         const quarterlyData = quarterlyResponse?.data?.predictions || quarterlyResponse?.data || []
 
+        console.log('Raw annual predictions data:', annualData)
+        console.log("****")
+        console.log('Raw quarterly predictions data:', quarterlyData)
+
         // Transform annual predictions
-        const annualPredictions = Array.isArray(annualData) ? annualData.map((pred: any) => ({
-          ...pred,
-          // Add computed fields for backward compatibility
-          default_probability: pred.probability || 0,
-          risk_category: pred.risk_level,
-          reporting_year: pred.reporting_year?.toString() || new Date().getFullYear().toString(),
-          // Map financial ratios to legacy format
-          financial_ratios: {
-            ltdtc: pred.long_term_debt_to_total_capital,
-            roa: pred.return_on_assets,
-            ebitint: pred.ebit_to_interest_expense
+        const annualPredictions = Array.isArray(annualData) ? annualData.map((pred: any) => {
+          console.log('Transforming annual prediction:', pred)
+          return {
+            ...pred,
+            // Add computed fields for backward compatibility
+            default_probability: pred.probability || 0,
+            risk_category: pred.risk_level,
+            reporting_year: pred.reporting_year?.toString() || new Date().getFullYear().toString(),
+            // Ensure organization_access is properly mapped from the new backend
+            organization_access: pred.access_level || pred.organization_access || 'personal',
+            // Map financial ratios to legacy format for annual predictions
+            financial_ratios: {
+              ltdtc: pred.long_term_debt_to_total_capital,
+              roa: pred.return_on_assets,
+              ebitint: pred.ebit_to_interest_expense
+            }
           }
-        })) : []
+        }) : []
 
         // Transform quarterly predictions  
-        const quarterlyPredictions = Array.isArray(quarterlyData) ? quarterlyData.map((pred: any) => ({
-          ...pred,
-          // Add computed fields for backward compatibility
-          default_probability: pred.ensemble_probability || pred.logistic_probability || pred.gbm_probability || 0,
-          risk_category: pred.risk_level,
-          reporting_year: pred.reporting_year?.toString() || new Date().getFullYear().toString(),
-          // Map financial ratios to legacy format
-          financial_ratios: {
-            ltdtc: pred.long_term_debt_to_total_capital,
-            roa: pred.return_on_assets,
-            ebitint: pred.ebit_to_interest_expense
+        const quarterlyPredictions = Array.isArray(quarterlyData) ? quarterlyData.map((pred: any) => {
+          console.log('Transforming quarterly prediction:', pred)
+          return {
+            ...pred,
+            // Add computed fields for backward compatibility
+            default_probability: pred.logistic_probability || 0,
+            risk_category: pred.risk_level,
+            reporting_year: pred.reporting_year?.toString() || new Date().getFullYear().toString(),
+            reporting_quarter: pred.reporting_quarter?.toUpperCase() || "Q1",
+            // Ensure organization_access is properly mapped from the new backend
+            organization_access: pred.access_level || pred.organization_access || 'personal',
+            // Map financial ratios to legacy format for quarterly predictions
+            financial_ratios: {
+              ltdtc: pred.long_term_debt_to_total_capital,
+              sga: pred.sga_margin,
+              roa: pred.return_on_capital,
+              debt_to_ebitda: pred.total_debt_to_ebitda,
+            }
           }
-        })) : []
+        }) : []
 
+        console.log("quarterly prediction", quarterlyPredictions)
+        console.log("annual predictions after transformation:", annualPredictions)
         console.log(`✅ Loaded ${annualPredictions.length} annual and ${quarterlyPredictions.length} quarterly predictions`)
+
+        // Log access levels for debugging
+        console.log('Annual predictions access levels:', annualPredictions.map(p => ({ id: p.id, company: p.company_symbol, access: p.organization_access })))
+        console.log('Quarterly predictions access levels:', quarterlyPredictions.map(p => ({ id: p.id, company: p.company_symbol, access: p.organization_access })))
 
         set({
           annualPredictions,
@@ -154,27 +216,48 @@ export const usePredictionsStore = create<PredictionsState>((set, get) => {
           isLoading: false,
           error: null,
           lastFetched: Date.now(),
-          isInitialized: true
+          isInitialized: true,
+          isFetching: false
         })
       } catch (error: any) {
         console.error('Failed to fetch predictions:', error)
-        set({
-          isLoading: false,
-          error: error.message || 'Failed to fetch predictions',
-          annualPredictions: [],
-          quarterlyPredictions: []
-        })
+
+        // Check if this is an auth error vs other error
+        const isAuthError = error?.response?.status === 401 || error?.message?.includes('unauthorized')
+
+        if (isAuthError) {
+          console.log('🔒 Auth error detected - keeping existing data, will retry after token refresh')
+          // Don't clear existing data on auth errors, just mark as not loading
+          set({
+            isLoading: false,
+            error: null, // Don't show error to user for auth issues
+            isFetching: false
+          })
+
+          // Retry after a short delay to allow token refresh
+          setTimeout(() => {
+            console.log('🔄 Retrying prediction fetch after auth error')
+            get().fetchPredictions(true)
+          }, 2000)
+        } else {
+          // For non-auth errors, show error but keep existing data
+          set({
+            isLoading: false,
+            error: error.message || 'Failed to fetch predictions',
+            isFetching: false
+          })
+        }
       }
     },
 
     refetchPredictions: async () => {
-      set({ lastFetched: null }) // Force refetch
-      return get().fetchPredictions()
+      set({ lastFetched: null, isInitialized: false }) // Force refetch and reset initialization
+      return get().fetchPredictions(true)
     },
 
     invalidateCache: () => {
       set({ lastFetched: null, isInitialized: false })
-      get().fetchPredictions()
+      get().fetchPredictions(true)
     },
 
     clearError: () => set({ error: null }),
@@ -278,6 +361,96 @@ export const usePredictionsStore = create<PredictionsState>((set, get) => {
         return `${prediction.reporting_quarter.toUpperCase()} ${prediction.reporting_year}`
       }
       return `Annual ${prediction.reporting_year}`
+    },
+
+    setDataFilter: (filter: string) => {
+      const state = get()
+      const previousFilter = state.activeDataFilter
+
+      set({ activeDataFilter: filter })
+      console.log(`🔍 Data filter changed from ${previousFilter} to: ${filter}`)
+
+      // Don't refresh on filter change - we have all data cached
+      // Just filter client-side for better performance
+    },
+
+    getFilteredPredictions: (type: 'annual' | 'quarterly') => {
+      const state = get()
+      const predictions = type === 'annual' ? state.annualPredictions : state.quarterlyPredictions
+
+      console.log(`🔍 Filtering ${type} predictions with filter: ${state.activeDataFilter}`)
+      console.log(`Total ${type} predictions:`, predictions.length)
+      console.log(`Access levels in data:`, predictions.map(p => p.organization_access))
+
+      // Filter based on activeDataFilter - always include system data + selected filter
+      let filtered
+      switch (state.activeDataFilter) {
+        case 'personal':
+          // Personal + System data
+          filtered = predictions.filter(p =>
+            p.organization_access === 'personal' || p.organization_access === 'system'
+          )
+          break
+
+        case 'organization':
+          // Organization + System data
+          filtered = predictions.filter(p =>
+            p.organization_access === 'organization' || p.organization_access === 'system'
+          )
+          break
+
+        case 'system':
+          // Only system data
+          filtered = predictions.filter(p => p.organization_access === 'system')
+          break
+
+        case 'all':
+          // All data (for super admin)
+          filtered = predictions
+          break
+
+        default:
+          // Default: show system data
+          filtered = predictions.filter(p => p.organization_access === 'system')
+          break
+      }
+
+      console.log(`Filtered ${type} predictions:`, filtered.length)
+      console.log(`Filtered data:`, filtered.map(p => ({ id: p.id, company: p.company_symbol, access: p.organization_access })))
+
+      return filtered
+    },
+
+    getDefaultFilterForUser: (user: any) => {
+      if (!user) {
+        console.log('🔍 No user, returning default filter: system')
+        return 'system'
+      }
+
+      console.log('🔍 Getting default filter for user role:', user.role)
+
+      // User role: start with personal data (personal + system)
+      if (user.role === 'user') {
+        return 'personal'
+      }
+
+      // Super admin: start with all data
+      if (user.role === 'super_admin') {
+        return 'all'
+      }
+
+      // Tenant admin: start with personal data (personal + system)
+      if (user.role === 'tenant_admin') {
+        return 'personal'
+      }
+
+      // Org admin/members: start with organization data (organization + system)
+      if (user.role === 'org_admin' || user.role === 'org_member') {
+        return 'organization'
+      }
+
+      console.log('🔍 Default filter fallback: personal')
+      return 'personal'
     }
   }
 })

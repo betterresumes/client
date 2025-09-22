@@ -37,7 +37,7 @@ import {
 } from 'lucide-react'
 
 export function DashboardOverview() {
-  const { user } = useAuthStore()
+  const { user, isAuthenticated } = useAuthStore()
   const {
     annualPredictions,
     quarterlyPredictions,
@@ -47,7 +47,8 @@ export function DashboardOverview() {
     refetchPredictions,
     getPredictionProbability,
     getRiskBadgeColor,
-    formatPredictionDate
+    formatPredictionDate,
+    getFilteredPredictions
   } = usePredictionsStore()
 
   const [searchTerm, setSearchTerm] = useState('')
@@ -61,48 +62,103 @@ export function DashboardOverview() {
     setIsClient(true)
   }, [])
 
-  // Fetch predictions on component mount
+  // Fetch predictions when client-side and authenticated, but only once
   useEffect(() => {
-    if (isClient) {
-      fetchPredictions()
+    if (isClient && isAuthenticated && user) {
+      console.log('� Dashboard mounted - using existing predictions or fetching if needed')
+      // Only fetch if we don't have any data
+      if (annualPredictions.length === 0 && quarterlyPredictions.length === 0 && !isLoading) {
+        fetchPredictions()
+      }
     }
-  }, [isClient, fetchPredictions])
+  }, [isClient, isAuthenticated, user])
 
-  // Ensure predictions are always arrays
+  // No need for additional auth state change listener - the store handles this
+
+  // Set up periodic token check to prevent expiration issues
+  useEffect(() => {
+    if (!isAuthenticated || !user) return
+
+    const checkTokenAndRefresh = () => {
+      const { shouldRefreshToken, refreshAccessToken, isRefreshing } = useAuthStore.getState()
+
+      if (shouldRefreshToken() && !isRefreshing) {
+        console.log('🔄 Proactively refreshing token to prevent expiration')
+        refreshAccessToken()
+      }
+    }
+
+    // Check token every minute
+    const tokenCheckInterval = setInterval(checkTokenAndRefresh, 60000)
+
+    return () => clearInterval(tokenCheckInterval)
+  }, [isAuthenticated, user])
+
+  // Monitor for data disappearing and auto-refetch
+  useEffect(() => {
+    if (!isAuthenticated || !user || isLoading) return
+
+    const checkDataAndRefetch = () => {
+      const currentPredictions = usePredictionsStore.getState()
+
+      // If we're logged in but have no data and there's no loading/error, refetch
+      if (currentPredictions.isInitialized &&
+        currentPredictions.annualPredictions.length === 0 &&
+        currentPredictions.quarterlyPredictions.length === 0 &&
+        !currentPredictions.isLoading &&
+        !currentPredictions.error) {
+        console.log('⚠️ Data disappeared - auto-refetching predictions')
+        fetchPredictions(true)
+      }
+    }
+
+    // Check data every 30 seconds
+    const dataCheckInterval = setInterval(checkDataAndRefetch, 30000)
+
+    return () => clearInterval(dataCheckInterval)
+  }, [isAuthenticated, user, isLoading, fetchPredictions])
+
+  // Ensure predictions are always arrays and get filtered data
   const safeAnnualPredictions = Array.isArray(annualPredictions) ? annualPredictions : []
   const safeQuarterlyPredictions = Array.isArray(quarterlyPredictions) ? quarterlyPredictions : []
 
-  // Calculate dashboard summary stats from real data
+  // Get filtered predictions based on data access settings
+  const filteredAnnualPredictions = getFilteredPredictions('annual')
+  const filteredQuarterlyPredictions = getFilteredPredictions('quarterly')
+
+  console.log('Annual Predictions:', safeAnnualPredictions)
+
+  // Calculate dashboard summary stats from filtered data
   const summaryStats = [
     {
       title: 'Total Companies',
-      value: safeAnnualPredictions.length.toString(),
+      value: filteredAnnualPredictions.length.toString(),
       icon: Building2,
       color: 'text-blue-600'
     },
     {
       title: 'Total Predictions',
-      value: (safeAnnualPredictions.length + safeQuarterlyPredictions.length).toString(),
+      value: (filteredAnnualPredictions.length + filteredQuarterlyPredictions.length).toString(),
       icon: BarChart3,
       color: 'text-green-600'
     },
     {
       title: 'Average Default Rate',
-      value: safeAnnualPredictions.length > 0 ?
-        `${(safeAnnualPredictions.reduce((acc: number, pred: any) => acc + getPredictionProbability(pred), 0) / safeAnnualPredictions.length * 100).toFixed(2)}%` :
+      value: filteredAnnualPredictions.length > 0 ?
+        `${(filteredAnnualPredictions.reduce((acc: number, pred: any) => acc + getPredictionProbability(pred), 0) / filteredAnnualPredictions.length * 100).toFixed(2)}%` :
         '0%',
       icon: TrendingUp,
       color: 'text-purple-600'
     },
     {
       title: 'High Risk Companies',
-      value: safeAnnualPredictions.filter((pred: any) => (pred.risk_level || pred.risk_category || '').toUpperCase() === 'HIGH').length.toString(),
+      value: filteredAnnualPredictions.filter((pred: any) => (pred.risk_level || pred.risk_category || '').toUpperCase() === 'HIGH').length.toString(),
       icon: TrendingDown,
       color: 'text-red-600'
     },
     {
       title: 'Sectors Covered',
-      value: safeAnnualPredictions.length > 0 ? new Set(safeAnnualPredictions.map((pred: any) => pred.sector || 'Unknown')).size.toString() : '0',
+      value: filteredAnnualPredictions.length > 0 ? new Set(filteredAnnualPredictions.map((pred: any) => pred.sector || 'Unknown')).size.toString() : '0',
       icon: Activity,
       color: 'text-indigo-600'
     }
@@ -122,17 +178,9 @@ export function DashboardOverview() {
     riskColor: getRiskBadgeColor(pred.risk_level || pred.risk_category || 'unknown')
   }))
 
-  // Show loading state during hydration
-  if (!isClient) {
-    return (
-      <div className="space-y-6">
-        <div className="text-center py-8">
-          <Loader2 className="h-8 w-8 animate-spin mx-auto mb-4" />
-          <p className="text-gray-600 dark:text-gray-400">Loading dashboard...</p>
-        </div>
-      </div>
-    )
-  } return (
+  // Don't block the UI - let components handle their own skeleton loading
+
+  return (
     <div className="space-y-6 font-bricolage">
       {/* S&P 500 Default Rate Analysis Header */}
       <div className="flex items-start justify-between">
@@ -163,19 +211,6 @@ export function DashboardOverview() {
       <div className="space-y-4">
         <div className="flex items-center justify-between">
           <h2 className="text-xl font-semibold text-gray-900 dark:text-white">Summary Statistics</h2>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={refetchPredictions}
-            disabled={isLoading}
-          >
-            {isLoading ? (
-              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-            ) : (
-              <RefreshCw className="h-4 w-4 mr-2" />
-            )}
-            Refresh
-          </Button>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-5 gap-6">
@@ -267,7 +302,7 @@ export function DashboardOverview() {
         </div>        <Tabs value={activeAnalysisType} onValueChange={setActiveAnalysisType} className="w-full">
           <TabsContent value="annual" className="space-y-4">
             <CompanyAnalysisTable
-              data={safeAnnualPredictions}
+              data={filteredAnnualPredictions}
               type="annual"
               searchTerm={searchTerm}
               selectedSector={selectedSector}
@@ -279,7 +314,7 @@ export function DashboardOverview() {
 
           <TabsContent value="quarterly" className="space-y-4">
             <CompanyAnalysisTable
-              data={safeQuarterlyPredictions}
+              data={filteredQuarterlyPredictions}
               type="quarterly"
               searchTerm={searchTerm}
               selectedSector={selectedSector}

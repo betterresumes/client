@@ -2,6 +2,7 @@
 
 import { useState, useMemo, useEffect } from 'react'
 import { usePredictionsStore } from '@/lib/stores/predictions-store'
+import { useAuthStore } from '@/lib/stores/auth-store'
 import { Bar, BarChart, CartesianGrid, XAxis, YAxis, PieChart, Pie, Cell, ScatterChart, Scatter } from "recharts"
 import {
   Card,
@@ -22,30 +23,38 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
 import { TrendingUp, PieChart as PieChartIcon, BarChart3, ChartScatter } from 'lucide-react'
+import { CompanyAnalysisTable } from './company-analysis-table'
 
 export function AnalyticsView() {
+  const { isAuthenticated, user } = useAuthStore()
   const {
     annualPredictions,
     quarterlyPredictions,
     isLoading,
-    fetchPredictions
+    fetchPredictions,
+    getFilteredPredictions
   } = usePredictionsStore()
 
   const [activeTab, setActiveTab] = useState("annual")
 
-  // Fetch predictions on component mount if not already loaded
+  // Only fetch predictions if we don't have any data and user is authenticated
   useEffect(() => {
-    if (annualPredictions.length === 0 && quarterlyPredictions.length === 0 && !isLoading) {
+    if (isAuthenticated && user && annualPredictions.length === 0 && quarterlyPredictions.length === 0 && !isLoading) {
+      console.log('📊 Analytics view - fetching predictions as none exist')
       fetchPredictions()
     }
-  }, [annualPredictions.length, quarterlyPredictions.length, isLoading, fetchPredictions])
+  }, [isAuthenticated, user, annualPredictions.length, quarterlyPredictions.length, isLoading, fetchPredictions])
 
-  // Ensure predictions are arrays
+  // Ensure predictions are arrays and get filtered data
   const safePredictions = Array.isArray(annualPredictions) ? annualPredictions : []
   const safeQuarterlyPredictions = Array.isArray(quarterlyPredictions) ? quarterlyPredictions : []
 
-  // Convert predictions to match expected format
-  const annualData = safePredictions.map((pred: any) => ({
+  // Get filtered predictions based on data access settings
+  const filteredAnnualPredictions = getFilteredPredictions('annual')
+  const filteredQuarterlyPredictions = getFilteredPredictions('quarterly')
+
+  // Convert filtered predictions to match expected format
+  const annualData = filteredAnnualPredictions.map((pred: any) => ({
     sector: pred.sector || 'Unknown',
     defaultRate: pred.default_probability * 100,
     marketCap: `$${(Math.random() * 400 + 50).toFixed(1)}B`, // Random market cap for demo
@@ -55,7 +64,7 @@ export function AnalyticsView() {
     confidence: pred.confidence
   }))
 
-  const quarterlyData = safeQuarterlyPredictions.map((pred: any) => ({
+  const quarterlyData = filteredQuarterlyPredictions.map((pred: any) => ({
     sector: pred.sector || 'Unknown',
     defaultRate: pred.default_probability * 100,
     marketCap: `$${(Math.random() * 400 + 50).toFixed(1)}B`, // Random market cap for demo
@@ -370,9 +379,9 @@ export function AnalyticsView() {
                       tickMargin={8}
                       domain={[0, 'dataMax']}
                       tickCount={6}
-                      label={{ 
-                        value: 'Default Rate (%)', 
-                        angle: -90, 
+                      label={{
+                        value: 'Default Rate (%)',
+                        angle: -90,
                         position: 'insideLeft',
                         style: { textAnchor: 'middle' }
                       }}
@@ -460,9 +469,9 @@ export function AnalyticsView() {
                     tickLine={false}
                     tickMargin={10}
                     axisLine={false}
-                    label={{ 
-                      value: 'Default Rate Range', 
-                      position: 'insideBottom', 
+                    label={{
+                      value: 'Default Rate Range',
+                      position: 'insideBottom',
                       offset: -5,
                       style: { textAnchor: 'middle' }
                     }}
@@ -473,9 +482,9 @@ export function AnalyticsView() {
                     tickMargin={8}
                     domain={[0, 'dataMax']}
                     tickCount={6}
-                    label={{ 
-                      value: isQuarterly ? 'Number of Quarterly Predictions' : 'Number of Annual Predictions', 
-                      angle: -90, 
+                    label={{
+                      value: isQuarterly ? 'Number of Quarterly Predictions' : 'Number of Annual Predictions',
+                      angle: -90,
                       position: 'insideLeft',
                       style: { textAnchor: 'middle' }
                     }}
@@ -514,9 +523,9 @@ export function AnalyticsView() {
                     axisLine={false}
                     tickMargin={8}
                     domain={[0, 'dataMax']}
-                    label={{ 
-                      value: 'Market Cap (Billions $)', 
-                      position: 'insideBottom', 
+                    label={{
+                      value: 'Market Cap (Billions $)',
+                      position: 'insideBottom',
                       offset: -5,
                       style: { textAnchor: 'middle' }
                     }}
@@ -534,9 +543,9 @@ export function AnalyticsView() {
                     axisLine={false}
                     tickMargin={8}
                     domain={[0, Math.max(5, Math.ceil(Math.max(0, ...scatterData.map((d) => d.defaultRate)) + 1))]}
-                    label={{ 
-                      value: 'Default Rate (%)', 
-                      angle: -90, 
+                    label={{
+                      value: 'Default Rate (%)',
+                      angle: -90,
                       position: 'insideLeft',
                       style: { textAnchor: 'middle' }
                     }}
@@ -621,27 +630,25 @@ export function AnalyticsView() {
           <h1 className="text-3xl font-bold text-gray-900 dark:text-white font-bricolage">Analytics Dashboard</h1>
           <p className="text-gray-600 dark:text-gray-400 mt-1 font-bricolage">Comprehensive analysis of company performance and model insights</p>
         </div>
-        <div className="flex items-center gap-4">
-          <div className="flex items-center gap-2 bg-gray-100 dark:bg-gray-800 rounded-lg p-1">
-            <button
-              onClick={() => setActiveTab("annual")}
-              className={`px-3 py-1 rounded-md text-sm font-medium transition-colors font-bricolage ${activeTab === "annual"
-                ? "bg-white dark:bg-gray-900 text-gray-900 dark:text-white shadow-sm"
-                : "text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white"
-                }`}
-            >
-              Annual
-            </button>
-            <button
-              onClick={() => setActiveTab("quarterly")}
-              className={`px-3 py-1 rounded-md text-sm font-medium transition-colors font-bricolage ${activeTab === "quarterly"
-                ? "bg-white dark:bg-gray-900 text-gray-900 dark:text-white shadow-sm"
-                : "text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white"
-                }`}
-            >
-              Quarterly
-            </button>
-          </div>
+        <div className="flex items-center gap-2 bg-gray-100 dark:bg-gray-800 rounded-lg p-1">
+          <button
+            onClick={() => setActiveTab("annual")}
+            className={`px-3 py-1 rounded-md text-sm font-medium transition-colors font-bricolage ${activeTab === "annual"
+              ? "bg-white dark:bg-gray-900 text-gray-900 dark:text-white shadow-sm"
+              : "text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white"
+              }`}
+          >
+            Annual
+          </button>
+          <button
+            onClick={() => setActiveTab("quarterly")}
+            className={`px-3 py-1 rounded-md text-sm font-medium transition-colors font-bricolage ${activeTab === "quarterly"
+              ? "bg-white dark:bg-gray-900 text-gray-900 dark:text-white shadow-sm"
+              : "text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white"
+              }`}
+          >
+            Quarterly
+          </button>
         </div>
       </div>
 

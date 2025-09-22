@@ -4,7 +4,7 @@ import { DashboardHeader } from '@/components/layout/dashboard-header'
 import { DashboardProvider } from '@/components/providers/dashboard-provider'
 
 export const metadata: Metadata = {
-  title: 'Dashboard | FinRisk AI',
+  title: 'Dashboard | AccuNode AI',
   description: 'Financial risk prediction dashboard',
 }
 

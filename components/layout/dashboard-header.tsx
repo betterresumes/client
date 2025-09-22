@@ -1,7 +1,6 @@
 'use client'
 
-import { useState } from 'react'
-import { Search, Bell, Settings, LogOut, User, ChevronDown, RefreshCw, TrendingUp } from 'lucide-react'
+import { Search, Bell, Settings, LogOut, User, ChevronDown, RefreshCw, TrendingUp, Shield, Building, Building2 } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 
 import { Button } from '@/components/ui/button'
@@ -22,22 +21,82 @@ import { useManualTokenRefresh } from '@/lib/hooks/use-token-refresh'
 
 export function DashboardHeader() {
   const router = useRouter()
-  const { user, clearAuth, isRefreshing, getTokenTimeRemaining } = useAuthStore()
+  const { user, clearAuth, isAdmin, isTenantAdmin, isOrgAdmin } = useAuthStore()
   const { refresh, isRefreshing: isManualRefreshing } = useManualTokenRefresh()
+
+  // Get organization and tenant names directly from user data
+  const getOrgName = () => {
+    return user?.organization?.name || ''
+  }
+
+  const getTenantName = () => {
+    return user?.tenant?.name || ''
+  }
 
   const handleLogout = () => {
     clearAuth()
     router.push('/login')
   }
-  const timeRemaining = getTokenTimeRemaining()
+  const getInitials = (firstName: string, lastName: string) => {
+    return ((firstName?.[0] || '') + (lastName?.[0] || '')).toUpperCase()
+  }
 
-  const getInitials = (name: string) => {
-    return name
-      .split(' ')
-      .map(n => n[0])
-      .join('')
-      .toUpperCase()
-      .substring(0, 2)
+  const getUserDisplayName = () => {
+    if (!user) return 'User'
+
+    // Priority: 1. username, 2. full_name, 3. email
+    if (user.username) return user.username
+    if (user.full_name?.trim()) return user.full_name.trim()
+    return user.email || 'User'
+  }
+
+  const getUserInitials = () => {
+    if (!user) return 'U'
+
+    // Try to get initials from username first
+    if (user.username) {
+      return user.username.substring(0, 2).toUpperCase()
+    }
+
+    // Try to get initials from full_name
+    if (user.full_name) {
+      const nameParts = user.full_name.trim().split(' ')
+      if (nameParts.length >= 2) {
+        return (nameParts[0][0] + nameParts[1][0]).toUpperCase()
+      } else if (nameParts.length === 1) {
+        return nameParts[0].substring(0, 2).toUpperCase()
+      }
+    }
+
+    // Fallback to first letter of email
+    return user.email?.[0]?.toUpperCase() || 'U'
+  }
+
+  const getRoleDisplayText = () => {
+    if (!user) return ''
+
+    switch (user.role) {
+      case 'super_admin':
+        return 'Super Admin'
+      case 'tenant_admin':
+        return 'Tenant Admin'
+      case 'org_admin':
+        return 'Organization Admin'
+      case 'org_member':
+        return 'Organization Member'
+      case 'user':
+        return 'User'
+      default:
+        return user.role
+    }
+  }
+
+  const shouldShowOrgInfo = () => {
+    return user && user.organization_id && user.organization?.name && !isAdmin()
+  }
+
+  const shouldShowTenantInfo = () => {
+    return user && isTenantAdmin() && !isAdmin() && user.tenant?.name
   }
 
   return (
@@ -56,7 +115,7 @@ export function DashboardHeader() {
                 Machine Learning-powered default rate analysis for S&P 500 and custom companies
               </p>
             </div>
-            {(isRefreshing || isManualRefreshing) && (
+            {isManualRefreshing && (
               <div className="flex items-center space-x-2 text-sm text-blue-600 ml-4">
                 <RefreshCw className="h-4 w-4 animate-spin" />
                 <span>Refreshing session...</span>
@@ -65,18 +124,26 @@ export function DashboardHeader() {
           </div>
 
           <div className="flex items-center space-x-4">
+            {/* User Role next to profile */}
+            {user && (
+              <div className="flex items-center space-x-2 px-3 py-1 bg-gray-100 rounded-md">
+                <Shield className="h-4 w-4 text-gray-600" />
+                <span className="text-sm font-medium text-gray-800">{getRoleDisplayText()}</span>
+              </div>
+            )}
+
             <DropdownMenu>
               <DropdownMenuTrigger asChild className="">
                 <Button variant="ghost" className="flex items-center space-x-3 px-3 py-2 outline-none focus:ring-blue-500">
                   <Avatar className="h-6 w-6">
-                    <AvatarImage src={`https://api.dicebear.com/7.x/initials/svg?seed=${user?.full_name}`} />
+                    <AvatarImage src={`https://api.dicebear.com/7.x/initials/svg?seed=${getUserDisplayName()}`} />
                     <AvatarFallback className="bg-blue-600 text-white">
-                      {user?.full_name ? getInitials(user.full_name) : 'U'}
+                      {getUserInitials()}
                     </AvatarFallback>
                   </Avatar>
                   <div className="hidden md:flex flex-col items-start">
                     <span className="text-sm font-medium text-gray-900 dark:text-white">
-                      {user?.full_name || 'User'}
+                      {getUserDisplayName()}
                     </span>
                   </div>
                   <ChevronDown className="h-4 w-4 text-gray-500" />
@@ -85,7 +152,7 @@ export function DashboardHeader() {
               <DropdownMenuContent align="end" className="w-56">
                 <DropdownMenuLabel>
                   <div className="flex flex-col space-y-1">
-                    <p className="text-sm font-medium">{user?.full_name}</p>
+                    <p className="text-sm font-medium">{getUserDisplayName()}</p>
                     <p className="text-xs text-gray-500">{user?.email}</p>
                   </div>
                 </DropdownMenuLabel>
@@ -98,6 +165,15 @@ export function DashboardHeader() {
                   <Settings className="mr-2 h-4 w-4" />
                   <span>Settings</span>
                 </DropdownMenuItem>
+                {isAdmin() && (
+                  <>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem onClick={() => router.push('/super-admin-dashboard')}>
+                      <Shield className="mr-2 h-4 w-4" />
+                      <span>Super Admin</span>
+                    </DropdownMenuItem>
+                  </>
+                )}
                 <DropdownMenuSeparator />
                 <DropdownMenuItem onClick={handleLogout} className="text-red-600 dark:text-red-400">
                   <LogOut className="mr-2 h-4 w-4" />

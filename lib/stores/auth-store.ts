@@ -57,6 +57,14 @@ export const useAuthStore = create<AuthState>()(
           tokenExpiresAt: expiresAt,
           isRefreshing: false,
         })
+
+        // Clear and refresh prediction data after successful login
+        if (typeof window !== 'undefined') {
+          setTimeout(() => {
+            console.log('🔄 Auth set - refreshing prediction data')
+            window.dispatchEvent(new CustomEvent('auth-login-success'))
+          }, 100)
+        }
       },
 
       refreshAccessToken: async () => {
@@ -104,6 +112,14 @@ export const useAuthStore = create<AuthState>()(
             isRefreshing: false,
           })
 
+          // Notify that token was refreshed
+          if (typeof window !== 'undefined') {
+            setTimeout(() => {
+              console.log('🔄 Token refreshed - notifying listeners')
+              window.dispatchEvent(new CustomEvent('auth-token-refreshed'))
+            }, 50)
+          }
+
           return true
         } catch (error) {
           console.error('Token refresh failed:', error)
@@ -124,6 +140,14 @@ export const useAuthStore = create<AuthState>()(
           tokenExpiresAt: null,
           isRefreshing: false,
         })
+
+        // Clear prediction data when logging out
+        if (typeof window !== 'undefined') {
+          setTimeout(() => {
+            console.log('🧹 Auth cleared - clearing prediction data')
+            window.dispatchEvent(new CustomEvent('auth-logout'))
+          }, 50)
+        }
       },
 
       updateUser: (userData) => {

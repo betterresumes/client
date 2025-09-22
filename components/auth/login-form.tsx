@@ -7,7 +7,6 @@ import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import Link from 'next/link'
 import { Eye, EyeOff, Loader2, Mail, Lock } from 'lucide-react'
-import { toast } from 'sonner'
 
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -69,10 +68,6 @@ export function LoginForm() {
             response.data.expires_in || 3600 // Default to 1 hour if not provided
           )
 
-          toast.success('Welcome back!', {
-            description: 'You have been successfully logged in.',
-          })
-
           // Check if there's a redirect URL stored in sessionStorage
           const redirectUrl = sessionStorage.getItem('redirectAfterLogin')
           if (redirectUrl) {
@@ -86,9 +81,6 @@ export function LoginForm() {
             ? userResponse.error
             : userResponse.error?.message || 'Failed to get user profile'
 
-          toast.error('Login failed', {
-            description: errorMessage
-          })
 
           // Clear the token since profile fetch failed
           apiClient.clearAuth()
@@ -97,16 +89,9 @@ export function LoginForm() {
         const errorMessage = typeof response.error === 'string'
           ? response.error
           : response.error?.message || 'Invalid email or password'
-
-        toast.error('Login failed', {
-          description: errorMessage,
-        })
       }
     } catch (error) {
       console.error('Login error:', error)
-      toast.error('Login failed', {
-        description: 'An unexpected error occurred. Please try again.',
-      })
     } finally {
       setIsLoading(false)
     }
@@ -119,7 +104,7 @@ export function LoginForm() {
           Welcome back
         </h1>
         <p className="mt-2 text-gray-600 dark:text-gray-400">
-          Sign in to your FinRisk AI account
+          Sign in to your AccuNode AI account
         </p>
       </div>
 

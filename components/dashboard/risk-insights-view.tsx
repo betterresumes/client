@@ -1,7 +1,8 @@
 'use client'
 
-import { useMemo, useEffect } from 'react'
+import { useMemo, useEffect, useState } from 'react'
 import { usePredictionsStore } from '@/lib/stores/predictions-store'
+import { useAuthStore } from '@/lib/stores/auth-store'
 import { Card } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -21,22 +22,28 @@ import {
 } from 'lucide-react'
 
 export function RiskInsightsView() {
+  const { isAuthenticated, user } = useAuthStore()
   const {
     annualPredictions,
     isLoading,
     refetchPredictions,
-    fetchPredictions
+    fetchPredictions,
+    getFilteredPredictions
   } = usePredictionsStore()
 
-  // Fetch predictions on component mount if not already loaded
+  // Only fetch predictions if we don't have any data and user is authenticated
   useEffect(() => {
-    if (annualPredictions.length === 0 && !isLoading) {
+    if (isAuthenticated && user && annualPredictions.length === 0 && !isLoading) {
+      console.log('⚠️ Risk insights view - fetching predictions as none exist')
       fetchPredictions()
     }
-  }, [annualPredictions.length, isLoading, fetchPredictions])
+  }, [isAuthenticated, user, annualPredictions.length, isLoading, fetchPredictions])
 
-  // Ensure predictions are arrays
-  const safePredictions = Array.isArray(annualPredictions) ? annualPredictions : []
+  // Ensure predictions are arrays - use filtered data
+  const filteredPredictions = getFilteredPredictions('annual')
+  const safePredictions = Array.isArray(filteredPredictions) ? filteredPredictions : []
+
+  console.log('🔍 Risk insights using filtered predictions:', safePredictions.length)
 
   // Calculate risk insights from real data
   const riskInsights = useMemo(() => {
@@ -212,19 +219,6 @@ export function RiskInsightsView() {
             Deep dive into risk patterns and model performance metrics
           </p>
         </div>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => refetchPredictions()}
-          disabled={isLoading}
-        >
-          {isLoading ? (
-            <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-          ) : (
-            <RefreshCw className="h-4 w-4 mr-2" />
-          )}
-          Refresh Data
-        </Button>
       </div>
 
       {/* High Risk & Top Performing Companies */}

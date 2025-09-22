@@ -1,10 +1,10 @@
 import { create } from 'zustand'
 import { persist, createJSONStorage } from 'zustand/middleware'
-import { User, UserRole } from '../types/user'
+import { UserResponse, UserRole } from '../types/auth'
 import { authApi } from '../api'
 
 interface AuthState {
-  user: User | null
+  user: UserResponse | null
   token: string | null
   isAuthenticated: boolean
   isLoading: boolean
@@ -12,13 +12,11 @@ interface AuthState {
 }
 
 interface AuthActions {
-  login: (email: string, password: string) => Promise<{ success: boolean; error?: string }>
+  login: (email: string, password: string) => Promise<boolean>
   logout: () => void
-  setUser: (user: User) => void
-  setToken: (token: string) => void
-  clearError: () => void
-  refreshToken: () => Promise<boolean>
   checkAuth: () => Promise<boolean>
+  setUser: (user: UserResponse) => void
+  clearError: () => void
 }
 
 type AuthStore = AuthState & AuthActions
@@ -48,17 +46,16 @@ export const useAuthStore = create<AuthStore>()(
 
             if (userResponse.success && userResponse.data) {
               // Convert auth user to our User type
-              const user: User = {
+              const user: UserResponse = {
                 id: userResponse.data.id,
                 email: userResponse.data.email,
-                first_name: userResponse.data.full_name?.split(' ')[0] || '',
-                last_name: userResponse.data.full_name?.split(' ').slice(1).join(' ') || '',
+                username: userResponse.data.username,
+                full_name: userResponse.data.full_name,
                 role: userResponse.data.role as UserRole,
-                status: 'active' as any, // Convert from is_active boolean
-                company_id: userResponse.data.organization_id || '',
-                is_verified: userResponse.data.is_active || false,
+                organization_id: userResponse.data.organization_id,
+                tenant_id: userResponse.data.tenant_id,
+                is_active: userResponse.data.is_active,
                 created_at: userResponse.data.created_at || new Date().toISOString(),
-                updated_at: new Date().toISOString(),
                 last_login: userResponse.data.last_login
               }
 
@@ -112,7 +109,7 @@ export const useAuthStore = create<AuthStore>()(
         })
       },
 
-      setUser: (user: User) => {
+      setUser: (user: UserResponse) => {
         set({ user })
       },
 
@@ -157,18 +154,17 @@ export const useAuthStore = create<AuthStore>()(
           const response = await authApi.getMe()
 
           if (response.success && response.data) {
-            // Convert auth user to our User type
-            const user: User = {
+            // Convert auth user to our UserResponse type
+            const user: UserResponse = {
               id: response.data.id,
               email: response.data.email,
-              first_name: response.data.full_name?.split(' ')[0] || '',
-              last_name: response.data.full_name?.split(' ').slice(1).join(' ') || '',
+              username: response.data.username,
+              full_name: response.data.full_name,
               role: response.data.role as UserRole,
-              status: 'active' as any,
-              company_id: response.data.organization_id || '',
-              is_verified: response.data.is_active || false,
+              organization_id: response.data.organization_id,
+              tenant_id: response.data.tenant_id,
+              is_active: response.data.is_active,
               created_at: response.data.created_at || new Date().toISOString(),
-              updated_at: new Date().toISOString(),
               last_login: response.data.last_login
             }
 
@@ -205,8 +201,8 @@ export const useAuth = () => {
   const auth = useAuthStore()
   return {
     ...auth,
-    isAdmin: auth.user?.role === UserRole.ADMIN || auth.user?.role === UserRole.SUPER_ADMIN,
-    isSuperAdmin: auth.user?.role === UserRole.SUPER_ADMIN,
+    isAdmin: auth.user?.role === 'org_admin' || auth.user?.role === 'tenant_admin' || auth.user?.role === 'super_admin',
+    isSuperAdmin: auth.user?.role === 'super_admin',
     hasRole: (role: UserRole) => auth.user?.role === role,
     hasAnyRole: (roles: UserRole[]) => auth.user ? roles.includes(auth.user.role) : false
   }

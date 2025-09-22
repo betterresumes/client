@@ -39,6 +39,8 @@ interface IndividualAnalysisFormProps {
   onReset: () => void
   onPredictionTypeChange: (type: 'annual' | 'quarterly') => void
   isLoading: boolean
+  errorMessage?: string
+  editMode?: { isEditing: boolean; predictionId: string | null }
 }
 
 export function IndividualAnalysisForm({
@@ -49,7 +51,9 @@ export function IndividualAnalysisForm({
   onSampleData,
   onReset,
   onPredictionTypeChange,
-  isLoading
+  isLoading,
+  errorMessage,
+  editMode
 }: IndividualAnalysisFormProps) {
   const isFormValid = () => {
     const requiredFields = ['stockSymbol', 'companyName', 'sector', 'marketCap']
@@ -61,11 +65,21 @@ export function IndividualAnalysisForm({
       <div className="flex items-center justify-between mb-6">
         <div className="flex items-center gap-3">
           <div>
-            <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
-              Individual Analysis
-            </h3>
+            <div className="flex items-center gap-2">
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+                Individual Analysis
+              </h3>
+              {editMode?.isEditing && (
+                <Badge variant="outline" className="text-orange-600 border-orange-200 bg-orange-50 dark:bg-orange-900/20 dark:border-orange-800">
+                  Edit Mode
+                </Badge>
+              )}
+            </div>
             <p className="text-xs text-gray-500 dark:text-gray-400">
-              Custom company risk assessment
+              {editMode?.isEditing
+                ? "Update existing prediction with new values"
+                : "Custom company risk assessment"
+              }
             </p>
           </div>
         </div>
@@ -100,6 +114,7 @@ export function IndividualAnalysisForm({
                 value={formData.stockSymbol}
                 onChange={(e) => onInputChange('stockSymbol', e.target.value.toUpperCase())}
                 className="font-mono"
+                disabled={editMode?.isEditing}
               />
             </div>
             <div className="space-y-2">
@@ -152,11 +167,16 @@ export function IndividualAnalysisForm({
                 max="2030"
                 value={formData.reportingYear}
                 onChange={(e) => onInputChange('reportingYear', e.target.value)}
+                disabled={editMode?.isEditing}
               />
             </div>
             <div className="space-y-2">
               <Label htmlFor="reportingQuarter" className="text-sm font-medium">Reporting Quarter</Label>
-              <Select value={formData.reportingQuarter} onValueChange={(value) => onInputChange('reportingQuarter', value)}>
+              <Select
+                value={formData.reportingQuarter}
+                onValueChange={(value) => onInputChange('reportingQuarter', value)}
+                disabled={editMode?.isEditing}
+              >
                 <SelectTrigger className="w-full">
                   <SelectValue placeholder="Select quarter" />
                 </SelectTrigger>
@@ -302,23 +322,38 @@ export function IndividualAnalysisForm({
 
         {/* Action Buttons */}
         <div className="pt-4 border-t border-gray-200 dark:border-gray-700 space-y-3">
+          {/* Error Message Display */}
+          {errorMessage && (
+            <div className="p-3 rounded-lg bg-red-50 border border-red-200 dark:bg-red-900/20 dark:border-red-800">
+              <p className="text-sm text-red-800 dark:text-red-200">
+                <strong>Error:</strong> {errorMessage}
+              </p>
+            </div>
+          )}
+
           <Button
             onClick={onAnalysis}
-            className={`w-full h-12 text-white font-medium ${predictionType === 'annual'
-              ? 'bg-blue-600 hover:bg-blue-700'
-              : 'bg-green-600 hover:bg-green-700'
+            className={`w-full h-12 text-white font-medium cursor-pointer ${predictionType === 'annual'
+              ? 'bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400'
+              : 'bg-green-600 hover:bg-green-700 disabled:bg-green-400'
               }`}
             disabled={isLoading || !isFormValid()}
           >
             {isLoading ? (
               <>
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                Running {predictionType === 'annual' ? 'Annual' : 'Quarterly'} Analysis...
+                {editMode?.isEditing
+                  ? `Updating ${predictionType === 'annual' ? 'Annual' : 'Quarterly'} Prediction...`
+                  : `Running ${predictionType === 'annual' ? 'Annual' : 'Quarterly'} Analysis...`
+                }
               </>
             ) : (
               <>
                 <TrendingUp className="mr-2 h-4 w-4" />
-                Run {predictionType === 'annual' ? 'Annual' : 'Quarterly'} Analysis
+                {editMode?.isEditing
+                  ? `Update ${predictionType === 'annual' ? 'Annual' : 'Quarterly'} Prediction`
+                  : `Run ${predictionType === 'annual' ? 'Annual' : 'Quarterly'} Analysis`
+                }
               </>
             )}
           </Button>

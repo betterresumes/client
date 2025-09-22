@@ -7,6 +7,7 @@ import { Badge } from '@/components/ui/badge'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { AnnualPredictionRequest, QuarterlyPredictionRequest } from '@/lib/types/prediction'
 import { useCreatePredictionMutations } from '@/hooks/use-prediction-mutations'
+import { usePredictionMutations } from '@/hooks/use-prediction-edit-mutations'
 import { predictionsApi } from '@/lib/api/predictions'
 import { useDashboardStore } from '@/lib/stores/dashboard-store'
 import { useJobStore } from '@/lib/stores/job-store'
@@ -20,6 +21,44 @@ import { JobStatusContainer } from './job-status-display'
 import { Loader2, Download } from 'lucide-react'
 import { Button } from '../ui/button'
 
+// Helper function to format error messages for better user experience
+const formatErrorMessage = (rawMessage: string): string => {
+  if (!rawMessage) return 'An unexpected error occurred. Please try again.'
+
+  // Handle common API error patterns
+  if (rawMessage.includes('already exists in your global scope')) {
+    const match = rawMessage.match(/Annual prediction for (\w+) in (\d+) Q(\d+) already exists/)
+    if (match) {
+      const [, symbol, year, quarter] = match
+      return `A prediction for ${symbol} already exists for ${year} Q${quarter}. Please try a different company or time period.`
+    }
+  }
+
+  if (rawMessage.includes('Quarterly prediction for')) {
+    const match = rawMessage.match(/Quarterly prediction for (\w+) in (\d+) Q(\d+) already exists/)
+    if (match) {
+      const [, symbol, year, quarter] = match
+      return `A quarterly prediction for ${symbol} already exists for ${year} Q${quarter}. Please try a different company or time period.`
+    }
+  }
+
+  // Handle validation errors
+  if (rawMessage.toLowerCase().includes('validation')) {
+    return 'Please check your input data. Some fields may have invalid values.'
+  }
+
+  if (rawMessage.toLowerCase().includes('unauthorized')) {
+    return 'You are not authorized to perform this action. Please check your permissions.'
+  }
+
+  if (rawMessage.toLowerCase().includes('not found')) {
+    return 'The requested resource was not found. Please try again.'
+  }
+
+  // Return original message if no specific pattern matched, but limit length
+  return rawMessage.length > 100 ? rawMessage.substring(0, 100) + '...' : rawMessage
+}
+
 export function CustomAnalysisView() {
   const { prefilledData, clearPrefilledData } = useDashboardStore()
   const { createJob, updateJobFromAPI, deleteJob, hasActiveJobs, jobs } = useJobStore()
@@ -28,6 +67,11 @@ export function CustomAnalysisView() {
   const [showResults, setShowResults] = useState(false)
   const [processingStep, setProcessingStep] = useState(0)
   const [isProcessing, setIsProcessing] = useState(false)
+  const [errorMessage, setErrorMessage] = useState<string>('')
+  const [editMode, setEditMode] = useState<{ isEditing: boolean; predictionId: string | null }>({
+    isEditing: false,
+    predictionId: null
+  })
 
   // File upload states
   const [uploadedFile, setUploadedFile] = useState<File | null>(null)
@@ -74,6 +118,8 @@ export function CustomAnalysisView() {
     bulkUploadMutation
   } = useCreatePredictionMutations()
 
+  const { updatePredictionMutation } = usePredictionMutations()
+
   // Handle prefilled data from edit action
   useEffect(() => {
     if (prefilledData) {
@@ -82,6 +128,19 @@ export function CustomAnalysisView() {
       // Set prediction type
       if (data.predictionType) {
         setPredictionType(data.predictionType)
+      }
+
+      // Set edit mode if this data has an ID (indicating it's an existing prediction)
+      if (data.id) {
+        setEditMode({
+          isEditing: true,
+          predictionId: data.id
+        })
+      } else {
+        setEditMode({
+          isEditing: false,
+          predictionId: null
+        })
       }
 
       // Prefill form data
@@ -105,10 +164,16 @@ export function CustomAnalysisView() {
         returnOnCapital: data.return_on_capital?.toString() || ''
       })
 
-      // Show a message that data was prefilled for editing
-      toast.info(`Editing ${data.company_symbol} - Modify values as needed and create new prediction`, {
-        duration: 4000
-      })
+      // Show appropriate message based on edit mode
+      if (data.id) {
+        toast.info(`Editing ${data.company_symbol} - Update existing prediction`, {
+          duration: 4000
+        })
+      } else {
+        toast.info(`Editing ${data.company_symbol} - Modify values as needed and create new prediction`, {
+          duration: 4000
+        })
+      }
 
       // Clear prefilled data after using it
       clearPrefilledData()
@@ -121,6 +186,9 @@ export function CustomAnalysisView() {
       toast.error('Please fill in all required fields')
       return
     }
+
+    // Clear any previous error message
+    setErrorMessage('')
 
     // Start processing simulation
     await simulateProcessing()
@@ -140,40 +208,88 @@ export function CustomAnalysisView() {
         return_on_assets: parseFloat(formData.returnOnAssets) || 0,
       }
 
-      createAnnualPredictionMutation.mutate(requestData, {
-        onSuccess: (results) => {
-          // Format the API response for CompanyAnalysisPanel
-          // API returns: { prediction: { ... } }
-          const predictionData = results.response?.data?.prediction || results.response?.data
-          const formattedResults = {
-            company: {
-              id: predictionData.company_symbol || formData.stockSymbol,
-              name: predictionData.company_symbol || formData.stockSymbol,
-              subtitle: predictionData.company_name || formData.companyName,
-              sector: predictionData.sector || formData.sector,
-              defaultRate: `${((predictionData.ensemble_probability || predictionData.probability || 0) * 100).toFixed(2)}%`,
-              riskCategory: predictionData.risk_level || 'MEDIUM'
-            },
-            predictions: [predictionData] // Wrap single result in array
-          }
+      if (editMode.isEditing && editMode.predictionId) {
+        // Update existing prediction
+        updatePredictionMutation.mutate({
+          id: editMode.predictionId,
+          data: requestData,
+          type: 'annual'
+        }, {
+          onSuccess: (results) => {
+            // Format the API response for CompanyAnalysisPanel
+            const predictionData = results.data?.prediction || results.data || results
+            const formattedResults = {
+              company: {
+                id: predictionData.company_symbol || formData.stockSymbol,
+                name: predictionData.company_symbol || formData.stockSymbol,
+                subtitle: predictionData.company_name || formData.companyName,
+                sector: predictionData.sector || formData.sector,
+                defaultRate: `${((predictionData.ensemble_probability || predictionData.probability || 0) * 100).toFixed(2)}%`,
+                riskCategory: predictionData.risk_level || 'MEDIUM'
+              },
+              predictions: [predictionData]
+            }
 
-          // Complete the processing - no step 5, just finish
-          setTimeout(() => {
-            setAnalysisResults(formattedResults)
-            setShowResults(true)
+            setTimeout(() => {
+              setAnalysisResults(formattedResults)
+              setShowResults(true)
+              setIsProcessing(false)
+              setProcessingStep(0)
+              // Clear edit mode after successful update
+              setEditMode({ isEditing: false, predictionId: null })
+            }, 500)
+            toast.success('Annual prediction updated successfully!')
+          },
+          onError: (error: any) => {
             setIsProcessing(false)
             setProcessingStep(0)
-          }, 500)
-          toast.success('Annual analysis completed successfully!')
-        },
-        onError: (error: any) => {
-          setIsProcessing(false)
-          setProcessingStep(0)
-          // Extract error message from API response
-          const errorMessage = error?.response?.data?.detail || error?.message || 'Analysis failed. Please try again.'
-          toast.error(errorMessage)
-        }
-      })
+            const rawErrorMessage = error?.response?.data?.detail || error?.message || 'Update failed. Please try again.'
+            const formattedErrorMessage = formatErrorMessage(rawErrorMessage)
+            setErrorMessage(formattedErrorMessage)
+            toast.error(formattedErrorMessage)
+          }
+        })
+      } else {
+        // Create new prediction
+        createAnnualPredictionMutation.mutate(requestData, {
+          onSuccess: (results) => {
+            // Format the API response for CompanyAnalysisPanel
+            // API returns: { prediction: { ... } }
+            const predictionData = results.response?.data?.prediction || results.response?.data
+            const formattedResults = {
+              company: {
+                id: predictionData.company_symbol || formData.stockSymbol,
+                name: predictionData.company_symbol || formData.stockSymbol,
+                subtitle: predictionData.company_name || formData.companyName,
+                sector: predictionData.sector || formData.sector,
+                defaultRate: `${((predictionData.ensemble_probability || predictionData.probability || 0) * 100).toFixed(2)}%`,
+                riskCategory: predictionData.risk_level || 'MEDIUM'
+              },
+              predictions: [predictionData] // Wrap single result in array
+            }
+
+            // Complete the processing - no step 5, just finish
+            setTimeout(() => {
+              setAnalysisResults(formattedResults)
+              setShowResults(true)
+              setIsProcessing(false)
+              setProcessingStep(0)
+            }, 500)
+            toast.success('Annual analysis completed successfully!')
+          },
+          onError: (error: any) => {
+            setIsProcessing(false)
+            setProcessingStep(0)
+            // Extract error message from API response
+            const rawErrorMessage = error?.response?.data?.detail || error?.message || 'Analysis failed. Please try again.'
+
+            // Format user-friendly error messages
+            const formattedErrorMessage = formatErrorMessage(rawErrorMessage)
+            setErrorMessage(formattedErrorMessage)
+            toast.error(formattedErrorMessage)
+          }
+        })
+      }
     } else {
       const requestData: QuarterlyPredictionRequest = {
         company_symbol: formData.stockSymbol,
@@ -188,40 +304,107 @@ export function CustomAnalysisView() {
         return_on_capital: parseFloat(formData.returnOnCapital) || 0,
       }
 
-      createQuarterlyPredictionMutation.mutate(requestData, {
-        onSuccess: (results) => {
-          // Format the API response for CompanyAnalysisPanel
-          // API returns: { prediction: { ... } }
-          const predictionData = results.response?.data?.prediction || results.response?.data
-          const formattedResults = {
-            company: {
-              id: predictionData.company_symbol || formData.stockSymbol,
-              name: predictionData.company_symbol || formData.stockSymbol,
-              subtitle: predictionData.company_name || formData.companyName,
-              sector: predictionData.sector || formData.sector,
-              defaultRate: `${((predictionData.ensemble_probability || predictionData.probability || 0) * 100).toFixed(2)}%`,
-              riskCategory: predictionData.risk_level || 'MEDIUM'
-            },
-            predictions: [predictionData] // Wrap single result in array
-          }
+      if (editMode.isEditing && editMode.predictionId) {
+        // Update existing quarterly prediction with enhanced response
+        updatePredictionMutation.mutate({
+          id: editMode.predictionId,
+          data: requestData,
+          type: 'quarterly',
+          includeInputData: true // Request enhanced response with input/output data
+        }, {
+          onSuccess: (results) => {
+            const predictionData = results.data?.prediction || results.data || results
 
-          // Complete the processing - no step 5, just finish
-          setTimeout(() => {
-            setAnalysisResults(formattedResults)
-            setShowResults(true)
+            // Log the enhanced response
+            console.log('✅ Enhanced Quarterly Prediction Update Response:', {
+              basicInfo: {
+                id: predictionData.id,
+                symbol: predictionData.company_symbol,
+                updated: predictionData.updated_at
+              },
+              inputData: predictionData.input_data,
+              outputData: predictionData.output_data
+            })
+
+            // Format the API response for CompanyAnalysisPanel
+            const formattedResults = {
+              company: {
+                id: predictionData.company_symbol || formData.stockSymbol,
+                name: predictionData.company_symbol || formData.stockSymbol,
+                subtitle: predictionData.company_name || formData.companyName,
+                sector: predictionData.input_data?.sector || predictionData.sector || formData.sector,
+                defaultRate: `${((predictionData.output_data?.ensemble_probability || predictionData.ensemble_probability || predictionData.probability || 0) * 100).toFixed(2)}%`,
+                riskCategory: predictionData.output_data?.risk_level || predictionData.risk_level || 'MEDIUM'
+              },
+              predictions: [predictionData], // Wrap single result in array
+              // Include enhanced data for debugging/logging
+              enhancedData: {
+                inputRatios: predictionData.input_data?.financial_ratios,
+                outputMetrics: predictionData.output_data,
+                isEnhanced: !!predictionData.input_data
+              }
+            }
+
+            setTimeout(() => {
+              setAnalysisResults(formattedResults)
+              setShowResults(true)
+              setIsProcessing(false)
+              setProcessingStep(0)
+              // Clear edit mode after successful update
+              setEditMode({ isEditing: false, predictionId: null })
+            }, 500)
+            toast.success('Quarterly prediction updated with complete input/output data! 🎉')
+          },
+          onError: (error: any) => {
             setIsProcessing(false)
             setProcessingStep(0)
-          }, 500)
-          toast.success('Quarterly analysis completed successfully!')
-        },
-        onError: (error: any) => {
-          setIsProcessing(false)
-          setProcessingStep(0)
-          // Extract error message from API response
-          const errorMessage = error?.response?.data?.detail || error?.message || 'Analysis failed. Please try again.'
-          toast.error(errorMessage)
-        }
-      })
+            const rawErrorMessage = error?.response?.data?.detail || error?.message || 'Update failed. Please try again.'
+            const formattedErrorMessage = formatErrorMessage(rawErrorMessage)
+            setErrorMessage(formattedErrorMessage)
+            toast.error(formattedErrorMessage)
+          }
+        })
+      } else {
+        // Create new quarterly prediction
+        createQuarterlyPredictionMutation.mutate(requestData, {
+          onSuccess: (results) => {
+            // Format the API response for CompanyAnalysisPanel
+            // API returns: { prediction: { ... } }
+            const predictionData = results.response?.data?.prediction || results.response?.data
+            const formattedResults = {
+              company: {
+                id: predictionData.company_symbol || formData.stockSymbol,
+                name: predictionData.company_symbol || formData.stockSymbol,
+                subtitle: predictionData.company_name || formData.companyName,
+                sector: predictionData.sector || formData.sector,
+                defaultRate: `${((predictionData.ensemble_probability || predictionData.probability || 0) * 100).toFixed(2)}%`,
+                riskCategory: predictionData.risk_level || 'MEDIUM'
+              },
+              predictions: [predictionData] // Wrap single result in array
+            }
+
+            // Complete the processing - no step 5, just finish
+            setTimeout(() => {
+              setAnalysisResults(formattedResults)
+              setShowResults(true)
+              setIsProcessing(false)
+              setProcessingStep(0)
+            }, 500)
+            toast.success('Quarterly analysis completed successfully!')
+          },
+          onError: (error: any) => {
+            setIsProcessing(false)
+            setProcessingStep(0)
+            // Extract error message from API response
+            const rawErrorMessage = error?.response?.data?.detail || error?.message || 'Analysis failed. Please try again.'
+
+            // Format user-friendly error messages
+            const formattedErrorMessage = formatErrorMessage(rawErrorMessage)
+            setErrorMessage(formattedErrorMessage)
+            toast.error(formattedErrorMessage)
+          }
+        })
+      }
     }
   }
 
@@ -384,6 +567,7 @@ export function CustomAnalysisView() {
     Object.entries(sampleData).forEach(([key, value]) => {
       setFormData(prev => ({ ...prev, [key]: value }))
     })
+    setErrorMessage('') // Clear any previous error
     toast.success('Sample data loaded!')
   }
 
@@ -459,6 +643,8 @@ export function CustomAnalysisView() {
     setAnalysisResults(null)
     setProcessingStep(0)
     setIsProcessing(false)
+    setErrorMessage('') // Clear any previous error
+    setEditMode({ isEditing: false, predictionId: null }) // Clear edit mode
     toast.success('Form reset!')
   }
 
@@ -469,6 +655,7 @@ export function CustomAnalysisView() {
     setAnalysisResults(null)
     setProcessingStep(0)
     setIsProcessing(false)
+    setErrorMessage('') // Clear any previous error
   }
 
   // Processing simulation
@@ -488,7 +675,7 @@ export function CustomAnalysisView() {
     setProcessingStep(4)
   }
 
-  const isAnalysisLoading = createAnnualPredictionMutation.isPending || createQuarterlyPredictionMutation.isPending
+  const isAnalysisLoading = createAnnualPredictionMutation.isPending || createQuarterlyPredictionMutation.isPending || updatePredictionMutation.isPending
 
   return (
     <div className="space-y-6">
@@ -529,6 +716,8 @@ export function CustomAnalysisView() {
               onReset={handleReset}
               onPredictionTypeChange={handlePredictionTypeChange}
               isLoading={isAnalysisLoading}
+              errorMessage={errorMessage}
+              editMode={editMode}
             />
 
             {/* Analysis Results */}
