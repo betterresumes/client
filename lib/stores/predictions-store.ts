@@ -2,6 +2,8 @@
 
 import { create } from 'zustand'
 import { predictionsApi } from '@/lib/api/predictions'
+import { organizationsApi } from '@/lib/api/organizations'
+import { useAuthStore } from '@/lib/stores/auth-store'
 
 interface Prediction {
   // Core identification
@@ -147,6 +149,38 @@ export const usePredictionsStore = create<PredictionsState>((set, get) => {
       set({ isLoading: true, error: null, isFetching: true })
 
       try {
+        // Get current user from auth store
+        const authStore = useAuthStore.getState()
+        const user = authStore.user
+
+        if (!user) {
+          set({
+            isLoading: false,
+            error: 'User not authenticated',
+            isFetching: false
+          })
+          return
+        }
+
+        // For tenant admins, get their organizations first to filter predictions
+        let tenantOrganizations: any[] = []
+        if (user.role === 'tenant_admin' && user.tenant_id) {
+          try {
+            console.log('🏢 Fetching organizations for tenant admin:', user.tenant_id)
+            const orgResponse = await organizationsApi.list({
+              tenant_id: user.tenant_id,
+              page: 1,
+              limit: 1000
+            })
+            if (orgResponse.success) {
+              tenantOrganizations = orgResponse.data?.organizations || []
+              console.log('🏢 Found tenant organizations:', tenantOrganizations.length)
+            }
+          } catch (error) {
+            console.warn('⚠️ Failed to fetch tenant organizations:', error)
+          }
+        }
+
         const [annualResponse, quarterlyResponse] = await Promise.all([
           predictionsApi.annual.getAnnualPredictions({ page: 1, size: 100 }),
           predictionsApi.quarterly.getQuarterlyPredictions({ page: 1, size: 100 })
@@ -161,7 +195,7 @@ export const usePredictionsStore = create<PredictionsState>((set, get) => {
         console.log('Raw quarterly predictions data:', quarterlyData)
 
         // Transform annual predictions
-        const annualPredictions = Array.isArray(annualData) ? annualData.map((pred: any) => {
+        let annualPredictions = Array.isArray(annualData) ? annualData.map((pred: any) => {
           console.log('Transforming annual prediction:', pred)
           return {
             ...pred,
@@ -181,7 +215,7 @@ export const usePredictionsStore = create<PredictionsState>((set, get) => {
         }) : []
 
         // Transform quarterly predictions  
-        const quarterlyPredictions = Array.isArray(quarterlyData) ? quarterlyData.map((pred: any) => {
+        let quarterlyPredictions = Array.isArray(quarterlyData) ? quarterlyData.map((pred: any) => {
           console.log('Transforming quarterly prediction:', pred)
           return {
             ...pred,
@@ -201,6 +235,53 @@ export const usePredictionsStore = create<PredictionsState>((set, get) => {
             }
           }
         }) : []
+
+        // Filter predictions based on user role - but ALWAYS include system data
+        if (user.role === 'tenant_admin' && tenantOrganizations.length > 0) {
+          const orgIds = tenantOrganizations.map(org => org.id)
+          console.log('🔍 Filtering predictions for tenant admin organizations:', orgIds)
+
+          annualPredictions = annualPredictions.filter(p =>
+            // Always include system data
+            p.organization_access === 'system' ||
+            // Include tenant's data
+            p.tenant_id === user.tenant_id ||
+            // Include organization data for tenant's organizations
+            (p.organization_id && orgIds.includes(p.organization_id))
+          )
+
+          quarterlyPredictions = quarterlyPredictions.filter(p =>
+            // Always include system data
+            p.organization_access === 'system' ||
+            // Include tenant's data
+            p.tenant_id === user.tenant_id ||
+            // Include organization data for tenant's organizations
+            (p.organization_id && orgIds.includes(p.organization_id))
+          )
+
+          console.log('🔍 Filtered to tenant predictions (including system):', {
+            annual: annualPredictions.length,
+            quarterly: quarterlyPredictions.length
+          })
+        } else if (user.role === 'org_admin' || user.role === 'org_member') {
+          // Filter by organization for org-level users - but keep system data
+          if (user.organization_id) {
+            annualPredictions = annualPredictions.filter(p =>
+              // Always include system data
+              p.organization_access === 'system' ||
+              // Include organization data
+              p.organization_id === user.organization_id
+            )
+            quarterlyPredictions = quarterlyPredictions.filter(p =>
+              // Always include system data
+              p.organization_access === 'system' ||
+              // Include organization data
+              p.organization_id === user.organization_id
+            )
+            console.log('🔍 Filtered to organization predictions (including system):', user.organization_id)
+          }
+        }
+        // Super admin sees all predictions (no filtering)
 
         console.log("quarterly prediction", quarterlyPredictions)
         console.log("annual predictions after transformation:", annualPredictions)
@@ -284,6 +365,13 @@ export const usePredictionsStore = create<PredictionsState>((set, get) => {
         })
       }
       console.log(`✅ Added ${type} prediction instantly to store`)
+
+      // IMMEDIATE: Trigger custom events for instant UI updates
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('prediction-added-optimistic', {
+          detail: { type, prediction }
+        }))
+      }
     },
 
     replacePrediction: (prediction: Prediction, type: 'annual' | 'quarterly', tempId: string) => {
@@ -306,6 +394,13 @@ export const usePredictionsStore = create<PredictionsState>((set, get) => {
         })
       }
       console.log(`🔄 Replaced temporary ${type} prediction with real data`)
+
+      // IMMEDIATE: Trigger custom events for instant UI updates
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('prediction-replaced-real', {
+          detail: { type, prediction }
+        }))
+      }
     },
 
     removePrediction: (predictionId: string, type: 'annual' | 'quarterly') => {
@@ -370,6 +465,11 @@ export const usePredictionsStore = create<PredictionsState>((set, get) => {
       set({ activeDataFilter: filter })
       console.log(`🔍 Data filter changed from ${previousFilter} to: ${filter}`)
 
+      // Dispatch event to notify all dashboard components about filter change
+      window.dispatchEvent(new CustomEvent('data-filter-changed', {
+        detail: { previousFilter, newFilter: filter }
+      }))
+
       // Don't refresh on filter change - we have all data cached
       // Just filter client-side for better performance
     },
@@ -382,21 +482,17 @@ export const usePredictionsStore = create<PredictionsState>((set, get) => {
       console.log(`Total ${type} predictions:`, predictions.length)
       console.log(`Access levels in data:`, predictions.map(p => p.organization_access))
 
-      // Filter based on activeDataFilter - always include system data + selected filter
+      // Filter based on activeDataFilter
       let filtered
       switch (state.activeDataFilter) {
         case 'personal':
-          // Personal + System data
-          filtered = predictions.filter(p =>
-            p.organization_access === 'personal' || p.organization_access === 'system'
-          )
+          // Only personal data (no system data mixed in)
+          filtered = predictions.filter(p => p.organization_access === 'personal')
           break
 
         case 'organization':
-          // Organization + System data
-          filtered = predictions.filter(p =>
-            p.organization_access === 'organization' || p.organization_access === 'system'
-          )
+          // Only organization data (no system data mixed in)
+          filtered = predictions.filter(p => p.organization_access === 'organization')
           break
 
         case 'system':
@@ -429,28 +525,28 @@ export const usePredictionsStore = create<PredictionsState>((set, get) => {
 
       console.log('🔍 Getting default filter for user role:', user.role)
 
-      // User role: start with personal data (personal + system)
+      // Normal user: start with system data (most users don't have personal data initially)
       if (user.role === 'user') {
-        return 'personal'
+        return 'system'
       }
 
-      // Super admin: start with all data
+      // Super admin: start with system data to see platform overview
       if (user.role === 'super_admin') {
-        return 'all'
+        return 'system'
       }
 
-      // Tenant admin: start with personal data (personal + system)
+      // Tenant admin: start with system data to see platform overview
       if (user.role === 'tenant_admin') {
-        return 'personal'
+        return 'system'
       }
 
-      // Org admin/members: start with organization data (organization + system)
+      // Org admin/members: start with system data to see platform overview
       if (user.role === 'org_admin' || user.role === 'org_member') {
-        return 'organization'
+        return 'system'
       }
 
-      console.log('🔍 Default filter fallback: personal')
-      return 'personal'
+      console.log('🔍 Default filter fallback: system')
+      return 'system'
     }
   }
 })

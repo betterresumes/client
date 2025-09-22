@@ -63,82 +63,26 @@ export interface UserResponse {
   is_active: boolean
   created_at: string  // format: date-time
   last_login?: string  // format: date-time
-  access_level?: string
-  permissions?: string[]
-
-  // Nested organization data
+  // Optional nested objects (available in /users/me endpoint)
   organization?: {
     id: string
     name: string
     slug: string
     domain: string
-    description?: string
+    description: string
     is_active: boolean
-    allow_global_data_access?: boolean
-    join_enabled?: boolean
-    default_role?: string
-    max_users?: number
-    current_users?: number
+    join_enabled: boolean
+    default_role: string
+    max_users: number
+    current_users: number
     created_at: string
     join_token?: string
   }
-
-  // Nested tenant data
   tenant?: {
     id: string
     name: string
-    slug?: string
     domain: string
-    description?: string
-    is_active?: boolean
-    created_at?: string
-    total_organizations?: number
-    total_users?: number
   }
-
-  // For super admin - list of tenants
-  tenants?: Array<{
-    id: string
-    name: string
-    slug: string
-    domain: string
-    description?: string
-    is_active: boolean
-    organizations?: Array<{
-      id: string
-      name: string
-      slug: string
-      domain: string
-      is_active: boolean
-      member_count: number
-    }>
-  }>
-
-  // For tenant admin - list of organizations
-  organizations?: Array<{
-    id: string
-    name: string
-    slug: string
-    domain: string
-    is_active: boolean
-    allow_global_data_access: boolean
-    member_count: number
-    admin_email: string
-  }>
-
-  // For org admin - list of organization members
-  organization_members?: Array<{
-    id: string
-    email: string
-    full_name: string
-    role: string
-    is_active: boolean
-    joined_at: string
-  }>
-
-  // Counts for super admin
-  total_tenants?: number
-  total_organizations?: number
 }
 
 export type UserProfile = UserResponse

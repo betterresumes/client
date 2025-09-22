@@ -41,6 +41,7 @@ interface IndividualAnalysisFormProps {
   isLoading: boolean
   errorMessage?: string
   editMode?: { isEditing: boolean; predictionId: string | null }
+  isSubmitting?: boolean
 }
 
 export function IndividualAnalysisForm({
@@ -53,7 +54,8 @@ export function IndividualAnalysisForm({
   onPredictionTypeChange,
   isLoading,
   errorMessage,
-  editMode
+  editMode,
+  isSubmitting = false
 }: IndividualAnalysisFormProps) {
   const isFormValid = () => {
     const requiredFields = ['stockSymbol', 'companyName', 'sector', 'marketCap']
@@ -337,9 +339,9 @@ export function IndividualAnalysisForm({
               ? 'bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400'
               : 'bg-green-600 hover:bg-green-700 disabled:bg-green-400'
               }`}
-            disabled={isLoading || !isFormValid()}
+            disabled={isLoading || isSubmitting || !isFormValid()}
           >
-            {isLoading ? (
+            {(isLoading || isSubmitting) ? (
               <>
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                 {editMode?.isEditing

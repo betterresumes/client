@@ -64,8 +64,31 @@ export function useCreatePredictionMutations() {
 
       // Replace optimistic prediction with real data (no duplicate!)
       replacePrediction(realPrediction as any, 'annual', tempId)
+
+      // IMMEDIATE: Force store to refresh its cached data
+      const store = usePredictionsStore.getState()
+      store.lastFetched = Date.now()
+
+      // Force trigger any components using filtered predictions
+      console.log('🎯 Annual prediction created - dashboard should update automatically')
+
+      // Invalidate React Query cache as well
       queryClient.invalidateQueries({ queryKey: predictionKeys.annual() })
-      toast.success('Annual prediction created successfully! 🎉')
+      queryClient.invalidateQueries({ queryKey: predictionKeys.all })
+
+      // Trigger custom event to notify dashboard IMMEDIATELY
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('prediction-created', {
+          detail: { type: 'annual', prediction: realPrediction }
+        }))
+        // Also trigger predictions-updated event for store listeners
+        window.dispatchEvent(new CustomEvent('predictions-updated'))
+      }
+
+      toast.success('Annual prediction created successfully! 🎉', {
+        description: 'Check the Dashboard tab to view your new prediction.',
+        duration: 4000
+      })
 
       return {
         company: prediction.company_name,
@@ -139,8 +162,31 @@ export function useCreatePredictionMutations() {
 
       // Replace optimistic prediction with real data (no duplicate!)
       replacePrediction(realPrediction as any, 'quarterly', tempId)
+
+      // IMMEDIATE: Force store to refresh its cached data
+      const store = usePredictionsStore.getState()
+      store.lastFetched = Date.now()
+
+      // Force trigger any components using filtered predictions
+      console.log('🎯 Quarterly prediction created - dashboard should update automatically')
+
+      // Invalidate React Query cache as well
       queryClient.invalidateQueries({ queryKey: predictionKeys.quarterly() })
-      toast.success('Quarterly prediction created successfully! 🎉')
+      queryClient.invalidateQueries({ queryKey: predictionKeys.all })
+
+      // Trigger custom event to notify dashboard IMMEDIATELY
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('prediction-created', {
+          detail: { type: 'quarterly', prediction: realPrediction }
+        }))
+        // Also trigger predictions-updated event for store listeners
+        window.dispatchEvent(new CustomEvent('predictions-updated'))
+      }
+
+      toast.success('Quarterly prediction created successfully! 🎉', {
+        description: 'Check the Dashboard tab to view your new prediction.',
+        duration: 4000
+      })
 
       return {
         company: prediction.company_name,

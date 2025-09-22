@@ -1,7 +1,8 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { useAuthStore } from '@/lib/stores/auth-store'
+import { useDashboardStatsStore } from '@/lib/stores/dashboard-stats-store'
 import { usePredictionsStore } from '@/lib/stores/predictions-store'
 import { Card } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -38,17 +39,30 @@ import {
 
 export function DashboardOverview() {
   const { user, isAuthenticated } = useAuthStore()
+
+  // Dashboard Stats API (for summary statistics)
+  const {
+    stats: dashboardStats,
+    isLoading: isStatsLoading,
+    error: statsError,
+    fetchStats,
+    clearError: clearStatsError
+  } = useDashboardStatsStore()
+
+  // Predictions Store (for table data with pagination)
   const {
     annualPredictions,
     quarterlyPredictions,
-    isLoading,
-    error,
+    isLoading: isPredictionsLoading,
+    error: predictionsError,
     fetchPredictions,
     refetchPredictions,
     getPredictionProbability,
     getRiskBadgeColor,
     formatPredictionDate,
-    getFilteredPredictions
+    getFilteredPredictions,
+    lastFetched,
+    activeDataFilter
   } = usePredictionsStore()
 
   const [searchTerm, setSearchTerm] = useState('')
@@ -57,17 +71,118 @@ export function DashboardOverview() {
   const [currentPage, setCurrentPage] = useState(1)
   const [activeAnalysisType, setActiveAnalysisType] = useState('annual')
   const [isClient, setIsClient] = useState(false)
+  const [forceRefresh, setForceRefresh] = useState(0) // Force component refresh counter
 
   useEffect(() => {
     setIsClient(true)
   }, [])
 
-  // Fetch predictions when client-side and authenticated, but only once
+  // Listen for prediction creation events to force dashboard refresh
+  useEffect(() => {
+    const handlePredictionCreated = (event: CustomEvent) => {
+      console.log('🆕 Prediction created event received:', event.detail)
+
+      // IMMEDIATE: Force component to re-evaluate filtered predictions
+      setForceRefresh(prev => prev + 1)
+
+      // IMMEDIATE: Force store to recalculate (trigger all subscribers)
+      const store = usePredictionsStore.getState()
+      store.lastFetched = Date.now()
+
+      // IMMEDIATE: Force a complete re-render by updating multiple state values
+      setCurrentPage(1) // Reset pagination
+
+      // IMMEDIATE: Invalidate dashboard stats cache to get fresh summary data
+      const statsStore = useDashboardStatsStore.getState()
+      statsStore.invalidateCache()
+
+      console.log('🚀 Dashboard forced to refresh immediately after prediction creation')
+    }
+
+    const handlePredictionsUpdated = () => {
+      console.log('🔄 Predictions updated event received')
+      setForceRefresh(prev => prev + 1)
+
+      // Also refresh dashboard stats
+      const statsStore = useDashboardStatsStore.getState()
+      statsStore.invalidateCache()
+    }
+
+    const handleNavigateToDashboard = () => {
+      console.log('🚀 Navigate to dashboard event - forcing immediate refresh')
+      setForceRefresh(prev => prev + 1)
+      // Also force pagination reset and filters
+      setCurrentPage(1)
+      setSearchTerm('')
+      setSelectedSector('all')
+      setSelectedRiskLevel('all')
+
+      // Refresh dashboard stats
+      const statsStore = useDashboardStatsStore.getState()
+      statsStore.fetchStats(true)
+    }
+
+    const handleStayHereRefresh = () => {
+      console.log('🔄 Prediction created - refreshing dashboard data (user stays on current tab)')
+      setForceRefresh(prev => prev + 1)
+
+      // Refresh dashboard stats
+      const statsStore = useDashboardStatsStore.getState()
+      statsStore.invalidateCache()
+    }
+
+    const handleOptimisticAdd = (event: CustomEvent) => {
+      console.log('⚡ Optimistic prediction added:', event.detail)
+      setForceRefresh(prev => prev + 1)
+    }
+
+    const handleRealReplace = (event: CustomEvent) => {
+      console.log('✅ Real prediction replaced:', event.detail)
+      setForceRefresh(prev => prev + 1)
+
+      // Refresh dashboard stats since we now have real data
+      const statsStore = useDashboardStatsStore.getState()
+      statsStore.invalidateCache()
+    }
+
+    const handleDataFilterChanged = (event: CustomEvent) => {
+      console.log('🔄 Data filter changed - refreshing dashboard:', event.detail)
+      setForceRefresh(prev => prev + 1)
+      // Reset pagination to first page when filter changes
+      setCurrentPage(1)
+      // Note: Dashboard stats are role-based, not filter-based, so no need to refresh stats
+    }
+
+    if (typeof window !== 'undefined') {
+      window.addEventListener('prediction-created', handlePredictionCreated as EventListener)
+      window.addEventListener('predictions-updated', handlePredictionsUpdated as EventListener)
+      window.addEventListener('prediction-created-navigate-dashboard', handleNavigateToDashboard as EventListener)
+      window.addEventListener('prediction-created-stay-here', handleStayHereRefresh as EventListener)
+      window.addEventListener('prediction-added-optimistic', handleOptimisticAdd as EventListener)
+      window.addEventListener('prediction-replaced-real', handleRealReplace as EventListener)
+      window.addEventListener('data-filter-changed', handleDataFilterChanged as EventListener)
+      return () => {
+        window.removeEventListener('prediction-created', handlePredictionCreated as EventListener)
+        window.removeEventListener('predictions-updated', handlePredictionsUpdated as EventListener)
+        window.removeEventListener('prediction-created-navigate-dashboard', handleNavigateToDashboard as EventListener)
+        window.removeEventListener('prediction-created-stay-here', handleStayHereRefresh as EventListener)
+        window.removeEventListener('prediction-added-optimistic', handleOptimisticAdd as EventListener)
+        window.removeEventListener('prediction-replaced-real', handleRealReplace as EventListener)
+        window.removeEventListener('data-filter-changed', handleDataFilterChanged as EventListener)
+      }
+    }
+  }, [])
+
+  // Fetch dashboard stats and predictions when client-side and authenticated
   useEffect(() => {
     if (isClient && isAuthenticated && user) {
-      console.log('� Dashboard mounted - using existing predictions or fetching if needed')
-      // Only fetch if we don't have any data
-      if (annualPredictions.length === 0 && quarterlyPredictions.length === 0 && !isLoading) {
+      console.log('📊 Dashboard mounted - fetching stats and predictions')
+
+      // Always fetch dashboard stats (cached for 5 minutes)
+      fetchStats()
+
+      // Only fetch predictions if we don't have any data for the table
+      if (annualPredictions.length === 0 && quarterlyPredictions.length === 0 && !isPredictionsLoading) {
         fetchPredictions()
       }
     }
@@ -116,53 +231,32 @@ export function DashboardOverview() {
     const dataCheckInterval = setInterval(checkDataAndRefetch, 30000)
 
     return () => clearInterval(dataCheckInterval)
-  }, [isAuthenticated, user, isLoading, fetchPredictions])
+  }, [isAuthenticated, user, isPredictionsLoading, fetchPredictions])
 
   // Ensure predictions are always arrays and get filtered data
   const safeAnnualPredictions = Array.isArray(annualPredictions) ? annualPredictions : []
   const safeQuarterlyPredictions = Array.isArray(quarterlyPredictions) ? quarterlyPredictions : []
 
-  // Get filtered predictions based on data access settings
-  const filteredAnnualPredictions = getFilteredPredictions('annual')
-  const filteredQuarterlyPredictions = getFilteredPredictions('quarterly')
+  // Get filtered predictions based on data access settings (include forceRefresh to trigger re-evaluation)
+  const filteredAnnualPredictions = useMemo(() => {
+    const filtered = getFilteredPredictions('annual')
+    console.log('🔄 Recalculating filtered annual predictions:', filtered.length, 'forceRefresh:', forceRefresh)
+    return filtered
+  }, [getFilteredPredictions, forceRefresh, annualPredictions, lastFetched])
+
+  const filteredQuarterlyPredictions = useMemo(() => {
+    const filtered = getFilteredPredictions('quarterly')
+    console.log('🔄 Recalculating filtered quarterly predictions:', filtered.length, 'forceRefresh:', forceRefresh)
+    return filtered
+  }, [getFilteredPredictions, forceRefresh, quarterlyPredictions, lastFetched])
+
+  // Debug logging to track prediction updates
+  console.log('📊 Dashboard render - Annual predictions:', filteredAnnualPredictions.length)
+  console.log('📊 Dashboard render - Quarterly predictions:', filteredQuarterlyPredictions.length)
+  console.log('📊 Dashboard render - Last fetched:', lastFetched)
+  console.log('📊 Dashboard render - Force refresh counter:', forceRefresh)
 
   console.log('Annual Predictions:', safeAnnualPredictions)
-
-  // Calculate dashboard summary stats from filtered data
-  const summaryStats = [
-    {
-      title: 'Total Companies',
-      value: filteredAnnualPredictions.length.toString(),
-      icon: Building2,
-      color: 'text-blue-600'
-    },
-    {
-      title: 'Total Predictions',
-      value: (filteredAnnualPredictions.length + filteredQuarterlyPredictions.length).toString(),
-      icon: BarChart3,
-      color: 'text-green-600'
-    },
-    {
-      title: 'Average Default Rate',
-      value: filteredAnnualPredictions.length > 0 ?
-        `${(filteredAnnualPredictions.reduce((acc: number, pred: any) => acc + getPredictionProbability(pred), 0) / filteredAnnualPredictions.length * 100).toFixed(2)}%` :
-        '0%',
-      icon: TrendingUp,
-      color: 'text-purple-600'
-    },
-    {
-      title: 'High Risk Companies',
-      value: filteredAnnualPredictions.filter((pred: any) => (pred.risk_level || pred.risk_category || '').toUpperCase() === 'HIGH').length.toString(),
-      icon: TrendingDown,
-      color: 'text-red-600'
-    },
-    {
-      title: 'Sectors Covered',
-      value: filteredAnnualPredictions.length > 0 ? new Set(filteredAnnualPredictions.map((pred: any) => pred.sector || 'Unknown')).size.toString() : '0',
-      icon: Activity,
-      color: 'text-indigo-600'
-    }
-  ]
 
   // Format company data for display
   const companyData = safeAnnualPredictions.map((pred: any, index: number) => ({
@@ -178,12 +272,15 @@ export function DashboardOverview() {
     riskColor: getRiskBadgeColor(pred.risk_level || pred.risk_category || 'unknown')
   }))
 
-  // Don't block the UI - let components handle their own skeleton loading
+  // Check if any data is loading
+  const isLoading = isStatsLoading || isPredictionsLoading
+  const error = statsError || predictionsError
 
-  return (
-    <div className="space-y-6 font-bricolage">
-      {/* S&P 500 Default Rate Analysis Header */}
-      <div className="flex items-start justify-between">
+  // Check if filtered data is empty (not loading)
+  if (!isLoading && filteredAnnualPredictions.length === 0 && filteredQuarterlyPredictions.length === 0) {
+    return (
+      <div className="space-y-6 font-bricolage">
+        {/* Header */}
         <div>
           <h1 className="text-3xl font-bold text-gray-900 dark:text-white">
             S&P 500 Default Rate Analysis
@@ -192,20 +289,52 @@ export function DashboardOverview() {
             ML-powered default rate predictions based on annual financial ratios
           </p>
         </div>
-        <div className="text-right">
-          <p className="text-sm text-gray-500 dark:text-gray-400">
-            Last Updated: {new Date().toLocaleDateString('en-US', {
-              month: 'short',
-              day: 'numeric',
-              year: 'numeric'
-            })}, {new Date().toLocaleTimeString('en-US', {
-              hour: '2-digit',
-              minute: '2-digit',
-              hour12: true
-            })}
-          </p>
-        </div>
+
+        {/* Empty state in Card */}
+        <Card className="border border-gray-200 dark:border-gray-700 shadow-sm">
+          <div className="text-center py-16 px-6">
+            <div className="mx-auto flex items-center justify-center h-16 w-16 rounded-full bg-gray-100 dark:bg-gray-800 mb-6">
+              <BarChart3 className="h-8 w-8 text-gray-400" />
+            </div>
+            <h3 className="text-xl font-semibold text-gray-900 dark:text-white mb-3">
+              No Data Available
+            </h3>
+            <p className="text-gray-600 dark:text-gray-400 mb-6 max-w-md mx-auto">
+              {error ? `Error: ${error}` : 'No prediction data is available for your current data source selection. Please check your permissions or try refreshing.'}
+            </p>
+            {error && (
+              <Button
+                onClick={() => {
+                  clearStatsError()
+                  fetchStats(true)
+                  refetchPredictions()
+                }}
+                className="mb-4"
+              >
+                <RefreshCw className="h-4 w-4 mr-2" />
+                Retry
+              </Button>
+            )}
+          </div>
+        </Card>
+
       </div>
+    )
+  }
+
+  return (
+    <div className="space-y-6 font-bricolage">
+      {/* S&P 500 Default Rate Analysis Header */}
+      <div>
+        <h1 className="text-3xl font-bold text-gray-900 dark:text-white">
+          S&P 500 Default Rate Analysis
+        </h1>
+        <p className="text-gray-600 dark:text-gray-400 mt-1">
+          ML-powered default rate predictions based on annual financial ratios
+        </p>
+      </div>
+
+
 
       {/* Summary Statistics */}
       <div className="space-y-4">
@@ -214,24 +343,155 @@ export function DashboardOverview() {
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-5 gap-6">
-          {summaryStats.map((stat, index) => (
-            <Card key={index} className="p-6 text-left">
-              <div className="space-y-2">
-                <p className="text-sm font-medium text-gray-600 dark:text-gray-400">
-                  {stat.title}
-                </p>
-                {isLoading ? (
-                  <Skeleton className="h-9 w-16" />
-                ) : (
-                  <p className="text-3xl font-bold text-gray-900 dark:text-white">
-                    {stat.value}
+          {(() => {
+            // Determine which stats to show based on active filter
+            const isShowingPlatform = activeDataFilter === 'system' || (dashboardStats?.platform_statistics && activeDataFilter === 'platform');
+            const statsToShow = isShowingPlatform ? dashboardStats?.platform_statistics : dashboardStats;
+
+            if (!statsToShow) return null;
+
+            const currentStats = [
+              {
+                title: isShowingPlatform ? 'Platform Companies' : 'Total Companies',
+                value: statsToShow.total_companies?.toString() || '0',
+                icon: Building2,
+                color: 'text-blue-600',
+                subtitle: isShowingPlatform ? 'Platform data' : (dashboardStats?.scope !== 'system' ? 'Your access' : 'System-wide')
+              },
+              {
+                title: isShowingPlatform ? 'Platform Predictions' : 'Total Predictions',
+                value: statsToShow.total_predictions?.toString() || '0',
+                icon: BarChart3,
+                color: 'text-green-600',
+                subtitle: isShowingPlatform ? 'Platform data' : (dashboardStats?.scope !== 'system' ? 'Your access' : 'System-wide')
+              },
+              {
+                title: isShowingPlatform ? 'Platform Avg Rate' : 'Average Default Rate',
+                value: statsToShow.average_default_rate
+                  ? `${(statsToShow.average_default_rate * 100).toFixed(2)}%`
+                  : '0%',
+                icon: TrendingUp,
+                color: 'text-purple-600',
+                subtitle: isShowingPlatform ? 'Platform data' : (dashboardStats?.scope !== 'system' ? 'Your data' : 'System-wide')
+              },
+              {
+                title: isShowingPlatform ? 'Platform High Risk' : 'High Risk Companies',
+                value: statsToShow.high_risk_companies?.toString() || '0',
+                icon: TrendingDown,
+                color: 'text-red-600',
+                subtitle: isShowingPlatform ? 'Platform data' : (dashboardStats?.scope !== 'system' ? 'Your access' : 'System-wide')
+              },
+              {
+                title: isShowingPlatform ? 'Platform Sectors' : 'Sectors Covered',
+                value: statsToShow.sectors_covered?.toString() || '0',
+                icon: Activity,
+                color: 'text-indigo-600',
+                subtitle: isShowingPlatform ? 'Platform data' : (dashboardStats?.scope !== 'system' ? 'Your access' : 'System-wide')
+              }
+            ];
+
+            return currentStats.map((stat, index) => (
+              <Card key={index} className="p-6 text-left">
+                <div className="space-y-2">
+                  <p className="text-sm font-medium text-gray-600 dark:text-gray-400">
+                    {stat.title}
                   </p>
-                )}
-              </div>
-            </Card>
-          ))}
+                  {isLoading ? (
+                    <Skeleton className="h-9 w-16" />
+                  ) : (
+                    <>
+                      <p className="text-3xl font-bold text-gray-900 dark:text-white">
+                        {stat.value}
+                      </p>
+                      {stat.subtitle && (
+                        <p className="text-xs text-gray-500 dark:text-gray-400">
+                          {stat.subtitle}
+                        </p>
+                      )}
+                    </>
+                  )}
+                </div>
+              </Card>
+            ));
+          })()}
         </div>
       </div>
+
+      {/* Organization Breakdown for Tenant Admins */}
+      {dashboardStats?.scope === 'tenant' && dashboardStats.organizations_breakdown && (
+        <div className="space-y-4">
+          <div className="flex items-center justify-between">
+            <h2 className="text-xl font-semibold text-gray-900 dark:text-white">
+              Organizations Breakdown
+            </h2>
+          </div>
+
+          <Card className="p-6">
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b">
+                    <th className="text-left py-3 px-4">Organization</th>
+                    <th className="text-right py-3 px-4">Companies</th>
+                    <th className="text-right py-3 px-4">Predictions</th>
+                    <th className="text-right py-3 px-4">Avg Default Rate</th>
+                    <th className="text-right py-3 px-4">High Risk</th>
+                    <th className="text-right py-3 px-4">Sectors</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {dashboardStats.organizations_breakdown.map((org, index) => (
+                    <tr key={index} className="border-b hover:bg-gray-50">
+                      <td className="py-3 px-4 font-medium">{org.org_name}</td>
+                      <td className="py-3 px-4 text-right">{org.companies.toLocaleString()}</td>
+                      <td className="py-3 px-4 text-right">{org.predictions.toLocaleString()}</td>
+                      <td className="py-3 px-4 text-right">{(org.avg_default_rate * 100).toFixed(2)}%</td>
+                      <td className={`py-3 px-4 text-right font-medium ${org.high_risk_companies > 0 ? 'text-red-600' : 'text-gray-600'
+                        }`}>
+                        {org.high_risk_companies.toLocaleString()}
+                      </td>
+                      <td className="py-3 px-4 text-right">{org.sectors_covered}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </Card>
+        </div>
+      )}
+
+      {/* Tenant Breakdown for Super Admins */}
+      {dashboardStats?.scope === 'system' && dashboardStats.tenants_breakdown && (
+        <div className="space-y-4">
+          <div className="flex items-center justify-between">
+            <h2 className="text-xl font-semibold text-gray-900 dark:text-white">
+              Tenants Overview
+            </h2>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {dashboardStats.tenants_breakdown.map((tenant, index) => (
+              <Card key={index} className="p-6">
+                <h3 className="font-semibold text-lg mb-3">{tenant.tenant_name}</h3>
+                <div className="space-y-2 text-sm">
+                  <div className="flex justify-between">
+                    <span className="text-gray-600">Companies:</span>
+                    <span className="font-medium">{tenant.companies.toLocaleString()}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-600">Predictions:</span>
+                    <span className="font-medium">{tenant.predictions.toLocaleString()}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-600">Organizations:</span>
+                    <span className="font-medium">{tenant.organizations_count}</span>
+                  </div>
+                </div>
+              </Card>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Company Analysis with Annual/Quarterly Tabs */}
       <div className="space-y-6">

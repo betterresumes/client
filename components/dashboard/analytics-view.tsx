@@ -21,8 +21,9 @@ import {
 } from "@/components/ui/chart"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
-import { TrendingUp, PieChart as PieChartIcon, BarChart3, ChartScatter } from 'lucide-react'
+import { TrendingUp, PieChart as PieChartIcon, BarChart3, ChartScatter, RefreshCw } from 'lucide-react'
 import { CompanyAnalysisTable } from './company-analysis-table'
 
 export function AnalyticsView() {
@@ -35,6 +36,8 @@ export function AnalyticsView() {
     getFilteredPredictions
   } = usePredictionsStore()
 
+  const [forceRefresh, setForceRefresh] = useState(0)
+
   const [activeTab, setActiveTab] = useState("annual")
 
   // Only fetch predictions if we don't have any data and user is authenticated
@@ -45,13 +48,28 @@ export function AnalyticsView() {
     }
   }, [isAuthenticated, user, annualPredictions.length, quarterlyPredictions.length, isLoading, fetchPredictions])
 
-  // Ensure predictions are arrays and get filtered data
-  const safePredictions = Array.isArray(annualPredictions) ? annualPredictions : []
-  const safeQuarterlyPredictions = Array.isArray(quarterlyPredictions) ? quarterlyPredictions : []
+  // Listen for data filter changes to refresh the view
+  useEffect(() => {
+    const handleDataFilterChanged = (event: CustomEvent) => {
+      console.log('📊 Analytics view - data filter changed, refreshing:', event.detail)
+      setForceRefresh(prev => prev + 1)
+    }
 
-  // Get filtered predictions based on data access settings
-  const filteredAnnualPredictions = getFilteredPredictions('annual')
-  const filteredQuarterlyPredictions = getFilteredPredictions('quarterly')
+    if (typeof window !== 'undefined') {
+      window.addEventListener('data-filter-changed', handleDataFilterChanged as EventListener)
+      return () => {
+        window.removeEventListener('data-filter-changed', handleDataFilterChanged as EventListener)
+      }
+    }
+  }, [])
+
+  // Ensure predictions are arrays and get filtered data (use forceRefresh to trigger re-evaluation)
+  const safePredictions = useMemo(() => Array.isArray(annualPredictions) ? annualPredictions : [], [annualPredictions, forceRefresh])
+  const safeQuarterlyPredictions = useMemo(() => Array.isArray(quarterlyPredictions) ? quarterlyPredictions : [], [quarterlyPredictions, forceRefresh])
+
+  // Get filtered predictions based on data access settings (trigger with forceRefresh)
+  const filteredAnnualPredictions = useMemo(() => getFilteredPredictions('annual'), [getFilteredPredictions, forceRefresh])
+  const filteredQuarterlyPredictions = useMemo(() => getFilteredPredictions('quarterly'), [getFilteredPredictions, forceRefresh])
 
   // Convert filtered predictions to match expected format
   const annualData = filteredAnnualPredictions.map((pred: any) => ({
@@ -290,9 +308,19 @@ export function AnalyticsView() {
 
     if (!sectorData.length && !riskDistributionData.length) {
       return (
-        <div className="flex items-center justify-center h-64 text-gray-500 font-bricolage">
-          No {dataType.toLowerCase()} data available for analytics
-        </div>
+        <Card className="border border-gray-200 dark:border-gray-700 shadow-sm">
+          <div className="text-center py-16 px-6">
+            <div className="mx-auto flex items-center justify-center h-16 w-16 rounded-full bg-gray-100 dark:bg-gray-800 mb-6">
+              <BarChart3 className="h-8 w-8 text-gray-400" />
+            </div>
+            <h3 className="text-xl font-semibold text-gray-900 dark:text-white mb-3">
+              No Data Available
+            </h3>
+            <p className="text-gray-600 dark:text-gray-400 mb-6 max-w-md mx-auto">
+              No prediction data is available for your current data source selection. Please check your permissions or try refreshing.
+            </p>
+          </div>
+        </Card>
       )
     }
 
@@ -606,18 +634,13 @@ export function AnalyticsView() {
   if (!annualAnalytics && !quarterlyAnalytics) {
     return (
       <div className="space-y-6 font-bricolage">
-        <div className="flex items-center justify-between">
-          <div>
-            <h2 className="text-2xl font-bricolage font-bold text-gray-900 dark:text-white">
-              Analytics Dashboard
-            </h2>
-            <p className="text-sm text-gray-600 dark:text-gray-400 mt-1 font-bricolage">
-              Deep dive into risk patterns and model performance metrics
-            </p>
-          </div>
-        </div>
-        <div className="text-center py-12">
-          <p className="text-gray-600 dark:text-gray-400 font-bricolage">No data available for analytics</p>
+        <div>
+          <h1 className="text-3xl font-bold text-gray-900 dark:text-white">
+            Analytics Dashboard
+          </h1>
+          <p className="text-gray-600 dark:text-gray-400 mt-1">
+            Deep dive into risk patterns and model performance metrics
+          </p>
         </div>
       </div>
     )

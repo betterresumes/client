@@ -13,6 +13,10 @@ export type * from './companies'
 export { predictionsApi } from './predictions'
 export type * from './predictions'
 
+// Dashboard API
+export { dashboardApi } from './dashboard'
+export type * from './dashboard'
+
 // Jobs API
 export { jobsApi } from './jobs'
 export type * from './jobs'

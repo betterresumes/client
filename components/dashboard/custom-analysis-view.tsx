@@ -67,6 +67,7 @@ export function CustomAnalysisView() {
   const [showResults, setShowResults] = useState(false)
   const [processingStep, setProcessingStep] = useState(0)
   const [isProcessing, setIsProcessing] = useState(false)
+  const [isSubmitting, setIsSubmitting] = useState(false)
   const [errorMessage, setErrorMessage] = useState<string>('')
   const [editMode, setEditMode] = useState<{ isEditing: boolean; predictionId: string | null }>({
     isEditing: false,
@@ -182,15 +183,17 @@ export function CustomAnalysisView() {
 
   // Handle form submission for individual analysis
   const handleAnalysis = async () => {
+    // Disable button immediately when clicked
+    setIsSubmitting(true)
+
     if (!formData.stockSymbol || !formData.companyName || !formData.sector || !formData.marketCap) {
       toast.error('Please fill in all required fields')
+      setIsSubmitting(false)
       return
     }
 
     // Clear any previous error message
-    setErrorMessage('')
-
-    // Start processing simulation
+    setErrorMessage('')    // Start processing simulation
     await simulateProcessing()
 
     if (predictionType === 'annual') {
@@ -234,6 +237,7 @@ export function CustomAnalysisView() {
               setAnalysisResults(formattedResults)
               setShowResults(true)
               setIsProcessing(false)
+              setIsSubmitting(false)
               setProcessingStep(0)
               // Clear edit mode after successful update
               setEditMode({ isEditing: false, predictionId: null })
@@ -242,6 +246,8 @@ export function CustomAnalysisView() {
           },
           onError: (error: any) => {
             setIsProcessing(false)
+            setIsSubmitting(false)
+            setIsSubmitting(false)
             setProcessingStep(0)
             const rawErrorMessage = error?.response?.data?.detail || error?.message || 'Update failed. Please try again.'
             const formattedErrorMessage = formatErrorMessage(rawErrorMessage)
@@ -273,12 +279,26 @@ export function CustomAnalysisView() {
               setAnalysisResults(formattedResults)
               setShowResults(true)
               setIsProcessing(false)
+              setIsSubmitting(false)
+              setIsSubmitting(false)
               setProcessingStep(0)
+
+              // IMMEDIATE: Trigger dashboard refresh events (but don't switch tabs)
+              console.log('🎯 Annual prediction created - dashboard will update automatically')
+
+              // Just trigger the refresh events, user can switch tabs when they want
+              window.dispatchEvent(new CustomEvent('prediction-created-stay-here'))
+
             }, 500)
-            toast.success('Annual analysis completed successfully!')
+            toast.success('Annual analysis completed successfully!', {
+              description: 'Your prediction has been added to the dashboard and is ready to view.',
+              duration: 4000
+            })
           },
           onError: (error: any) => {
             setIsProcessing(false)
+            setIsSubmitting(false)
+            setIsSubmitting(false)
             setProcessingStep(0)
             // Extract error message from API response
             const rawErrorMessage = error?.response?.data?.detail || error?.message || 'Analysis failed. Please try again.'
@@ -309,8 +329,7 @@ export function CustomAnalysisView() {
         updatePredictionMutation.mutate({
           id: editMode.predictionId,
           data: requestData,
-          type: 'quarterly',
-          includeInputData: true // Request enhanced response with input/output data
+          type: 'quarterly'
         }, {
           onSuccess: (results) => {
             const predictionData = results.data?.prediction || results.data || results
@@ -349,6 +368,8 @@ export function CustomAnalysisView() {
               setAnalysisResults(formattedResults)
               setShowResults(true)
               setIsProcessing(false)
+              setIsSubmitting(false)
+              setIsSubmitting(false)
               setProcessingStep(0)
               // Clear edit mode after successful update
               setEditMode({ isEditing: false, predictionId: null })
@@ -357,6 +378,8 @@ export function CustomAnalysisView() {
           },
           onError: (error: any) => {
             setIsProcessing(false)
+            setIsSubmitting(false)
+            setIsSubmitting(false)
             setProcessingStep(0)
             const rawErrorMessage = error?.response?.data?.detail || error?.message || 'Update failed. Please try again.'
             const formattedErrorMessage = formatErrorMessage(rawErrorMessage)
@@ -388,12 +411,24 @@ export function CustomAnalysisView() {
               setAnalysisResults(formattedResults)
               setShowResults(true)
               setIsProcessing(false)
+              setIsSubmitting(false)
               setProcessingStep(0)
+
+              // IMMEDIATE: Trigger dashboard refresh events (but don't switch tabs)
+              console.log('🎯 Quarterly prediction created - dashboard will update automatically')
+
+              // Just trigger the refresh events, user can switch tabs when they want
+              window.dispatchEvent(new CustomEvent('prediction-created-stay-here'))
+
             }, 500)
-            toast.success('Quarterly analysis completed successfully!')
+            toast.success('Quarterly analysis completed successfully!', {
+              description: 'Your prediction has been added to the dashboard and is ready to view.',
+              duration: 4000
+            })
           },
           onError: (error: any) => {
             setIsProcessing(false)
+            setIsSubmitting(false)
             setProcessingStep(0)
             // Extract error message from API response
             const rawErrorMessage = error?.response?.data?.detail || error?.message || 'Analysis failed. Please try again.'
@@ -643,6 +678,7 @@ export function CustomAnalysisView() {
     setAnalysisResults(null)
     setProcessingStep(0)
     setIsProcessing(false)
+    setIsSubmitting(false)
     setErrorMessage('') // Clear any previous error
     setEditMode({ isEditing: false, predictionId: null }) // Clear edit mode
     toast.success('Form reset!')
@@ -655,6 +691,7 @@ export function CustomAnalysisView() {
     setAnalysisResults(null)
     setProcessingStep(0)
     setIsProcessing(false)
+    setIsSubmitting(false)
     setErrorMessage('') // Clear any previous error
   }
 
@@ -718,6 +755,7 @@ export function CustomAnalysisView() {
               isLoading={isAnalysisLoading}
               errorMessage={errorMessage}
               editMode={editMode}
+              isSubmitting={isSubmitting}
             />
 
             {/* Analysis Results */}

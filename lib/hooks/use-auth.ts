@@ -20,7 +20,6 @@ export const authKeys = {
   profile: () => [...authKeys.all, 'profile'] as const,
   users: () => [...authKeys.all, 'users'] as const,
   user: (id: string) => [...authKeys.users(), id] as const,
-  detailedProfile: () => [...authKeys.all, 'detailed-profile'] as const,
 } as const
 
 /**
@@ -384,27 +383,5 @@ export function useAdminBulkActivateUsers() {
     onError: (error: Error) => {
       toast.error(error.message || 'Failed to bulk activate users')
     },
-  })
-}
-
-/**
- * Get detailed user information with role-based details
- * Returns enhanced user info based on user's role and permissions
- */
-export function useDetailedUserInfo() {
-  const { isAuthenticated } = useAuthStore()
-
-  return useQuery({
-    queryKey: authKeys.detailedProfile(),
-    queryFn: async () => {
-      const response = await authApi.getDetailedUserInfo()
-      if (!response.success) {
-        throw new Error(response.error?.message || 'Failed to fetch detailed user info')
-      }
-      return response.data
-    },
-    enabled: isAuthenticated,
-    staleTime: 5 * 60 * 1000, // 5 minutes
-    refetchOnWindowFocus: false,
   })
 }

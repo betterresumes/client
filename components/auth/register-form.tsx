@@ -62,6 +62,9 @@ export function RegisterForm() {
       })
 
       if (response.success) {
+        toast.success('Registration successful!', {
+          description: 'Your account has been created. Please log in to continue.',
+        })
 
         router.push('/login')
       } else {

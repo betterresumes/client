@@ -31,6 +31,8 @@ export function RiskInsightsView() {
     getFilteredPredictions
   } = usePredictionsStore()
 
+  const [forceRefresh, setForceRefresh] = useState(0)
+
   // Only fetch predictions if we don't have any data and user is authenticated
   useEffect(() => {
     if (isAuthenticated && user && annualPredictions.length === 0 && !isLoading) {
@@ -39,8 +41,23 @@ export function RiskInsightsView() {
     }
   }, [isAuthenticated, user, annualPredictions.length, isLoading, fetchPredictions])
 
-  // Ensure predictions are arrays - use filtered data
-  const filteredPredictions = getFilteredPredictions('annual')
+  // Listen for data filter changes to refresh the view
+  useEffect(() => {
+    const handleDataFilterChanged = (event: CustomEvent) => {
+      console.log('⚠️ Risk insights view - data filter changed, refreshing:', event.detail)
+      setForceRefresh(prev => prev + 1)
+    }
+
+    if (typeof window !== 'undefined') {
+      window.addEventListener('data-filter-changed', handleDataFilterChanged as EventListener)
+      return () => {
+        window.removeEventListener('data-filter-changed', handleDataFilterChanged as EventListener)
+      }
+    }
+  }, [])
+
+  // Ensure predictions are arrays - use filtered data (trigger with forceRefresh)
+  const filteredPredictions = useMemo(() => getFilteredPredictions('annual'), [getFilteredPredictions, forceRefresh])
   const safePredictions = Array.isArray(filteredPredictions) ? filteredPredictions : []
 
   console.log('🔍 Risk insights using filtered predictions:', safePredictions.length)
@@ -190,20 +207,30 @@ export function RiskInsightsView() {
 
   if (!riskInsights) {
     return (
-      <div className="space-y-6">
-        <div className="flex items-center justify-between">
-          <div>
-            <h2 className="text-2xl font-bricolage font-bold text-gray-900 dark:text-white">
-              Risk Insights
-            </h2>
-            <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
-              Deep dive into risk patterns and model performance metrics
+      <div className="space-y-6 font-bricolage">
+        <div>
+          <h1 className="text-3xl font-bold text-gray-900 dark:text-white">
+            Risk Insights
+          </h1>
+          <p className="text-gray-600 dark:text-gray-400 mt-1">
+            Deep dive into risk patterns and model performance metrics
+          </p>
+        </div>
+
+        {/* Empty state in Card */}
+        <Card className="border border-gray-200 dark:border-gray-700 shadow-sm">
+          <div className="text-center py-16 px-6">
+            <div className="mx-auto flex items-center justify-center h-16 w-16 rounded-full bg-gray-100 dark:bg-gray-800 mb-6">
+              <TrendingUp className="h-8 w-8 text-gray-400" />
+            </div>
+            <h3 className="text-xl font-semibold text-gray-900 dark:text-white mb-3">
+              No Risk Data Available
+            </h3>
+            <p className="text-gray-600 dark:text-gray-400 mb-6 max-w-md mx-auto">
+              No prediction data is available for risk analysis with your current data source selection. Risk insights will appear once data is available.
             </p>
           </div>
-        </div>
-        <div className="text-center py-12">
-          <p className="text-gray-600 dark:text-gray-400">No data available for risk insights</p>
-        </div>
+        </Card>
       </div>
     )
   }

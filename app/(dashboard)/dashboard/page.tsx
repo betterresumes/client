@@ -7,11 +7,10 @@ import { AnalyticsView } from '@/components/dashboard/analytics-view'
 import { CompanyDetailsView } from '@/components/dashboard/company-details-view'
 import { CustomAnalysisView } from '@/components/dashboard/custom-analysis-view'
 import { RiskInsightsView } from '@/components/dashboard/risk-insights-view'
-import { DataSourceTabs, RefreshButton, LastUpdatedInfo } from '@/components/dashboard/data-access-filter'
+import { DataSourceTabs, RefreshButton, LastUpdatedInfo, OrganizationSelector } from '@/components/dashboard/data-access-filter'
 import { useDashboardStore } from '@/lib/stores/dashboard-store'
 import { useAuthStore } from '@/lib/stores/auth-store'
 import { usePredictionsStore } from '@/lib/stores/predictions-store'
-import { Building, Building2 } from 'lucide-react'
 
 export default function DashboardPage() {
   const { activeTab, setActiveTab } = useDashboardStore()
@@ -82,7 +81,10 @@ export default function DashboardPage() {
         <LastUpdatedInfo />
       </div>
 
-      {/* Tab Contents */}
+      {/* Organization selector for tenant admin */}
+      <OrganizationSelector />
+
+      {/* Tab Contents - All tabs enabled */}
       <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
         <TabsContent value="dashboard" className="mt-6 animate-in fade-in-0 duration-300">
           <DashboardOverview />

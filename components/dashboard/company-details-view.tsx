@@ -16,7 +16,8 @@ import {
   BarChart3,
   Calendar,
   Activity,
-  Loader2
+  Loader2,
+  RefreshCw
 } from 'lucide-react'
 
 export function CompanyDetailsView() {
@@ -24,6 +25,7 @@ export function CompanyDetailsView() {
   const { isAuthenticated, user } = useAuthStore()
   const [currentPage, setCurrentPage] = useState(1)
   const [activeTab, setActiveTab] = useState<'annual' | 'quarterly'>('annual')
+  const [forceRefresh, setForceRefresh] = useState(0)
   const itemsPerPage = 5
 
   const {
@@ -49,9 +51,24 @@ export function CompanyDetailsView() {
     }
   }, [isAuthenticated, user, annualPredictions.length, quarterlyPredictions.length, isLoading, fetchPredictions])
 
-  // Ensure predictions are arrays - use filtered data
-  const filteredAnnualPredictions = getFilteredPredictions('annual')
-  const filteredQuarterlyPredictions = getFilteredPredictions('quarterly')
+  // Listen for data filter changes to refresh the view
+  useEffect(() => {
+    const handleDataFilterChanged = (event: CustomEvent) => {
+      console.log('🏢 Company details view - data filter changed, refreshing:', event.detail)
+      setForceRefresh(prev => prev + 1)
+    }
+
+    if (typeof window !== 'undefined') {
+      window.addEventListener('data-filter-changed', handleDataFilterChanged as EventListener)
+      return () => {
+        window.removeEventListener('data-filter-changed', handleDataFilterChanged as EventListener)
+      }
+    }
+  }, [])
+
+  // Ensure predictions are arrays - use filtered data (trigger with forceRefresh)
+  const filteredAnnualPredictions = useMemo(() => getFilteredPredictions('annual'), [getFilteredPredictions, forceRefresh])
+  const filteredQuarterlyPredictions = useMemo(() => getFilteredPredictions('quarterly'), [getFilteredPredictions, forceRefresh])
   const safePredictions = Array.isArray(filteredAnnualPredictions) ? filteredAnnualPredictions : []
   const safeQuarterlyPredictions = Array.isArray(filteredQuarterlyPredictions) ? filteredQuarterlyPredictions : []
 
@@ -197,6 +214,7 @@ export function CompanyDetailsView() {
     }
   }
 
+
   return (
     <div className="space-y-6 font-bricolage">
       {/* Company Details Header */}
@@ -209,29 +227,7 @@ export function CompanyDetailsView() {
             Detailed analysis and risk assessment for individual companies
           </p>
         </div>
-      </div>
 
-      {/* Company selection and browsing */}
-      <div className="space-y-4">
-        {/* Show current selection with option to browse freely */}
-        {selectedCompany && currentCompany && (
-          <div className="flex items-center gap-2">
-            <span className="text-sm text-gray-500 font-bricolage">Viewing:</span>
-            <Badge variant="outline" className="font-bricolage">
-              {currentCompany.name}
-            </Badge>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => setSelectedCompany(null)}
-              className="text-xs text-gray-500 hover:text-gray-700 font-bricolage"
-            >
-              Browse All Companies
-            </Button>
-          </div>
-        )}
-
-        {/* Tabs - Show when company is selected and has data */}
         {currentCompany && (hasAnnualData || hasQuarterlyData) && (
           <div className="flex items-center gap-2 bg-gray-100 rounded-lg p-1">
             {hasAnnualData && (
@@ -260,148 +256,62 @@ export function CompanyDetailsView() {
         )}
       </div>
 
-      {isLoading && companies.length === 0 ? (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 font-bricolage">
-          {/* Left Panel Skeleton */}
-          <div className="h-[600px]">
-            <Card className="p-4 h-full flex flex-col">
-              <div className="flex items-center justify-between mb-4">
-                <Skeleton className="h-6 w-32" />
-                <Skeleton className="h-4 w-4" />
-              </div>
+      {/* Company selection and browsing */}
 
-              {/* Company list skeleton */}
-              <div className="space-y-2 flex-1">
-                {Array.from({ length: 4 }).map((_, index) => (
-                  <div key={index} className="p-3 rounded-lg border border-gray-200 dark:border-gray-700">
-                    <div className="flex items-center justify-between">
-                      <div className="flex-1">
-                        <Skeleton className="h-4 w-20 mb-1" />
-                        <Skeleton className="h-3 w-32" />
-                      </div>
-                      <div className="text-right">
-                        <Skeleton className="h-4 w-12 mb-1" />
-                        <Skeleton className="h-5 w-16" />
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-
-              {/* Pagination skeleton */}
-              <div className="mt-auto pt-4 border-t border-gray-200 dark:border-gray-700 flex-shrink-0">
-                <div className="flex items-center justify-between">
-                  <Skeleton className="h-8 w-20" />
-                  <div className="flex items-center space-x-1">
-                    <Skeleton className="h-8 w-8" />
-                    <Skeleton className="h-8 w-8" />
-                    <Skeleton className="h-8 w-8" />
-                  </div>
-                  <Skeleton className="h-8 w-16" />
-                </div>
-                <div className="text-center mt-2">
-                  <Skeleton className="h-3 w-40 mx-auto" />
-                </div>
-              </div>
-            </Card>
+      {/* Show "No Data Available" if no companies exist */}
+      {!isLoading && companies.length === 0 && (
+        <Card className="border border-gray-200 dark:border-gray-700 shadow-sm">
+          <div className="text-center py-16 px-6">
+            <div className="mx-auto flex items-center justify-center h-16 w-16 rounded-full bg-gray-100 dark:bg-gray-800 mb-6">
+              <BarChart3 className="h-8 w-8 text-gray-400" />
+            </div>
+            <h3 className="text-xl font-semibold text-gray-900 dark:text-white mb-3">
+              No Data Available
+            </h3>
+            <p className="text-gray-600 dark:text-gray-400 mb-6 max-w-md mx-auto">
+              No prediction data is available for your current data source selection. Please check your permissions or try refreshing.
+            </p>
           </div>
+        </Card>
+      )}
 
-          {/* Right Panel Skeleton */}
-          <div className="lg:col-span-2 h-[600px]">
-            <Card className="p-6 font-bricolage h-full flex flex-col">
-              {/* Header skeleton */}
-              <div className="flex items-center justify-between mb-2 flex-shrink-0">
-                <div className="flex-1">
-                  <div className="flex items-center gap-2 mb-1">
-                    <Skeleton className="h-10 w-48" />
-                    <Skeleton className="h-6 w-20" />
-                  </div>
-                  <Skeleton className="h-5 w-64" />
-                </div>
-                <div className="text-right">
-                  <Skeleton className="h-10 w-24 mb-1" />
-                  <Skeleton className="h-4 w-20" />
-                </div>
-              </div>
-
-              {/* Content skeleton */}
-              <div className="space-y-3 flex-1">
-                {/* Risk assessment skeleton */}
-                <div className="mb-3">
-                  <div className="flex items-center justify-between mb-2">
-                    <Skeleton className="h-4 w-24" />
-                    <Skeleton className="h-6 w-20" />
-                  </div>
-                  <div className="flex items-center justify-between text-sm mb-2">
-                    <Skeleton className="h-3 w-16" />
-                    <Skeleton className="h-3 w-16" />
-                  </div>
-                  <Skeleton className="w-full h-2 rounded-full" />
-                </div>
-
-                {/* Financial ratios skeleton */}
-                <div>
-                  <Skeleton className="h-5 w-32 mb-2" />
-                  <div className="grid grid-cols-2 gap-2">
-                    {[1, 2, 3, 4].map((i) => (
-                      <div key={i} className="bg-gray-50 rounded-lg p-2">
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-2">
-                            <Skeleton className="w-4 h-4" />
-                            <Skeleton className="h-3 w-20" />
-                          </div>
-                          <Skeleton className="h-4 w-12" />
-                        </div>
-                      </div>
-                    ))}
-                    <div className="bg-gray-50 rounded-lg p-2 col-span-2">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-2">
-                          <Skeleton className="w-4 h-4" />
-                          <Skeleton className="h-3 w-32" />
-                        </div>
-                        <Skeleton className="h-4 w-12" />
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                {/* ML Model Insights skeleton */}
-                <div className="mt-3 pt-3 border-t border-gray-200">
-                  <Skeleton className="h-6 w-36 mb-2" />
-                  <div className="bg-blue-50 rounded-lg p-3 mb-2">
-                    <div className="flex items-center justify-between">
-                      <Skeleton className="h-4 w-32" />
-                      <Skeleton className="h-6 w-16" />
-                    </div>
-                  </div>
-                  <div className="flex items-center justify-between mb-2">
-                    <Skeleton className="h-4 w-28" />
-                    <Skeleton className="h-6 w-32" />
-                  </div>
-                  <Skeleton className="h-3 w-40" />
-                </div>
-              </div>
-            </Card>
-          </div>
+      {/* Only show the rest if we have companies or are loading */}
+      {(isLoading || companies.length > 0) && (
+        <div className="space-y-4">
+          {/* Show current selection with option to browse freely */}
+          {selectedCompany && currentCompany && (
+            <div className="flex items-center gap-2">
+              <span className="text-sm text-gray-500 font-bricolage">Viewing:</span>
+              <Badge variant="outline" className="font-bricolage">
+                {currentCompany.name}
+              </Badge>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setSelectedCompany(null)}
+                className="text-xs text-gray-500 hover:text-gray-700 font-bricolage"
+              >
+                Browse All Companies
+              </Button>
+            </div>
+          )}
         </div>
-      ) : (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 font-bricolage">
-          {/* Left Panel - Company Selection with Pagination */}
-          <div className="h-[600px]">
-            <Card className="p-4 h-full flex flex-col">
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="text-lg font-semibold text-gray-900 dark:text-white font-bricolage">
-                  S&P 500 Companies
-                </h3>
-                {isLoading && (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                )}
-              </div>
+      )}
 
-              {isLoading ? (
+      {/* Main content area - only show if loading or have companies */}
+      {(isLoading || companies.length > 0) && (
+        isLoading && companies.length === 0 ? (
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 font-bricolage">
+            {/* Left Panel Skeleton */}
+            <div className="h-[600px]">
+              <Card className="p-4 h-full flex flex-col">
+                <div className="flex items-center justify-between mb-4">
+                  <Skeleton className="h-6 w-32" />
+                  <Skeleton className="h-4 w-4" />
+                </div>
+
+                {/* Company list skeleton */}
                 <div className="space-y-2 flex-1">
-                  {/* Company list skeleton */}
                   {Array.from({ length: 4 }).map((_, index) => (
                     <div key={index} className="p-3 rounded-lg border border-gray-200 dark:border-gray-700">
                       <div className="flex items-center justify-between">
@@ -417,115 +327,248 @@ export function CompanyDetailsView() {
                     </div>
                   ))}
                 </div>
-              ) : (
-                <>
-                  {/* Company List */}
-                  <div className="space-y-2 flex-1 overflow-y-auto">
-                    {paginatedCompanies.map((company: any) => (
-                      <div
-                        key={company.id}
-                        className={`p-3 rounded-lg cursor-pointer transition-all duration-300 ease-in-out border font-bricolage ${selectedCompany === company.id
-                          ? 'bg-slate-900 text-white border-slate-900'
-                          : 'border-gray-200 dark:border-gray-700'
-                          }`}
-                        onClick={() => setSelectedCompany(company.id)}
-                      >
-                        <div className="flex items-center justify-between">
-                          <div>
-                            <div className="font-semibold text-sm">{company.name}</div>
-                            <div className="text-xs text-gray-500 dark:text-gray-400">
-                              {company.subtitle}
+
+                {/* Pagination skeleton */}
+                <div className="mt-auto pt-4 border-t border-gray-200 dark:border-gray-700 flex-shrink-0">
+                  <div className="flex items-center justify-between">
+                    <Skeleton className="h-8 w-20" />
+                    <div className="flex items-center space-x-1">
+                      <Skeleton className="h-8 w-8" />
+                      <Skeleton className="h-8 w-8" />
+                      <Skeleton className="h-8 w-8" />
+                    </div>
+                    <Skeleton className="h-8 w-16" />
+                  </div>
+                  <div className="text-center mt-2">
+                    <Skeleton className="h-3 w-40 mx-auto" />
+                  </div>
+                </div>
+              </Card>
+            </div>
+
+            {/* Right Panel Skeleton */}
+            <div className="lg:col-span-2 h-[600px]">
+              <Card className="p-6 font-bricolage h-full flex flex-col">
+                {/* Header skeleton */}
+                <div className="flex items-center justify-between mb-2 flex-shrink-0">
+                  <div className="flex-1">
+                    <div className="flex items-center gap-2 mb-1">
+                      <Skeleton className="h-10 w-48" />
+                      <Skeleton className="h-6 w-20" />
+                    </div>
+                    <Skeleton className="h-5 w-64" />
+                  </div>
+                  <div className="text-right">
+                    <Skeleton className="h-10 w-24 mb-1" />
+                    <Skeleton className="h-4 w-20" />
+                  </div>
+                </div>
+
+                {/* Content skeleton */}
+                <div className="space-y-3 flex-1">
+                  {/* Risk assessment skeleton */}
+                  <div className="mb-3">
+                    <div className="flex items-center justify-between mb-2">
+                      <Skeleton className="h-4 w-24" />
+                      <Skeleton className="h-6 w-20" />
+                    </div>
+                    <div className="flex items-center justify-between text-sm mb-2">
+                      <Skeleton className="h-3 w-16" />
+                      <Skeleton className="h-3 w-16" />
+                    </div>
+                    <Skeleton className="w-full h-2 rounded-full" />
+                  </div>
+
+                  {/* Financial ratios skeleton */}
+                  <div>
+                    <Skeleton className="h-5 w-32 mb-2" />
+                    <div className="grid grid-cols-2 gap-2">
+                      {[1, 2, 3, 4].map((i) => (
+                        <div key={i} className="bg-gray-50 rounded-lg p-2">
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                              <Skeleton className="w-4 h-4" />
+                              <Skeleton className="h-3 w-20" />
                             </div>
+                            <Skeleton className="h-4 w-12" />
+                          </div>
+                        </div>
+                      ))}
+                      <div className="bg-gray-50 rounded-lg p-2 col-span-2">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <Skeleton className="w-4 h-4" />
+                            <Skeleton className="h-3 w-32" />
+                          </div>
+                          <Skeleton className="h-4 w-12" />
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* ML Model Insights skeleton */}
+                  <div className="mt-3 pt-3 border-t border-gray-200">
+                    <Skeleton className="h-6 w-36 mb-2" />
+                    <div className="bg-blue-50 rounded-lg p-3 mb-2">
+                      <div className="flex items-center justify-between">
+                        <Skeleton className="h-4 w-32" />
+                        <Skeleton className="h-6 w-16" />
+                      </div>
+                    </div>
+                    <div className="flex items-center justify-between mb-2">
+                      <Skeleton className="h-4 w-28" />
+                      <Skeleton className="h-6 w-32" />
+                    </div>
+                    <Skeleton className="h-3 w-40" />
+                  </div>
+                </div>
+              </Card>
+            </div>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 font-bricolage">
+            {/* Left Panel - Company Selection with Pagination */}
+            <div className="h-[600px]">
+              <Card className="p-4 h-full flex flex-col">
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="text-lg font-semibold text-gray-900 dark:text-white font-bricolage">
+                    S&P 500 Companies
+                  </h3>
+                  {isLoading && (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  )}
+                </div>
+
+                {isLoading ? (
+                  <div className="space-y-2 flex-1">
+                    {/* Company list skeleton */}
+                    {Array.from({ length: 4 }).map((_, index) => (
+                      <div key={index} className="p-3 rounded-lg border border-gray-200 dark:border-gray-700">
+                        <div className="flex items-center justify-between">
+                          <div className="flex-1">
+                            <Skeleton className="h-4 w-20 mb-1" />
+                            <Skeleton className="h-3 w-32" />
                           </div>
                           <div className="text-right">
-                            <div className="font-semibold text-sm">{company.defaultRate}</div>
-                            <Badge
-                              variant="secondary"
-                              className={`text-xs ${company.riskCategory === 'LOW' ? 'bg-green-100 text-green-800' :
-                                company.riskCategory === 'MEDIUM' ? 'bg-yellow-100 text-yellow-800' :
-                                  'bg-red-100 text-red-800'
-                                }`}
-                            >
-                              {company.riskCategory}
-                            </Badge>
+                            <Skeleton className="h-4 w-12 mb-1" />
+                            <Skeleton className="h-5 w-16" />
                           </div>
                         </div>
                       </div>
                     ))}
                   </div>
-
-                  {/* Pagination - Fixed at bottom */}
-                  {totalPages > 1 && (
-                    <div className="mt-auto pt-4 border-t border-gray-200 dark:border-gray-700 flex-shrink-0">
-                      <div className="flex items-center justify-between">
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => handlePageChange(currentPage - 1)}
-                          disabled={currentPage === 1}
-                          className="font-bricolage"
+                ) : companies.length === 0 ? (
+                  <div className="flex-1 flex flex-col items-center justify-center text-center"></div>
+                ) : (
+                  <>
+                    {/* Company List */}
+                    <div className="space-y-2 flex-1 overflow-y-auto">
+                      {paginatedCompanies.map((company: any) => (
+                        <div
+                          key={company.id}
+                          className={`p-3 rounded-lg cursor-pointer transition-all duration-300 ease-in-out border font-bricolage ${selectedCompany === company.id
+                            ? 'bg-slate-900 text-white border-slate-900'
+                            : 'border-gray-200 dark:border-gray-700'
+                            }`}
+                          onClick={() => setSelectedCompany(company.id)}
                         >
-                          <ChevronLeft className="h-4 w-4 mr-1" />
-                          Previous
-                        </Button>
+                          <div className="flex items-center justify-between">
+                            <div>
+                              <div className="font-semibold text-sm">{company.name}</div>
+                              <div className="text-xs text-gray-500 dark:text-gray-400">
+                                {company.subtitle}
+                              </div>
+                            </div>
+                            <div className="text-right">
+                              <div className="font-semibold text-sm">{company.defaultRate}</div>
+                              <Badge
+                                variant="secondary"
+                                className={`text-xs ${company.riskCategory === 'LOW' ? 'bg-green-100 text-green-800' :
+                                  company.riskCategory === 'MEDIUM' ? 'bg-yellow-100 text-yellow-800' :
+                                    'bg-red-100 text-red-800'
+                                  }`}
+                              >
+                                {company.riskCategory}
+                              </Badge>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
 
-                        <div className="flex items-center space-x-1">
-                          {getPageNumbers().map((page) => (
-                            <Button
-                              key={page}
-                              variant={currentPage === page ? "default" : "outline"}
-                              size="sm"
-                              onClick={() => handlePageChange(page)}
-                              className="w-8 h-8 p-0 font-bricolage"
-                            >
-                              {page}
-                            </Button>
-                          ))}
+                    {/* Pagination - Fixed at bottom */}
+                    {totalPages > 1 && (
+                      <div className="mt-auto pt-4 border-t border-gray-200 dark:border-gray-700 flex-shrink-0">
+                        <div className="flex items-center justify-between">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => handlePageChange(currentPage - 1)}
+                            disabled={currentPage === 1}
+                            className="font-bricolage"
+                          >
+                            <ChevronLeft className="h-4 w-4 mr-1" />
+                            Previous
+                          </Button>
+
+                          <div className="flex items-center space-x-1">
+                            {getPageNumbers().map((page) => (
+                              <Button
+                                key={page}
+                                variant={currentPage === page ? "default" : "outline"}
+                                size="sm"
+                                onClick={() => handlePageChange(page)}
+                                className="w-8 h-8 p-0 font-bricolage"
+                              >
+                                {page}
+                              </Button>
+                            ))}
+                          </div>
+
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => handlePageChange(currentPage + 1)}
+                            disabled={currentPage === totalPages}
+                            className="font-bricolage"
+                          >
+                            Next
+                            <ChevronRight className="h-4 w-4 ml-1" />
+                          </Button>
                         </div>
 
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => handlePageChange(currentPage + 1)}
-                          disabled={currentPage === totalPages}
-                          className="font-bricolage"
-                        >
-                          Next
-                          <ChevronRight className="h-4 w-4 ml-1" />
-                        </Button>
+                        {/* Page info */}
+                        <div className="text-center mt-2">
+                          <p className="text-xs text-gray-500 dark:text-gray-400 font-bricolage">
+                            Page {currentPage} of {totalPages} • {totalItems} companies
+                          </p>
+                        </div>
                       </div>
-
-                      {/* Page info */}
-                      <div className="text-center mt-2">
-                        <p className="text-xs text-gray-500 dark:text-gray-400 font-bricolage">
-                          Page {currentPage} of {totalPages} • {totalItems} companies
-                        </p>
-                      </div>
-                    </div>
-                  )}
-                </>
-              )}
-            </Card>
-          </div>
-
-          {/* Right Panel - Company Analysis */}
-          {currentCompany && (
-            <div className="lg:col-span-2 h-[600px]">
-              <div
-                key={selectedCompany}
-                className="h-full animate-in fade-in-0 slide-in-from-right-5 duration-500"
-              >
-                <CompanyAnalysisPanel
-                  company={currentCompany}
-                  annualPredictions={currentAnnualPredictions}
-                  quarterlyPredictions={currentQuarterlyPredictions}
-                  activeTab={activeTab}
-                  isLoading={isLoading}
-                />
-              </div>
+                    )}
+                  </>
+                )}
+              </Card>
             </div>
-          )}
-        </div>
+
+            {/* Right Panel - Company Analysis */}
+            {currentCompany && (
+              <div className="lg:col-span-2 h-[600px]">
+                <div
+                  key={selectedCompany}
+                  className="h-full animate-in fade-in-0 slide-in-from-right-5 duration-500"
+                >
+                  <CompanyAnalysisPanel
+                    company={currentCompany}
+                    annualPredictions={currentAnnualPredictions}
+                    quarterlyPredictions={currentQuarterlyPredictions}
+                    activeTab={activeTab}
+                    isLoading={isLoading}
+                  />
+                </div>
+              </div>
+            )}
+          </div>
+        )
       )}
     </div>
   )

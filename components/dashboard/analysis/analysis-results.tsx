@@ -177,9 +177,6 @@ export function AnalysisResults({ showResults, analysisResults }: AnalysisResult
                 {analysisResults?.riskLevel} Risk
               </Badge>
             </div>
-            <div className="text-xs text-gray-500 mt-2">
-              Last updated: {new Date().toLocaleDateString()}
-            </div>
           </div>
         </div>
       </div>

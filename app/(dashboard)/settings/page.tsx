@@ -62,6 +62,7 @@ import { tenantsApi } from '@/lib/api/tenants'
 import { tenantAdminApi } from '@/lib/api/tenant-admin'
 import { UserRole } from '@/lib/types/auth'
 import { useAuthStore } from '@/lib/stores/auth-store'
+import { usePredictionsStore } from '@/lib/stores/predictions-store'
 
 // Form schemas
 const profileSchema = z.object({
@@ -288,9 +289,21 @@ export default function SettingsPage() {
 
   const loadOrganizations = async () => {
     try {
-      const response = await organizationsApi.list()
+      // For tenant admins, filter by their tenant_id to only show their organizations
+      const params: any = {}
+      if (profile?.role === 'tenant_admin' && user?.tenant_id) {
+        params.tenant_id = user.tenant_id
+      }
+
+      const response = await organizationsApi.list(params)
       if (response.success && response.data) {
         setOrganizations(response.data.organizations || [])
+
+        // If user is tenant admin, refresh predictions to show filtered data
+        if (profile?.role === 'tenant_admin' && user?.tenant_id) {
+          const predictionsStore = usePredictionsStore.getState()
+          predictionsStore.invalidateCache()
+        }
       }
     } catch (error) {
       console.error('Error loading organizations:', error)

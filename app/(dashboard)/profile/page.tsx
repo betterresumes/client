@@ -13,8 +13,10 @@ import { Skeleton } from '@/components/ui/skeleton'
 
 import { useAuth } from '@/lib/stores/auth'
 import { authApi } from '@/lib/api/auth'
+import { organizationsApi } from '@/lib/api/organizations'
 import { UserRole, UserStatus } from '@/lib/types/user'
 import { UserResponse } from '@/lib/types/auth'
+import { EnhancedOrganizationResponse } from '@/lib/types/tenant'
 
 interface UserProfile {
   id: string
@@ -31,7 +33,7 @@ export default function ProfilePage() {
   const router = useRouter()
   const { user } = useAuth()
   const [profile, setProfile] = useState<UserProfile | null>(null)
-  const [organizationName, setOrganizationName] = useState<string>('')
+  const [organization, setOrganization] = useState<EnhancedOrganizationResponse | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
@@ -60,9 +62,12 @@ export default function ProfilePage() {
         }
         setProfile(profile)
 
-        // Use organization details from user data
-        if (userData.organization) {
-          setOrganizationName(userData.organization.name)
+        // Load organization details if user belongs to one
+        if (userData.organization_id) {
+          const orgResponse = await organizationsApi.get(userData.organization_id)
+          if (orgResponse.success && orgResponse.data) {
+            setOrganization(orgResponse.data)
+          }
         }
       } else {
         setError('Failed to load profile')
@@ -296,16 +301,50 @@ export default function ProfilePage() {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            {organizationName ? (
+            {organization ? (
               <div className="space-y-4">
                 <div>
                   <h3 className="font-medium text-gray-900 mb-1">
-                    {organizationName}
+                    {organization.name}
                   </h3>
-                  <p className="text-sm text-gray-600">
-                    Organization member
-                  </p>
+                  {organization.description && (
+                    <p className="text-sm text-gray-600">
+                      {organization.description}
+                    </p>
+                  )}
                 </div>
+
+                <div className="flex justify-between items-center">
+                  <span className="text-sm font-medium text-gray-500">Status</span>
+                  <Badge variant="outline" className={
+                    organization.is_active
+                      ? "bg-green-100 text-green-800 border-green-200"
+                      : "bg-red-100 text-red-800 border-red-200"
+                  }>
+                    {organization.is_active ? 'Active' : 'Inactive'}
+                  </Badge>
+                </div>
+
+                <div className="flex justify-between items-center">
+                  <span className="text-sm font-medium text-gray-500">Created</span>
+                  <span className="text-sm text-gray-900">
+                    {format(new Date(organization.created_at), 'MMM dd, yyyy')}
+                  </span>
+                </div>
+
+                {organization.domain && (
+                  <div className="flex justify-between items-center">
+                    <span className="text-sm font-medium text-gray-500">Website</span>
+                    <a
+                      href={`https://${organization.domain}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-sm text-blue-600 hover:text-blue-800"
+                    >
+                      {organization.domain}
+                    </a>
+                  </div>
+                )}
               </div>
             ) : (
               <div className="text-center py-8">

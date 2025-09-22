@@ -1,6 +1,6 @@
 'use client'
 
-import { Search, Bell, Settings, LogOut, User, ChevronDown, RefreshCw, TrendingUp, Shield, Building, Building2 } from 'lucide-react'
+import { Settings, LogOut, User, ChevronDown, RefreshCw, TrendingUp, Building2 } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 
 import { Button } from '@/components/ui/button'
@@ -24,15 +24,6 @@ export function DashboardHeader() {
   const { user, clearAuth, isAdmin, isTenantAdmin, isOrgAdmin } = useAuthStore()
   const { refresh, isRefreshing: isManualRefreshing } = useManualTokenRefresh()
 
-  // Get organization and tenant names directly from user data
-  const getOrgName = () => {
-    return user?.organization?.name || ''
-  }
-
-  const getTenantName = () => {
-    return user?.tenant?.name || ''
-  }
-
   const handleLogout = () => {
     clearAuth()
     router.push('/login')
@@ -44,10 +35,33 @@ export function DashboardHeader() {
   const getUserDisplayName = () => {
     if (!user) return 'User'
 
-    // Priority: 1. username, 2. full_name, 3. email
-    if (user.username) return user.username
+    // Priority: 1. full_name, 2. username, 3. email
     if (user.full_name?.trim()) return user.full_name.trim()
+    if (user.username) return user.username
     return user.email || 'User'
+  }
+
+  const getOrganizationDisplayName = () => {
+    // Show appropriate name based on user role
+    // Tenant admin should see tenant name
+    if (user?.role === 'tenant_admin' && user?.tenant?.name) {
+      return user.tenant.name
+    }
+
+    // Organization admin and members should see organization name
+    if ((user?.role === 'org_admin' || user?.role === 'org_member') && user?.organization?.name) {
+      return user.organization.name
+    }
+
+    // Fallback: show organization name if available, then tenant name
+    if (user?.organization?.name) {
+      return user.organization.name
+    }
+    if (user?.tenant?.name) {
+      return user.tenant.name
+    }
+
+    return null
   }
 
   const getUserInitials = () => {
@@ -81,9 +95,9 @@ export function DashboardHeader() {
       case 'tenant_admin':
         return 'Tenant Admin'
       case 'org_admin':
-        return 'Organization Admin'
+        return 'Org Admin'
       case 'org_member':
-        return 'Organization Member'
+        return 'Org Member'
       case 'user':
         return 'User'
       default:
@@ -92,11 +106,8 @@ export function DashboardHeader() {
   }
 
   const shouldShowOrgInfo = () => {
-    return user && user.organization_id && user.organization?.name && !isAdmin()
-  }
-
-  const shouldShowTenantInfo = () => {
-    return user && isTenantAdmin() && !isAdmin() && user.tenant?.name
+    const orgName = getOrganizationDisplayName()
+    return orgName && !isAdmin()
   }
 
   return (
@@ -124,11 +135,11 @@ export function DashboardHeader() {
           </div>
 
           <div className="flex items-center space-x-4">
-            {/* User Role next to profile */}
-            {user && (
+            {/* User Organization/Tenant Info next to profile */}
+            {shouldShowOrgInfo() && (
               <div className="flex items-center space-x-2 px-3 py-1 bg-gray-100 rounded-md">
-                <Shield className="h-4 w-4 text-gray-600" />
-                <span className="text-sm font-medium text-gray-800">{getRoleDisplayText()}</span>
+                <Building2 className="h-4 w-4 text-gray-600" />
+                <span className="text-sm font-medium text-gray-800">{getOrganizationDisplayName()}</span>
               </div>
             )}
 
@@ -149,11 +160,21 @@ export function DashboardHeader() {
                   <ChevronDown className="h-4 w-4 text-gray-500" />
                 </Button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-56">
+              <DropdownMenuContent align="end" className="w-64">
                 <DropdownMenuLabel>
                   <div className="flex flex-col space-y-1">
                     <p className="text-sm font-medium">{getUserDisplayName()}</p>
                     <p className="text-xs text-gray-500">{user?.email}</p>
+                    <div className="py-1">
+                      <Badge variant="secondary" className="text-xs font-bold">
+                        {getRoleDisplayText()}
+                      </Badge>
+                      <Badge variant="secondary" className="text-xs mt-1 font-semibold">
+                        {getOrganizationDisplayName() && user?.role !== 'super_admin' && user?.role !== 'user' && (
+                          <> {getOrganizationDisplayName()}</>
+                        )}
+                      </Badge>
+                    </div>
                   </div>
                 </DropdownMenuLabel>
                 <DropdownMenuSeparator />
@@ -165,16 +186,7 @@ export function DashboardHeader() {
                   <Settings className="mr-2 h-4 w-4" />
                   <span>Settings</span>
                 </DropdownMenuItem>
-                {isAdmin() && (
-                  <>
-                    <DropdownMenuSeparator />
-                    <DropdownMenuItem onClick={() => router.push('/super-admin-dashboard')}>
-                      <Shield className="mr-2 h-4 w-4" />
-                      <span>Super Admin</span>
-                    </DropdownMenuItem>
-                  </>
-                )}
-                <DropdownMenuSeparator />
+
                 <DropdownMenuItem onClick={handleLogout} className="text-red-600 dark:text-red-400">
                   <LogOut className="mr-2 h-4 w-4" />
                   <span>Sign out</span>
