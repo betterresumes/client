@@ -56,49 +56,22 @@ interface Prediction {
 }
 
 interface PredictionsState {
-  // Separate storage for user role data vs system data
-  annualPredictions: Prediction[] // User role-based predictions (personal + org)
-  quarterlyPredictions: Prediction[] // User role-based predictions (personal + org)
-  systemAnnualPredictions: Prediction[] // System/platform predictions
-  systemQuarterlyPredictions: Prediction[] // System/platform predictions
+  // ROLE-BASED USER DATA (backend already filters correctly based on user role):
+  // - Normal user: personal predictions only
+  // - Org admin/member: organization predictions only  
+  // - Tenant admin: tenant-scoped predictions only
+  annualPredictions: Prediction[]
+  quarterlyPredictions: Prediction[]
+
+  // SYSTEM/PLATFORM DATA (same for all roles)
+  systemAnnualPredictions: Prediction[]
+  systemQuarterlyPredictions: Prediction[]
 
   isLoading: boolean
   error: string | null
   lastFetched: number | null
   isInitialized: boolean
-  isFetching: boolean // Add flag to prevent multiple simultaneous calls
-
-  // Smart pagination state
-  smartPagination: {
-    annual: {
-      currentPage: number
-      pageSize: number
-      totalItems: number // From dashboard stats
-      loadedItems: number // Actually loaded predictions
-      hasLoadedInitialBatch: boolean
-    }
-    quarterly: {
-      currentPage: number
-      pageSize: number
-      totalItems: number // From dashboard stats
-      loadedItems: number // Actually loaded predictions
-      hasLoadedInitialBatch: boolean
-    }
-    systemAnnual: {
-      currentPage: number
-      pageSize: number
-      totalItems: number // From dashboard stats
-      loadedItems: number // Actually loaded predictions
-      hasLoadedInitialBatch: boolean
-    }
-    systemQuarterly: {
-      currentPage: number
-      pageSize: number
-      totalItems: number // From dashboard stats
-      loadedItems: number // Actually loaded predictions
-      hasLoadedInitialBatch: boolean
-    }
-  }
+  isFetching: boolean
 
   // Legacy pagination for backward compatibility
   // Separate pagination for user and system data
@@ -133,23 +106,12 @@ interface PredictionsState {
 
   // Data access filter state  
   activeDataFilter: string // 'personal', 'organization', 'system', or 'all' for viewing
-
 }
 
 type PredictionsStore = PredictionsState & {
   // Actions
   fetchPredictions: (forceRefresh?: boolean) => Promise<void>
-  loadMorePredictions: (type: 'annual' | 'quarterly') => Promise<void>
-  fetchPage: (type: 'annual' | 'quarterly', page: number) => Promise<void>
-  fetchBatch: (type: 'annual' | 'quarterly', batchSize?: number) => Promise<void> // NEW: Batch loading
   refetchPredictions: () => Promise<void>
-
-  // Smart pagination actions
-  setSmartPageSize: (type: 'annual' | 'quarterly', pageSize: number) => void
-  setSmartCurrentPage: (type: 'annual' | 'quarterly', page: number) => void
-  getSmartPaginatedData: (type: 'annual' | 'quarterly') => Prediction[]
-  loadMoreDataIfNeeded: (type: 'annual' | 'quarterly', page: number) => Promise<void>
-  initializeSmartPaginationFromStats: (annualTotal: number, quarterlyTotal: number) => void
   clearError: () => void
   reset: () => void
   invalidateCache: () => void
@@ -158,6 +120,20 @@ type PredictionsStore = PredictionsState & {
   removePrediction: (predictionId: string, type: 'annual' | 'quarterly') => void
   setDataFilter: (filter: string) => void
   getDefaultFilterForUser: (user: any) => string
+
+  // Helper method for processing predictions data  
+  processAllPredictionsData: (
+    userAnnualResponse: any,
+    userQuarterlyResponse: any,
+    systemAnnualResponse: any,
+    systemQuarterlyResponse: any,
+    user: any
+  ) => Promise<{
+    transformedUserAnnual: Prediction[]
+    transformedUserQuarterly: Prediction[]
+    transformedSystemAnnual: Prediction[]
+    transformedSystemQuarterly: Prediction[]
+  }>
 
   // Utility functions
   getPredictionProbability: (prediction: Prediction) => number
@@ -186,39 +162,7 @@ export const usePredictionsStore = create<PredictionsStore>((set, get) => {
     lastFetched: null,
     isInitialized: false,
     isFetching: false,
-    activeDataFilter: 'system', // Start with 'system' for user role
-
-    // Smart pagination - client-side pagination with lazy loading
-    smartPagination: {
-      annual: {
-        currentPage: 1,
-        pageSize: 10,
-        totalItems: 0,
-        loadedItems: 0,
-        hasLoadedInitialBatch: false
-      },
-      quarterly: {
-        currentPage: 1,
-        pageSize: 10,
-        totalItems: 0,
-        loadedItems: 0,
-        hasLoadedInitialBatch: false
-      },
-      systemAnnual: {
-        currentPage: 1,
-        pageSize: 10,
-        totalItems: 0,
-        loadedItems: 0,
-        hasLoadedInitialBatch: false
-      },
-      systemQuarterly: {
-        currentPage: 1,
-        pageSize: 10,
-        totalItems: 0,
-        loadedItems: 0,
-        hasLoadedInitialBatch: false
-      }
-    },
+    activeDataFilter: 'personal', // Initial filter (updated based on user role after login)
 
     // Legacy server-side pagination
     // User data pagination - fetch smaller amounts for user-specific data
@@ -279,184 +223,219 @@ export const usePredictionsStore = create<PredictionsStore>((set, get) => {
         return
       }
 
-      console.log('🌐 Making 4 parallel API calls to fetch all prediction data...')
+      // Get current user from auth store
+      const authStore = useAuthStore.getState()
+      const user = authStore.user
+
+      if (!user) {
+        set({
+          isLoading: false,
+          error: 'User not authenticated',
+          isFetching: false
+        })
+        return
+      }
+
+      console.log('👤 Fetching predictions for user role:', user.role)
       set({ isLoading: true, error: null, isFetching: true })
 
       try {
-        // Get current user from auth store
-        const authStore = useAuthStore.getState()
-        const user = authStore.user
-
-        if (!user) {
-          set({
-            isLoading: false,
-            error: 'User not authenticated',
-            isFetching: false
-          })
-          return
-        }
-
         const { annualPagination, quarterlyPagination, systemAnnualPagination, systemQuarterlyPagination } = state
 
-        // Parallel API calls - 4 endpoints as per requirements
-        const [
-          userAnnualResponse,
-          userQuarterlyResponse,
-          systemAnnualResponse,
-          systemQuarterlyResponse
-        ] = await Promise.all([
-          // User role-based predictions (excludes system data)
-          predictionsApi.annual.getAnnualPredictions({
-            page: annualPagination.currentPage,
-            size: annualPagination.pageSize
-          }),
-          predictionsApi.quarterly.getQuarterlyPredictions({
-            page: quarterlyPagination.currentPage,
-            size: quarterlyPagination.pageSize
-          }),
-          // System predictions (platform-wide data)
-          predictionsApi.annual.getSystemAnnualPredictions({
-            page: systemAnnualPagination.currentPage,
-            size: systemAnnualPagination.pageSize
-          }),
-          predictionsApi.quarterly.getSystemQuarterlyPredictions({
-            page: systemQuarterlyPagination.currentPage,
-            size: systemQuarterlyPagination.pageSize
+        // FIXED: Different API calls based on user role
+        if (user.role === 'super_admin') {
+          // Super admin: ONLY system data, no user data
+          console.log('🌐 Super admin - fetching ONLY system predictions (2 API calls)')
+          const [
+            systemAnnualResponse,
+            systemQuarterlyResponse
+          ] = await Promise.all([
+            predictionsApi.annual.getSystemAnnualPredictions({
+              page: systemAnnualPagination.currentPage,
+              size: systemAnnualPagination.pageSize
+            }),
+            predictionsApi.quarterly.getSystemQuarterlyPredictions({
+              page: systemQuarterlyPagination.currentPage,
+              size: systemQuarterlyPagination.pageSize
+            })
+          ])
+
+          // Process system data only
+          const systemAnnualData = systemAnnualResponse?.data?.items || systemAnnualResponse?.data?.predictions || systemAnnualResponse?.data || []
+          const systemAnnualMeta = systemAnnualResponse?.data
+
+          const systemQuarterlyData = systemQuarterlyResponse?.data?.items || systemQuarterlyResponse?.data?.predictions || systemQuarterlyResponse?.data || []
+          const systemQuarterlyMeta = systemQuarterlyResponse?.data
+
+          // Transform system predictions
+          const transformedSystemAnnual = Array.isArray(systemAnnualData) ? systemAnnualData.map((pred: any) => ({
+            ...pred,
+            default_probability: pred.probability || 0,
+            risk_category: pred.risk_level,
+            reporting_year: pred.reporting_year?.toString() || new Date().getFullYear().toString(),
+            organization_access: 'system',
+            financial_ratios: {
+              ltdtc: pred.long_term_debt_to_total_capital,
+              roa: pred.return_on_assets,
+              ebitint: pred.ebit_to_interest_expense
+            }
+          })) : []
+
+          const transformedSystemQuarterly = Array.isArray(systemQuarterlyData) ? systemQuarterlyData.map((pred: any) => ({
+            ...pred,
+            default_probability: pred.logistic_probability || 0,
+            risk_category: pred.risk_level,
+            reporting_year: pred.reporting_year?.toString() || new Date().getFullYear().toString(),
+            reporting_quarter: pred.reporting_quarter?.toUpperCase() || "Q1",
+            organization_access: 'system',
+            financial_ratios: {
+              ltdtc: pred.long_term_debt_to_total_capital,
+              sga: pred.sga_margin,
+              roa: pred.return_on_capital,
+              tdte: pred.total_debt_to_ebitda
+            }
+          })) : []
+
+          console.log('✅ Super admin data loaded:', {
+            systemAnnual: transformedSystemAnnual.length,
+            systemQuarterly: transformedSystemQuarterly.length
           })
-        ])
 
-        console.log('🎯 All 4 API calls completed successfully')
+          console.log('🔍 Super admin sample annual data:', transformedSystemAnnual.slice(0, 3).map((p: any) => ({
+            id: p.id,
+            company: p.company_symbol,
+            access: p.organization_access,
+            risk_level: p.risk_level,
+            probability: p.default_probability
+          })))
 
-        // Process user annual predictions
-        const userAnnualData = userAnnualResponse?.data?.items || userAnnualResponse?.data?.predictions || userAnnualResponse?.data || []
-        const userAnnualMeta = userAnnualResponse?.data
+          console.log('🔍 Super admin sample quarterly data:', transformedSystemQuarterly.slice(0, 3).map((p: any) => ({
+            id: p.id,
+            company: p.company_symbol,
+            access: p.organization_access,
+            risk_level: p.risk_level,
+            probability: p.default_probability
+          })))
 
-        // Process user quarterly predictions  
-        const userQuarterlyData = userQuarterlyResponse?.data?.items || userQuarterlyResponse?.data?.predictions || userQuarterlyResponse?.data || []
-        const userQuarterlyMeta = userQuarterlyResponse?.data
+          set({
+            // Super admin gets NO user data
+            annualPredictions: [],
+            quarterlyPredictions: [],
+            // Only system data
+            systemAnnualPredictions: transformedSystemAnnual,
+            systemQuarterlyPredictions: transformedSystemQuarterly,
+            isLoading: false,
+            error: null,
+            lastFetched: Date.now(),
+            isInitialized: true,
+            isFetching: false,
+            activeDataFilter: 'system', // Force system filter for super admin
+            systemAnnualPagination: {
+              currentPage: 1,
+              totalPages: systemAnnualMeta?.pages || 1,
+              totalItems: systemAnnualMeta?.total || transformedSystemAnnual.length,
+              pageSize: systemAnnualPagination.pageSize,
+              hasMore: 1 < (systemAnnualMeta?.pages || 1)
+            },
+            systemQuarterlyPagination: {
+              currentPage: 1,
+              totalPages: systemQuarterlyMeta?.pages || 1,
+              totalItems: systemQuarterlyMeta?.total || transformedSystemQuarterly.length,
+              pageSize: systemQuarterlyPagination.pageSize,
+              hasMore: 1 < (systemQuarterlyMeta?.pages || 1)
+            }
+          })
 
-        // Process system annual predictions
-        const systemAnnualData = systemAnnualResponse?.data?.items || systemAnnualResponse?.data?.predictions || systemAnnualResponse?.data || []
-        const systemAnnualMeta = systemAnnualResponse?.data
+          // Double check: Ensure the filter is definitely set to system for super admin
+          console.log('🔒 Final super admin state check:', {
+            activeDataFilter: get().activeDataFilter,
+            systemAnnualCount: get().systemAnnualPredictions.length,
+            systemQuarterlyCount: get().systemQuarterlyPredictions.length
+          })
 
-        // Process system quarterly predictions
-        const systemQuarterlyData = systemQuarterlyResponse?.data?.items || systemQuarterlyResponse?.data?.predictions || systemQuarterlyResponse?.data || []
-        const systemQuarterlyMeta = systemQuarterlyResponse?.data
+        } else {
+          // All other users: 4 API calls (user data + system data)
+          console.log('🌐 Regular user - fetching both user and system predictions (4 API calls)')
+          const [
+            userAnnualResponse,
+            userQuarterlyResponse,
+            systemAnnualResponse,
+            systemQuarterlyResponse
+          ] = await Promise.all([
+            // User role-based predictions (excludes system data)
+            predictionsApi.annual.getAnnualPredictions({
+              page: annualPagination.currentPage,
+              size: annualPagination.pageSize
+            }),
+            predictionsApi.quarterly.getQuarterlyPredictions({
+              page: quarterlyPagination.currentPage,
+              size: quarterlyPagination.pageSize
+            }),
+            // System predictions (platform-wide data)
+            predictionsApi.annual.getSystemAnnualPredictions({
+              page: systemAnnualPagination.currentPage,
+              size: systemAnnualPagination.pageSize
+            }),
+            predictionsApi.quarterly.getSystemQuarterlyPredictions({
+              page: systemQuarterlyPagination.currentPage,
+              size: systemQuarterlyPagination.pageSize
+            })
+          ])
 
-        console.log('📊 Data processing results:', {
-          userAnnual: userAnnualData.length,
-          userQuarterly: userQuarterlyData.length,
-          systemAnnual: systemAnnualData.length,
-          systemQuarterly: systemQuarterlyData.length
-        })
+          // Process user data with proper organization access mapping
+          const { transformedUserAnnual, transformedUserQuarterly, transformedSystemAnnual, transformedSystemQuarterly } =
+            await get().processAllPredictionsData(
+              userAnnualResponse, userQuarterlyResponse,
+              systemAnnualResponse, systemQuarterlyResponse,
+              user
+            )
 
-        // Transform user annual predictions
-        const transformedUserAnnual = Array.isArray(userAnnualData) ? userAnnualData.map((pred: any) => ({
-          ...pred,
-          default_probability: pred.probability || 0,
-          risk_category: pred.risk_level,
-          reporting_year: pred.reporting_year?.toString() || new Date().getFullYear().toString(),
-          organization_access: pred.access_level || pred.organization_access || 'personal',
-          financial_ratios: {
-            ltdtc: pred.long_term_debt_to_total_capital,
-            roa: pred.return_on_assets,
-            ebitint: pred.ebit_to_interest_expense
-          }
-        })) : []
+          // Set initial data filter based on user role
+          const initialFilter = get().getDefaultFilterForUser(user)
 
-        // Transform user quarterly predictions
-        const transformedUserQuarterly = Array.isArray(userQuarterlyData) ? userQuarterlyData.map((pred: any) => ({
-          ...pred,
-          default_probability: pred.logistic_probability || 0,
-          risk_category: pred.risk_level,
-          reporting_year: pred.reporting_year?.toString() || new Date().getFullYear().toString(),
-          reporting_quarter: pred.reporting_quarter?.toUpperCase() || "Q1",
-          organization_access: pred.access_level || pred.organization_access || 'personal',
-          financial_ratios: {
-            ltdtc: pred.long_term_debt_to_total_capital,
-            sga: pred.sga_margin,
-            roa: pred.return_on_capital,
-            tdte: pred.total_debt_to_ebitda
-          }
-        })) : []
-
-        // Transform system annual predictions
-        const transformedSystemAnnual = Array.isArray(systemAnnualData) ? systemAnnualData.map((pred: any) => ({
-          ...pred,
-          default_probability: pred.probability || 0,
-          risk_category: pred.risk_level,
-          reporting_year: pred.reporting_year?.toString() || new Date().getFullYear().toString(),
-          organization_access: 'system', // Always system for these predictions
-          financial_ratios: {
-            ltdtc: pred.long_term_debt_to_total_capital,
-            roa: pred.return_on_assets,
-            ebitint: pred.ebit_to_interest_expense
-          }
-        })) : []
-
-        // Transform system quarterly predictions
-        const transformedSystemQuarterly = Array.isArray(systemQuarterlyData) ? systemQuarterlyData.map((pred: any) => ({
-          ...pred,
-          default_probability: pred.logistic_probability || 0,
-          risk_category: pred.risk_level,
-          reporting_year: pred.reporting_year?.toString() || new Date().getFullYear().toString(),
-          reporting_quarter: pred.reporting_quarter?.toUpperCase() || "Q1",
-          organization_access: 'system', // Always system for these predictions
-          financial_ratios: {
-            ltdtc: pred.long_term_debt_to_total_capital,
-            sga: pred.sga_margin,
-            roa: pred.return_on_capital,
-            tdte: pred.total_debt_to_ebitda
-          }
-        })) : []
-
-        console.log('✅ Successfully loaded all prediction data - setting initial data filter based on user role')
-
-        // Set initial data filter based on user role
-        const initialFilter = get().getDefaultFilterForUser(user)
-
-        set({
-          annualPredictions: transformedUserAnnual,
-          quarterlyPredictions: transformedUserQuarterly,
-          systemAnnualPredictions: transformedSystemAnnual,
-          systemQuarterlyPredictions: transformedSystemQuarterly,
-          isLoading: false,
-          error: null,
-          lastFetched: Date.now(),
-          isInitialized: true,
-          isFetching: false,
-          activeDataFilter: initialFilter,
-          // Update user pagination
-          annualPagination: {
-            currentPage: 1,
-            totalPages: userAnnualMeta?.pages || 1,
-            totalItems: userAnnualMeta?.total || transformedUserAnnual.length,
-            pageSize: annualPagination.pageSize,
-            hasMore: 1 < (userAnnualMeta?.pages || 1)
-          },
-          quarterlyPagination: {
-            currentPage: 1,
-            totalPages: userQuarterlyMeta?.pages || 1,
-            totalItems: userQuarterlyMeta?.total || transformedUserQuarterly.length,
-            pageSize: quarterlyPagination.pageSize,
-            hasMore: 1 < (userQuarterlyMeta?.pages || 1)
-          },
-          // Update system pagination
-          systemAnnualPagination: {
-            currentPage: 1,
-            totalPages: systemAnnualMeta?.pages || 1,
-            totalItems: systemAnnualMeta?.total || transformedSystemAnnual.length,
-            pageSize: systemAnnualPagination.pageSize,
-            hasMore: 1 < (systemAnnualMeta?.pages || 1)
-          },
-          systemQuarterlyPagination: {
-            currentPage: 1,
-            totalPages: systemQuarterlyMeta?.pages || 1,
-            totalItems: systemQuarterlyMeta?.total || transformedSystemQuarterly.length,
-            pageSize: systemQuarterlyPagination.pageSize,
-            hasMore: 1 < (systemQuarterlyMeta?.pages || 1)
-          }
-        })
+          set({
+            annualPredictions: transformedUserAnnual,
+            quarterlyPredictions: transformedUserQuarterly,
+            systemAnnualPredictions: transformedSystemAnnual,
+            systemQuarterlyPredictions: transformedSystemQuarterly,
+            isLoading: false,
+            error: null,
+            lastFetched: Date.now(),
+            isInitialized: true,
+            isFetching: false,
+            activeDataFilter: initialFilter,
+            // Update user pagination
+            annualPagination: {
+              currentPage: 1,
+              totalPages: userAnnualResponse?.data?.pages || 1,
+              totalItems: userAnnualResponse?.data?.total || transformedUserAnnual.length,
+              pageSize: annualPagination.pageSize,
+              hasMore: 1 < (userAnnualResponse?.data?.pages || 1)
+            },
+            quarterlyPagination: {
+              currentPage: 1,
+              totalPages: userQuarterlyResponse?.data?.pages || 1,
+              totalItems: userQuarterlyResponse?.data?.total || transformedUserQuarterly.length,
+              pageSize: quarterlyPagination.pageSize,
+              hasMore: 1 < (userQuarterlyResponse?.data?.pages || 1)
+            },
+            // Update system pagination
+            systemAnnualPagination: {
+              currentPage: 1,
+              totalPages: systemAnnualResponse?.data?.pages || 1,
+              totalItems: systemAnnualResponse?.data?.total || transformedSystemAnnual.length,
+              pageSize: systemAnnualPagination.pageSize,
+              hasMore: 1 < (systemAnnualResponse?.data?.pages || 1)
+            },
+            systemQuarterlyPagination: {
+              currentPage: 1,
+              totalPages: systemQuarterlyResponse?.data?.pages || 1,
+              totalItems: systemQuarterlyResponse?.data?.total || transformedSystemQuarterly.length,
+              pageSize: systemQuarterlyPagination.pageSize,
+              hasMore: 1 < (systemQuarterlyResponse?.data?.pages || 1)
+            }
+          })
+        }
 
       } catch (error) {
         console.error('Failed to fetch predictions:', error)
@@ -479,41 +458,202 @@ export const usePredictionsStore = create<PredictionsStore>((set, get) => {
       }
     },
 
-    // Updated getFilteredPredictions to use separate system and user data stores
+    // Helper method to process all predictions data for non-super-admin users
+    processAllPredictionsData: async (
+      userAnnualResponse: any,
+      userQuarterlyResponse: any,
+      systemAnnualResponse: any,
+      systemQuarterlyResponse: any,
+      user: any
+    ) => {
+      console.log('🎯 Processing predictions data for user role:', user.role)
+
+      // Process user annual predictions
+      const userAnnualData = userAnnualResponse?.data?.items || userAnnualResponse?.data?.predictions || userAnnualResponse?.data || []
+      const userQuarterlyData = userQuarterlyResponse?.data?.items || userQuarterlyResponse?.data?.predictions || userQuarterlyResponse?.data || []
+      const systemAnnualData = systemAnnualResponse?.data?.items || systemAnnualResponse?.data?.predictions || systemAnnualResponse?.data || []
+      const systemQuarterlyData = systemQuarterlyResponse?.data?.items || systemQuarterlyResponse?.data?.predictions || systemQuarterlyResponse?.data || []
+
+      console.log('📊 Raw data processing results:', {
+        userAnnual: userAnnualData.length,
+        userQuarterly: userQuarterlyData.length,
+        systemAnnual: systemAnnualData.length,
+        systemQuarterly: systemQuarterlyData.length
+      })
+
+      // Debug: Log sample of each data type
+      console.log('🔍 Sample userAnnual data:', userAnnualData.slice(0, 2).map((p: any) => ({
+        company: p.company_symbol,
+        access: p.access_level,
+        org_id: p.organization_id,
+        created_by: p.created_by
+      })))
+
+      console.log('🔍 Sample systemAnnual data:', systemAnnualData.slice(0, 2).map((p: any) => ({
+        company: p.company_symbol,
+        access: p.access_level,
+        org_id: p.organization_id,
+        created_by: p.created_by
+      })))
+
+      // Transform user annual predictions - SIMPLIFIED: Trust backend role-based filtering
+      const transformedUserAnnual = Array.isArray(userAnnualData) ? userAnnualData.map((pred: any) => {
+        console.log('🔍 Processing user annual prediction:', {
+          company: pred.company_symbol,
+          userRole: user.role,
+          backendAccessLevel: pred.access_level
+        })
+
+        // SIMPLIFIED: Trust backend to provide correct role-based data
+        // Backend APIs already filter based on user role:
+        // - Normal user: gets personal predictions
+        // - Org admin/member: gets organization predictions  
+        // - Tenant admin: gets tenant-scoped predictions
+        const organization_access = pred.access_level || pred.organization_access ||
+          (user.role === 'org_admin' || user.role === 'org_member' ? 'organization' : 'personal')
+
+        console.log(`   ✅ Using access level: ${organization_access}`)
+
+        return {
+          ...pred,
+          default_probability: pred.probability || 0,
+          risk_category: pred.risk_level,
+          reporting_year: pred.reporting_year?.toString() || new Date().getFullYear().toString(),
+          organization_access,
+          financial_ratios: {
+            ltdtc: pred.long_term_debt_to_total_capital,
+            roa: pred.return_on_assets,
+            ebitint: pred.ebit_to_interest_expense
+          }
+        }
+      }) : []
+
+      // Transform user quarterly predictions - SIMPLIFIED: Trust backend role-based filtering
+      const transformedUserQuarterly = Array.isArray(userQuarterlyData) ? userQuarterlyData.map((pred: any) => {
+        console.log('🔍 Processing user quarterly prediction:', {
+          company: pred.company_symbol,
+          userRole: user.role,
+          backendAccessLevel: pred.access_level
+        })
+
+        // SIMPLIFIED: Trust backend to provide correct role-based data
+        const organization_access = pred.access_level || pred.organization_access ||
+          (user.role === 'org_admin' || user.role === 'org_member' ? 'organization' : 'personal')
+
+        console.log(`   ✅ Using access level: ${organization_access}`)
+
+        return {
+          ...pred,
+          default_probability: pred.logistic_probability || 0,
+          risk_category: pred.risk_level,
+          reporting_year: pred.reporting_year?.toString() || new Date().getFullYear().toString(),
+          reporting_quarter: pred.reporting_quarter?.toUpperCase() || "Q1",
+          organization_access,
+          financial_ratios: {
+            ltdtc: pred.long_term_debt_to_total_capital,
+            sga: pred.sga_margin,
+            roa: pred.return_on_capital,
+            tdte: pred.total_debt_to_ebitda
+          }
+        }
+      }) : []
+
+      // Transform system annual predictions - always 'system' access
+      const transformedSystemAnnual = Array.isArray(systemAnnualData) ? systemAnnualData.map((pred: any) => ({
+        ...pred,
+        default_probability: pred.probability || 0,
+        risk_category: pred.risk_level,
+        reporting_year: pred.reporting_year?.toString() || new Date().getFullYear().toString(),
+        organization_access: 'system', // Always system for these predictions
+        financial_ratios: {
+          ltdtc: pred.long_term_debt_to_total_capital,
+          roa: pred.return_on_assets,
+          ebitint: pred.ebit_to_interest_expense
+        }
+      })) : []
+
+      // Transform system quarterly predictions - always 'system' access
+      const transformedSystemQuarterly = Array.isArray(systemQuarterlyData) ? systemQuarterlyData.map((pred: any) => ({
+        ...pred,
+        default_probability: pred.logistic_probability || 0,
+        risk_category: pred.risk_level,
+        reporting_year: pred.reporting_year?.toString() || new Date().getFullYear().toString(),
+        reporting_quarter: pred.reporting_quarter?.toUpperCase() || "Q1",
+        organization_access: 'system', // Always system for these predictions
+        financial_ratios: {
+          ltdtc: pred.long_term_debt_to_total_capital,
+          sga: pred.sga_margin,
+          roa: pred.return_on_capital,
+          tdte: pred.total_debt_to_ebitda
+        }
+      })) : []
+
+      console.log('✅ Transformed predictions:', {
+        userAnnual: transformedUserAnnual.length,
+        userQuarterly: transformedUserQuarterly.length,
+        systemAnnual: transformedSystemAnnual.length,
+        systemQuarterly: transformedSystemQuarterly.length
+      })
+
+      console.log('🔍 User Annual access breakdown:', transformedUserAnnual.reduce((acc: any, p) => {
+        acc[p.organization_access] = (acc[p.organization_access] || 0) + 1
+        return acc
+      }, {}))
+
+      console.log('🔍 User Annual sample:', transformedUserAnnual.slice(0, 3).map((p: any) => ({
+        company: p.company_symbol,
+        access: p.organization_access,
+        org_id: p.organization_id,
+        created_by: p.created_by
+      })))
+
+      console.log('🔍 System Annual sample:', transformedSystemAnnual.slice(0, 3).map((p: any) => ({
+        company: p.company_symbol,
+        access: p.organization_access,
+        org_id: p.organization_id,
+        created_by: p.created_by
+      })))
+
+      return {
+        transformedUserAnnual,
+        transformedUserQuarterly,
+        transformedSystemAnnual,
+        transformedSystemQuarterly
+      }
+    },
+
+    // SIMPLIFIED: Trust backend role-based filtering instead of complex client-side filtering
     getFilteredPredictions: (type: 'annual' | 'quarterly') => {
       const state = get()
 
       console.log(`🔍 FILTERING ${type} predictions:`)
       console.log(`   - activeDataFilter: "${state.activeDataFilter}"`)
+      console.log(`   - systemAnnualPredictions count: ${state.systemAnnualPredictions.length}`)
+      console.log(`   - systemQuarterlyPredictions count: ${state.systemQuarterlyPredictions.length}`)
+      console.log(`   - annualPredictions count: ${state.annualPredictions.length}`)
+      console.log(`   - quarterlyPredictions count: ${state.quarterlyPredictions.length}`)
 
+      // Get predictions from appropriate store based on filter
       if (state.activeDataFilter === 'system') {
         // Platform tab: ONLY system/platform predictions
         const systemPredictions = type === 'annual' ? state.systemAnnualPredictions : state.systemQuarterlyPredictions
         console.log(`   🔵 Platform filter: ${systemPredictions.length} system predictions`)
         return systemPredictions
       } else {
-        // User tabs (personal/organization): ONLY user data, NEVER system data
+        // User tabs: Backend already filtered data correctly based on user role
+        // - Normal user: gets personal predictions
+        // - Org admin/member: gets organization predictions
+        // - Tenant admin: gets tenant-scoped predictions
         const userPredictions = type === 'annual' ? state.annualPredictions : state.quarterlyPredictions
 
-        // Further filter based on specific user data filter
-        let filtered: Prediction[] = []
-        switch (state.activeDataFilter) {
-          case 'personal':
-            filtered = userPredictions.filter(p => p.organization_access === 'personal')
-            break
-          case 'organization':
-            filtered = userPredictions.filter(p => p.organization_access === 'organization')
-            break
-          case 'all':
-            filtered = userPredictions // All user data (personal + organization)
-            break
-          default:
-            filtered = userPredictions
-            break
-        }
+        console.log(`   📋 User predictions (backend filtered): ${userPredictions.length}`)
+        console.log(`   📋 Sample user data:`, userPredictions.slice(0, 3).map(p => ({
+          company: p.company_symbol,
+          access: p.organization_access
+        })))
 
-        console.log(`   🟢 User filter (${state.activeDataFilter}): ${filtered.length} predictions`)
-        return filtered
+        // Return all user predictions since backend already filtered correctly
+        return userPredictions
       }
     },
 
@@ -523,24 +663,30 @@ export const usePredictionsStore = create<PredictionsStore>((set, get) => {
         return 'personal'
       }
       console.log('🔍 Getting default filter for user role:', user.role)
-      // Normal user: start with their personal data
-      if (user.role === 'user') {
-        return 'personal'
+
+      // Role-based default filter logic
+      switch (user.role) {
+        case 'user':
+          // Normal user: start with their personal data
+          return 'personal'
+
+        case 'super_admin':
+          // Super admin: only has platform data
+          return 'system'
+
+        case 'org_admin':
+        case 'org_member':
+          // Org roles: start with organization data (no personal data)
+          return 'organization'
+
+        case 'tenant_admin':
+          // Tenant admin: start with organization data (manages multiple orgs)
+          return 'organization'
+
+        default:
+          // Fallback: personal
+          return 'personal'
       }
-      // Super admin: start with system data to see platform overview
-      if (user.role === 'super_admin') {
-        return 'system'
-      }
-      // Tenant admin: start with organization data (their managed organizations)
-      if (user.role === 'tenant_admin') {
-        return 'organization'
-      }
-      // Org admin/members: start with their organization data (NOT system)
-      if (user.role === 'org_admin' || user.role === 'org_member') {
-        return 'organization'
-      }
-      // Default: personal
-      return 'personal'
     },
 
     setDataFilter: (filter: string) => {
@@ -663,227 +809,6 @@ export const usePredictionsStore = create<PredictionsStore>((set, get) => {
       return prediction.reporting_year || 'Unknown'
     },
 
-    loadMorePredictions: async (type: 'annual' | 'quarterly') => {
-      // Implementation for pagination - would need to be updated for separate stores
-      console.log(`Loading more ${type} predictions...`)
-    },
-
-    fetchPage: async (type: 'annual' | 'quarterly', page: number) => {
-      console.log(`📄 Fetching page ${page} for ${type} predictions`)
-
-      const { activeDataFilter } = get()
-      const { user } = useAuthStore.getState()
-
-      if (!user) {
-        console.error('No user found for fetchPage')
-        return
-      }
-
-      try {
-        set({ isFetching: true, error: null })
-
-        // Determine which pagination object to update and which API to call
-        const isSystemData = activeDataFilter === 'system'
-
-        let response: any
-        let paginationKey: keyof PredictionsState
-        let predictionKey: keyof PredictionsState
-
-        if (type === 'annual') {
-          paginationKey = isSystemData ? 'systemAnnualPagination' : 'annualPagination'
-          predictionKey = isSystemData ? 'systemAnnualPredictions' : 'annualPredictions'
-          const pageSize = isSystemData ? 20 : 10
-
-          if (isSystemData) {
-            response = await predictionsApi.annual.getSystemAnnualPredictions({
-              page,
-              size: pageSize
-            })
-          } else {
-            response = await predictionsApi.annual.getAnnualPredictions({
-              page,
-              size: pageSize
-            })
-          }
-        } else {
-          paginationKey = isSystemData ? 'systemQuarterlyPagination' : 'quarterlyPagination'
-          predictionKey = isSystemData ? 'systemQuarterlyPredictions' : 'quarterlyPredictions'
-          const pageSize = isSystemData ? 20 : 10
-
-          if (isSystemData) {
-            response = await predictionsApi.quarterly.getSystemQuarterlyPredictions({
-              page,
-              size: pageSize
-            })
-          } else {
-            response = await predictionsApi.quarterly.getQuarterlyPredictions({
-              page,
-              size: pageSize
-            })
-          }
-        }
-
-        // Handle response - check if it's paginated response format
-        const predictions = response.data || []
-        const totalPages = response.pages || Math.ceil((response.total || predictions.length) / (isSystemData ? 20 : 10))
-        const totalItems = response.total || predictions.length
-
-        // Update the specific data array and pagination info
-        set((state) => {
-          const updateObj: Partial<PredictionsState> = {}
-          const currentPredictions = state[predictionKey] as Prediction[] || []
-
-          // For batch loading: append new data to existing data
-          // Remove duplicates by filtering out predictions with same ID
-          const existingIds = new Set(currentPredictions.map(p => p.id))
-          const newPredictions = predictions.filter((p: Prediction) => !existingIds.has(p.id))
-
-          // Append new predictions to existing ones
-          updateObj[predictionKey] = [...currentPredictions, ...newPredictions]
-
-          console.log(`📊 Batch loading: ${currentPredictions.length} existing + ${newPredictions.length} new = ${currentPredictions.length + newPredictions.length} total ${type} predictions`)
-
-          // Update pagination info
-          updateObj[paginationKey] = {
-            currentPage: page,
-            totalPages: totalPages,
-            totalItems: totalItems,
-            pageSize: response.size || (isSystemData ? 20 : 10),
-            hasMore: page < totalPages
-          } as any
-
-          updateObj.isFetching = false
-          updateObj.lastFetched = Date.now()
-
-          return { ...state, ...updateObj }
-        })
-
-        console.log(`✅ Successfully loaded page ${page} for ${type} predictions (${isSystemData ? 'system' : 'user'} data)`)
-
-      } catch (error) {
-        console.error(`❌ Failed to fetch page ${page} for ${type}:`, error)
-        set({
-          error: error instanceof Error ? error.message : 'Failed to fetch predictions',
-          isFetching: false
-        })
-      }
-    },
-
-    // NEW: Batch loading function to load 100 predictions at once
-    fetchBatch: async (type: 'annual' | 'quarterly', batchSize: number = 100) => {
-      const state = get()
-
-      // Prevent multiple simultaneous batch calls
-      if (state.isFetching) {
-        console.log(`📦 Batch loading already in progress for ${type} - skipping duplicate call`)
-        return
-      }
-
-      console.log(`📦 Loading batch of ${batchSize} ${type} predictions`)
-
-      const { activeDataFilter } = get()
-      const { user } = useAuthStore.getState()
-
-      if (!user) {
-        console.error('No user found for fetchBatch')
-        return
-      }
-
-      try {
-        set({ isFetching: true, error: null })
-
-        // Determine which data to update and which API to call
-        const isSystemData = activeDataFilter === 'system'
-
-        let response: any
-        let paginationKey: keyof PredictionsState
-        let predictionKey: keyof PredictionsState
-
-        // Calculate the next page to load based on current data
-        const currentData = isSystemData
-          ? (type === 'annual' ? get().systemAnnualPredictions : get().systemQuarterlyPredictions)
-          : (type === 'annual' ? get().annualPredictions : get().quarterlyPredictions)
-
-        const nextPage = Math.floor(currentData.length / 10) + 1 // Assuming 10 items per page in API
-
-        if (type === 'annual') {
-          paginationKey = isSystemData ? 'systemAnnualPagination' : 'annualPagination'
-          predictionKey = isSystemData ? 'systemAnnualPredictions' : 'annualPredictions'
-
-          if (isSystemData) {
-            response = await predictionsApi.annual.getSystemAnnualPredictions({
-              page: nextPage,
-              size: batchSize // Load full batch at once
-            })
-          } else {
-            response = await predictionsApi.annual.getAnnualPredictions({
-              page: nextPage,
-              size: batchSize // Load full batch at once
-            })
-          }
-        } else {
-          paginationKey = isSystemData ? 'systemQuarterlyPagination' : 'quarterlyPagination'
-          predictionKey = isSystemData ? 'systemQuarterlyPredictions' : 'quarterlyPredictions'
-
-          if (isSystemData) {
-            response = await predictionsApi.quarterly.getSystemQuarterlyPredictions({
-              page: nextPage,
-              size: batchSize // Load full batch at once
-            })
-          } else {
-            response = await predictionsApi.quarterly.getQuarterlyPredictions({
-              page: nextPage,
-              size: batchSize // Load full batch at once
-            })
-          }
-        }
-
-        // Handle response
-        const predictions = response.data || []
-        const totalPages = response.pages || Math.ceil((response.total || predictions.length) / batchSize)
-        const totalItems = response.total || predictions.length
-
-        // Update the specific data array and pagination info
-        set((state) => {
-          const updateObj: Partial<PredictionsState> = {}
-          const currentPredictions = state[predictionKey] as Prediction[] || []
-
-          // For batch loading: append new data to existing data
-          // Remove duplicates by filtering out predictions with same ID
-          const existingIds = new Set(currentPredictions.map(p => p.id))
-          const newPredictions = predictions.filter((p: Prediction) => !existingIds.has(p.id))
-
-          // Append new predictions to existing ones
-          updateObj[predictionKey] = [...currentPredictions, ...newPredictions]
-
-          console.log(`📦 BATCH LOADING: ${currentPredictions.length} existing + ${newPredictions.length} new = ${currentPredictions.length + newPredictions.length} total ${type} predictions`)
-
-          // Update pagination info
-          updateObj[paginationKey] = {
-            currentPage: nextPage,
-            totalPages: totalPages,
-            totalItems: totalItems,
-            pageSize: batchSize,
-            hasMore: (currentPredictions.length + newPredictions.length) < totalItems
-          } as any
-
-          updateObj.isFetching = false
-          updateObj.lastFetched = Date.now()
-
-          return { ...state, ...updateObj }
-        })
-
-        console.log(`✅ Successfully loaded batch of ${predictions.length} ${type} predictions (${isSystemData ? 'system' : 'user'} data)`)
-
-      } catch (error) {
-        console.error(`❌ Failed to fetch batch for ${type}:`, error)
-        set({
-          error: error instanceof Error ? error.message : 'Failed to load batch of predictions',
-          isFetching: false
-        })
-      }
-    },
-
     refetchPredictions: async () => {
       await get().fetchPredictions(true)
     },
@@ -897,71 +822,6 @@ export const usePredictionsStore = create<PredictionsStore>((set, get) => {
 
     clearError: () => set({ error: null }),
 
-    // Smart pagination methods
-    setSmartPageSize: (type: 'annual' | 'quarterly', pageSize: number) => {
-      set((state) => ({
-        smartPagination: {
-          ...state.smartPagination,
-          [type]: {
-            ...state.smartPagination[type],
-            pageSize,
-            currentPage: 1 // Reset to first page when changing page size
-          }
-        }
-      }))
-    },
-
-    setSmartCurrentPage: (type: 'annual' | 'quarterly', page: number) => {
-      set((state) => ({
-        smartPagination: {
-          ...state.smartPagination,
-          [type]: {
-            ...state.smartPagination[type],
-            currentPage: page
-          }
-        }
-      }))
-    },
-
-    getSmartPaginatedData: (type: 'annual' | 'quarterly') => {
-      const state = get()
-      const smartPag = state.smartPagination[type]
-      const data = type === 'annual' ? state.annualPredictions : state.quarterlyPredictions
-
-      const startIndex = (smartPag.currentPage - 1) * smartPag.pageSize
-      const endIndex = startIndex + smartPag.pageSize
-
-      return data.slice(startIndex, endIndex)
-    },
-
-    loadMoreDataIfNeeded: async (type: 'annual' | 'quarterly', page: number) => {
-      const state = get()
-      const smartPag = state.smartPagination[type]
-      const requiredEndIndex = page * smartPag.pageSize
-
-      if (requiredEndIndex > smartPag.loadedItems && smartPag.loadedItems < smartPag.totalItems) {
-        console.log(`🔄 Loading more ${type} data for smart pagination...`)
-        // This would trigger API call to load next batch
-        await get().fetchPredictions()
-      }
-    },
-
-    initializeSmartPaginationFromStats: (annualTotal: number, quarterlyTotal: number) => {
-      set((state) => ({
-        smartPagination: {
-          ...state.smartPagination,
-          annual: {
-            ...state.smartPagination.annual,
-            totalItems: annualTotal
-          },
-          quarterly: {
-            ...state.smartPagination.quarterly,
-            totalItems: quarterlyTotal
-          }
-        }
-      }))
-    },
-
     reset: () => set({
       annualPredictions: [],
       quarterlyPredictions: [],
@@ -972,39 +832,7 @@ export const usePredictionsStore = create<PredictionsStore>((set, get) => {
       lastFetched: null,
       isInitialized: false,
       isFetching: false,
-      activeDataFilter: 'system',
-
-      // Reset smart pagination
-      smartPagination: {
-        annual: {
-          currentPage: 1,
-          pageSize: 10,
-          totalItems: 0,
-          loadedItems: 0,
-          hasLoadedInitialBatch: false
-        },
-        quarterly: {
-          currentPage: 1,
-          pageSize: 10,
-          totalItems: 0,
-          loadedItems: 0,
-          hasLoadedInitialBatch: false
-        },
-        systemAnnual: {
-          currentPage: 1,
-          pageSize: 10,
-          totalItems: 0,
-          loadedItems: 0,
-          hasLoadedInitialBatch: false
-        },
-        systemQuarterly: {
-          currentPage: 1,
-          pageSize: 10,
-          totalItems: 0,
-          loadedItems: 0,
-          hasLoadedInitialBatch: false
-        }
-      },
+      activeDataFilter: 'personal', // Reset to initial state (updated on next login)
 
       annualPagination: {
         currentPage: 1,

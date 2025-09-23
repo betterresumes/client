@@ -76,12 +76,9 @@ export function CompanyAnalysisTable({
     isFetching,
     annualPagination,
     quarterlyPagination,
-    fetchPage,
     fetchPredictions,
-    fetchBatch, // NEW: For batch loading
     activeDataFilter,
-    setSmartPageSize,
-    setSmartCurrentPage
+    getFilteredPredictions // FIXED: Add filtered predictions function
   } = usePredictionsStore()
 
   const { stats: dashboardStats } = useDashboardStatsStore()
@@ -131,15 +128,16 @@ export function CompanyAnalysisTable({
 
   const totalPredictionsInDB = getTotalPredictionsFromStats(type)
 
-  // Use store data instead of prop data - this is the core fix!
-  const storeData = type === 'annual' ? annualPredictions : quarterlyPredictions
+  // FIXED: Use filtered predictions instead of raw store data
+  const storeData = getFilteredPredictions(type) // Use filtered data instead of raw store data
   const actualData = storeData || data // Fallback to prop data if store is empty
   const totalLoadedPredictions = actualData.length
 
-  console.log(`🔧 CORE FIX - Using store data:`, {
+  console.log(`🔧 FIXED - Using filtered predictions:`, {
     type,
+    activeDataFilter,
     propDataLength: data.length,
-    storeDataLength: storeData.length,
+    filteredDataLength: storeData.length,
     actualDataUsed: actualData.length,
     totalInDB: totalPredictionsInDB
   })
@@ -275,10 +273,11 @@ export function CompanyAnalysisTable({
       // Mark this batch as being loaded
       setLoadedBatches(prev => new Set([...prev, currentBatch]))
 
-      fetchBatch(type, 100)
+      // Use fetchPredictions to refresh data
+      fetchPredictions(true)
         .finally(() => setIsLoadingBatch(false))
     }
-  }, [currentPage, type, totalPredictionsInDB, isLoadingBatch, isLoading, isFetching, fetchBatch, loadedBatches])
+  }, [currentPage, type, totalPredictionsInDB, isLoadingBatch, isLoading, isFetching, fetchPredictions, loadedBatches])
 
   const handleSort = (field: SortField) => {
     if (sortField === field) {

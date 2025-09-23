@@ -148,32 +148,40 @@ export function DashboardOverview() {
   // Get filtered predictions based on data access settings (include forceRefresh to trigger re-evaluation)
   const filteredAnnualPredictions = useMemo(() => {
     const filtered = getFilteredPredictions('annual')
-    console.log('🔄 Recalculating filtered annual predictions:', filtered.length, 'forceRefresh:', forceRefresh)
+    console.log('🔄 Dashboard - Filtered annual predictions:', {
+      count: filtered.length,
+      activeFilter: activeDataFilter,
+      forceRefresh,
+      userRole: user?.role,
+      sample: filtered.slice(0, 3).map(p => ({
+        company: p.company_symbol,
+        access: p.organization_access,
+        id: p.id
+      }))
+    })
     return filtered
   }, [getFilteredPredictions, forceRefresh, annualPredictions, systemAnnualPredictions, activeDataFilter, lastFetched])
 
   const filteredQuarterlyPredictions = useMemo(() => {
     const filtered = getFilteredPredictions('quarterly')
-    console.log('🔄 Recalculating filtered quarterly predictions:', filtered.length, 'forceRefresh:', forceRefresh)
+    console.log('🔄 Dashboard - Filtered quarterly predictions:', {
+      count: filtered.length,
+      activeFilter: activeDataFilter,
+      forceRefresh,
+      userRole: user?.role,
+      sample: filtered.slice(0, 3).map(p => ({
+        company: p.company_symbol,
+        access: p.organization_access,
+        id: p.id
+      }))
+    })
     return filtered
   }, [getFilteredPredictions, forceRefresh, quarterlyPredictions, systemQuarterlyPredictions, activeDataFilter, lastFetched])
 
-  // Debug logging to track prediction updates
-  console.log('📊 Dashboard render - Annual predictions:', filteredAnnualPredictions.length)
-  console.log('📊 Dashboard render - Quarterly predictions:', filteredQuarterlyPredictions.length)
-  console.log('📊 Dashboard render - Last fetched:', lastFetched)
-  console.log('📊 Dashboard render - Force refresh counter:', forceRefresh)
-  console.log('📊 Dashboard render - Active Data Filter:', activeDataFilter)
-  console.log('📊 Dashboard render - RAW Annual sample:', safeAnnualPredictions.slice(0, 3).map(p => ({
-    company: p.company_symbol,
-    access: p.organization_access,
-    org_name: p.organization_name
-  })))
-
   console.log('Annual Predictions:', safeAnnualPredictions)
 
-  // Format company data for display
-  const companyData = safeAnnualPredictions.map((pred: any, index: number) => ({
+  // Format company data for display - FIXED: Use filteredAnnualPredictions instead of safeAnnualPredictions
+  const companyData = filteredAnnualPredictions.map((pred: any, index: number) => ({
     id: index + 1,
     company: pred.company_symbol,
     subtitle: pred.company_name,
@@ -186,9 +194,25 @@ export function DashboardOverview() {
     riskColor: getRiskBadgeColor(pred.risk_level || pred.risk_category || 'unknown')
   }))
 
+  console.log('📊 Formatted company data:', companyData.length, 'items')
+
   // Check if any data is loading
   const isLoading = isStatsLoading || isPredictionsLoading
   const error = statsError || predictionsError
+
+  // Debug logging to track prediction updates (after isLoading is defined)
+  console.log('📊 Dashboard render state:', {
+    userRole: user?.role,
+    activeDataFilter,
+    isLoading: isLoading,
+    annualCount: filteredAnnualPredictions.length,
+    quarterlyCount: filteredQuarterlyPredictions.length,
+    rawAnnualCount: annualPredictions.length,
+    rawQuarterlyCount: quarterlyPredictions.length,
+    systemAnnualCount: systemAnnualPredictions.length,
+    systemQuarterlyCount: systemQuarterlyPredictions.length,
+    lastFetched: lastFetched ? new Date(lastFetched).toISOString() : 'never'
+  })
 
   // Check if filtered data is empty (not loading)
   if (!isLoading && filteredAnnualPredictions.length === 0 && filteredQuarterlyPredictions.length === 0) {
@@ -247,26 +271,33 @@ export function DashboardOverview() {
 
         <div className="grid grid-cols-1 md:grid-cols-5 gap-6">
           {(() => {
-            // STRICT Data Source Separation:
-            // - 'system' (Platform tab) -> ONLY show platform_statistics
-            // - 'personal'/'organization' (User tabs) -> ONLY show user_dashboard, NEVER platform data
+            // FIXED: Data Source Separation based on user role:
+            // - Super admin: ONLY platform_statistics, never user_dashboard
+            // - Other roles: 'system' filter -> platform_statistics, other filters -> user_dashboard
             const isShowingPlatform = activeDataFilter === 'system';
+            const isSuperAdmin = user?.role === 'super_admin';
 
             let statsToShow = null;
             let dataSourceLabel = '';
 
-            if (isShowingPlatform) {
-              // Platform tab: Only platform_statistics
+            if (isSuperAdmin) {
+              // Super admin: ALWAYS show platform statistics regardless of filter
+              statsToShow = dashboardStats?.platform_statistics;
+              dataSourceLabel = 'Platform Data';
+            } else if (isShowingPlatform) {
+              // Other users on Platform tab: Only platform_statistics
               statsToShow = dashboardStats?.platform_statistics;
               dataSourceLabel = 'Platform Data';
             } else {
-              // User tabs (personal/organization): Only user_dashboard, never platform data
+              // Other users on Personal/Organization tabs: Only user_dashboard, never platform data
               statsToShow = dashboardStats?.user_dashboard;
               dataSourceLabel = 'User Data';
             }
 
-            console.log('📊 STRICT Data Separation:', {
+            console.log('📊 FIXED Data Separation:', {
+              userRole: user?.role,
               activeDataFilter,
+              isSuperAdmin,
               isShowingPlatform,
               userScope: dashboardStats?.scope,
               hasUserDashboard: !!dashboardStats?.user_dashboard,

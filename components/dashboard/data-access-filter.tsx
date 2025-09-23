@@ -46,21 +46,13 @@ export function DataSourceTabs() {
     )
   }
 
-  // Super admin: Personal + Organizations + System tabs (removed "All Data" tab)
+  // Super admin: ONLY Platform tab (no personal/organizations access)
   if (isAdmin()) {
     return (
       <div className="flex items-center gap-2">
         <span className="text-xs text-gray-500">Data Source:</span>
         <Tabs value={activeDataFilter} onValueChange={setDataFilter} className="w-auto">
           <TabsList className="bg-gray-100 dark:bg-gray-800">
-            <TabsTrigger value="personal" className="text-sm flex items-center gap-1">
-              <User className="h-3 w-3" />
-              Personal
-            </TabsTrigger>
-            <TabsTrigger value="organization" className="text-sm flex items-center gap-1">
-              <Building2 className="h-3 w-3" />
-              Organizations
-            </TabsTrigger>
             <TabsTrigger value="system" className="text-sm flex items-center gap-1">
               <Globe className="h-3 w-3" />
               Platform
@@ -71,7 +63,7 @@ export function DataSourceTabs() {
     )
   }
 
-  // Tenant admin: Organizations + System tabs (organization selector shown separately above)
+  // Tenant admin: Organizations + Platform tabs (no personal - they manage organizations)
   if (isTenantAdmin()) {
     return (
       <div className="flex items-center gap-2">
@@ -92,7 +84,7 @@ export function DataSourceTabs() {
     )
   }
 
-  // Org admin/member: Organization + System tabs (show "Your Org")
+  // Org admin/member: Organization + Platform tabs ONLY (no personal data access)
   if (isOrgAdmin() || user.role === 'org_member') {
     return (
       <div className="flex items-center gap-2">
