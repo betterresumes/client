@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { usePredictionsStore } from '@/lib/stores/predictions-store'
 import { useDashboardStore } from '@/lib/stores/dashboard-store'
 import { Badge } from '@/components/ui/badge'
@@ -68,13 +68,28 @@ export function CompanyAnalysisTable({
   const {
     getPredictionProbability,
     getRiskBadgeColor,
-    formatPredictionDate
+    formatPredictionDate,
+    isFetching,
+    annualPagination,
+    quarterlyPagination,
+    fetchPage
   } = usePredictionsStore()
+
+  // Get pagination info for current prediction type
+  const pagination = type === 'annual' ? annualPagination : quarterlyPagination
+
+  console.log(`📊 TABLE: ${type} pagination info:`, {
+    currentPage: pagination.currentPage,
+    totalPages: pagination.totalPages,
+    totalItems: pagination.totalItems,
+    pageSize: pagination.pageSize,
+    hasMore: pagination.hasMore,
+    dataLength: data.length
+  })
 
   const { navigateToCompanyDetails, navigateToCustomAnalysisWithData, setActiveTab } = useDashboardStore()
 
-  const [rowsPerPage, setRowsPerPage] = useState('10')
-  const [currentPage, setCurrentPage] = useState(1)
+  // Removed client-side pagination - using only server-side pagination
   const [sortField, setSortField] = useState<SortField>('company')
   const [sortDirection, setSortDirection] = useState<SortDirection>('asc')
 
@@ -82,7 +97,14 @@ export function CompanyAnalysisTable({
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [selectedPrediction, setSelectedPrediction] = useState<any>(null)
 
-  // Filter and sort data
+  // Reset to first page when filters change
+  useEffect(() => {
+    if (pagination.currentPage !== 1) {
+      fetchPage(type, 1)
+    }
+  }, [searchTerm, selectedSector, selectedRiskLevel])
+
+  // Filter and sort data (client-side for current page only)
   const filteredAndSortedData = useMemo(() => {
     let filtered = data.filter((item: any) => {
       // Search filter
@@ -146,13 +168,8 @@ export function CompanyAnalysisTable({
     return filtered
   }, [data, searchTerm, selectedSector, selectedRiskLevel, sortField, sortDirection, getPredictionProbability, formatPredictionDate])
 
-  // Pagination
-  const totalItems = filteredAndSortedData.length
-  const itemsPerPage = parseInt(rowsPerPage)
-  const totalPages = Math.ceil(totalItems / itemsPerPage)
-  const startIndex = (currentPage - 1) * itemsPerPage
-  const endIndex = startIndex + itemsPerPage
-  const currentData = filteredAndSortedData.slice(startIndex, endIndex)
+  // Use filtered data directly (no client-side pagination slicing)
+  const currentData = filteredAndSortedData
 
   const handleSort = (field: SortField) => {
     if (sortField === field) {
@@ -163,13 +180,10 @@ export function CompanyAnalysisTable({
     }
   }
 
+  // Server-side page change handler
   const handlePageChange = (page: number) => {
-    setCurrentPage(page)
-  }
-
-  const handleRowsPerPageChange = (value: string) => {
-    setRowsPerPage(value)
-    setCurrentPage(1) // Reset to first page
+    console.log(`📄 Fetching page ${page} for ${type} predictions`)
+    fetchPage(type, page)
   }
 
   const getSortIcon = (field: SortField) => {
@@ -185,13 +199,13 @@ export function CompanyAnalysisTable({
     const pages = []
     const showPages = 5
 
-    if (totalPages <= showPages) {
-      for (let i = 1; i <= totalPages; i++) {
+    if (pagination.totalPages <= showPages) {
+      for (let i = 1; i <= pagination.totalPages; i++) {
         pages.push(i)
       }
     } else {
-      const start = Math.max(1, currentPage - 2)
-      const end = Math.min(totalPages, start + showPages - 1)
+      const start = Math.max(1, pagination.currentPage - 2)
+      const end = Math.min(pagination.totalPages, start + showPages - 1)
 
       for (let i = start; i <= end; i++) {
         pages.push(i)
@@ -260,24 +274,9 @@ export function CompanyAnalysisTable({
             <p className="text-sm text-gray-600 dark:text-gray-400 font-bricolage">
               {isLoading
                 ? "Loading companies..."
-                : `Showing ${startIndex + 1}-${Math.min(endIndex, totalItems)} of ${totalItems} companies with ${type} predictions`
+                : `Showing page ${pagination.currentPage} of ${pagination.totalPages} (${pagination.totalItems} total ${type} predictions)`
               }
             </p>
-          </div>
-          <div className="flex items-center space-x-2">
-            <span className="text-sm text-gray-500 font-bricolage">Show:</span>
-            <Select value={rowsPerPage} onValueChange={handleRowsPerPageChange}>
-              <SelectTrigger className="w-16 h-8">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="5">5</SelectItem>
-                <SelectItem value="10">10</SelectItem>
-                <SelectItem value="25">25</SelectItem>
-                <SelectItem value="50">50</SelectItem>
-              </SelectContent>
-            </Select>
-            <span className="text-sm text-gray-500 font-bricolage">per page</span>
           </div>
         </div>
 
@@ -367,7 +366,7 @@ export function CompanyAnalysisTable({
               </TableHeader>
               <TableBody>
                 {isLoading ? (
-                  Array.from({ length: parseInt(rowsPerPage) }).map((_, index) => (
+                  Array.from({ length: 10 }).map((_, index) => (
                     <TableRow key={index}>
                       <TableCell>
                         <div>
@@ -490,19 +489,32 @@ export function CompanyAnalysisTable({
           </div>
         )}
 
-        {/* Pagination */}
-        {filteredAndSortedData.length > 0 && totalPages > 1 && (
-          <div className="flex items-center justify-between mt-6">
-            <div className="text-sm text-gray-600 font-bricolage">
-              Page {currentPage} of {totalPages}
+        {/* Server-side Pagination Info and Load More */}
+        <div className="flex items-center justify-between mt-6">
+          <div className="text-sm text-gray-600 font-bricolage">
+            Loaded {data.length} of {pagination.totalItems} {type} predictions
+            {pagination.totalPages > 1 && (
+              <span className="ml-2 text-gray-500">
+                (Server: page {pagination.currentPage} of {pagination.totalPages})
+              </span>
+            )}
+          </div>
+
+        </div>
+
+        {/* Server-side Pagination - Always show if we have pagination data */}
+        {(pagination.totalPages > 1 || pagination.totalItems > 10) && (
+          <div className="flex items-center justify-between mt-4 pt-4 border-t border-gray-200">
+            <div className="text-sm text-gray-500 font-bricolage">
+              Showing page {pagination.currentPage} of {pagination.totalPages} ({pagination.totalItems} total results)
             </div>
 
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1">
               <Button
                 variant="outline"
                 size="sm"
-                onClick={() => handlePageChange(currentPage - 1)}
-                disabled={currentPage === 1}
+                onClick={() => handlePageChange(pagination.currentPage - 1)}
+                disabled={pagination.currentPage === 1 || isFetching}
                 className="flex items-center gap-1 font-bricolage"
               >
                 <ChevronLeft className="w-4 h-4" />
@@ -510,56 +522,25 @@ export function CompanyAnalysisTable({
               </Button>
 
               <div className="flex items-center gap-1">
-                {currentPage > 3 && totalPages > 5 && (
-                  <>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => handlePageChange(1)}
-                      className="w-8 h-8 p-0 font-bricolage"
-                    >
-                      1
-                    </Button>
-                    {currentPage > 4 && (
-                      <span className="px-2 text-gray-500">...</span>
-                    )}
-                  </>
-                )}
-
                 {getPageNumbers().map((page) => (
                   <Button
                     key={page}
-                    variant={currentPage === page ? "default" : "outline"}
+                    variant={pagination.currentPage === page ? "default" : "outline"}
                     size="sm"
                     onClick={() => handlePageChange(page)}
+                    disabled={isFetching}
                     className="w-8 h-8 p-0 font-bricolage"
                   >
                     {page}
                   </Button>
                 ))}
-
-                {currentPage < totalPages - 2 && totalPages > 5 && (
-                  <>
-                    {currentPage < totalPages - 3 && (
-                      <span className="px-2 text-gray-500">...</span>
-                    )}
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => handlePageChange(totalPages)}
-                      className="w-8 h-8 p-0 font-bricolage"
-                    >
-                      {totalPages}
-                    </Button>
-                  </>
-                )}
               </div>
 
               <Button
                 variant="outline"
                 size="sm"
-                onClick={() => handlePageChange(currentPage + 1)}
-                disabled={currentPage === totalPages}
+                onClick={() => handlePageChange(pagination.currentPage + 1)}
+                disabled={pagination.currentPage === pagination.totalPages || isFetching}
                 className="flex items-center gap-1 font-bricolage"
               >
                 Next

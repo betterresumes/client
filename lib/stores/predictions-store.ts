@@ -2,6 +2,7 @@
 
 import { create } from 'zustand'
 import { predictionsApi } from '@/lib/api/predictions'
+import { dashboardApi } from '@/lib/api/dashboard'
 import { organizationsApi } from '@/lib/api/organizations'
 import { useAuthStore } from '@/lib/stores/auth-store'
 
@@ -63,11 +64,29 @@ interface PredictionsState {
   isInitialized: boolean
   isFetching: boolean // Add flag to prevent multiple simultaneous calls
 
+  // Pagination state
+  annualPagination: {
+    currentPage: number
+    totalPages: number
+    totalItems: number
+    pageSize: number
+    hasMore: boolean
+  }
+  quarterlyPagination: {
+    currentPage: number
+    totalPages: number
+    totalItems: number
+    pageSize: number
+    hasMore: boolean
+  }
+
   // Data access filter state  
   activeDataFilter: string // 'personal', 'organization', 'system', or 'all' for viewing
 
   // Actions
   fetchPredictions: (forceRefresh?: boolean) => Promise<void>
+  loadMorePredictions: (type: 'annual' | 'quarterly') => Promise<void>
+  fetchPage: (type: 'annual' | 'quarterly', page: number) => Promise<void>
   refetchPredictions: () => Promise<void>
   clearError: () => void
   reset: () => void
@@ -86,36 +105,12 @@ interface PredictionsState {
 }
 
 export const usePredictionsStore = create<PredictionsState>((set, get) => {
-  // Set up event listeners for automatic refresh and auth events
+  // Set up minimal event listeners - avoid automatic fetching
   if (typeof window !== 'undefined') {
-    window.addEventListener('predictions-updated', () => {
-      console.log('🔄 Predictions updated - auto-refreshing data...')
-      get().invalidateCache()
-    })
-
-    // Listen for successful login to refresh data
-    window.addEventListener('auth-login-success', () => {
-      console.log('🔑 Login successful - forcing prediction refresh')
-      setTimeout(() => {
-        get().invalidateCache()
-      }, 200) // Small delay to ensure API client has tokens
-    })
-
-    // Listen for logout to clear data
+    // Only listen for logout to clear data
     window.addEventListener('auth-logout', () => {
       console.log('🔓 Logout detected - clearing prediction data')
       get().reset()
-    })
-
-    // Listen for token refresh success to retry failed requests
-    window.addEventListener('auth-token-refreshed', () => {
-      console.log('🔄 Token refreshed - retrying prediction fetch if needed')
-      const state = get()
-      if (state.error && state.error.includes('Authentication issue')) {
-        setTimeout(() => {
-          get().fetchPredictions(true)
-        }, 500)
-      }
     })
   }
 
@@ -129,9 +124,34 @@ export const usePredictionsStore = create<PredictionsState>((set, get) => {
     isFetching: false,
     activeDataFilter: 'system', // Start with 'system' for user role
 
+    // Initial pagination state - fetch more data initially to ensure we get both user and platform data
+    annualPagination: {
+      currentPage: 1,
+      totalPages: 0,
+      totalItems: 0,
+      pageSize: 200, // Fetch 200 items initially to get comprehensive data coverage
+      hasMore: false
+    },
+    quarterlyPagination: {
+      currentPage: 1,
+      totalPages: 0,
+      totalItems: 0,
+      pageSize: 200, // Fetch 200 items initially to get comprehensive data coverage
+      hasMore: false
+    },
+
 
     fetchPredictions: async (forceRefresh = false) => {
       const state = get()
+
+      console.log('🚀 fetchPredictions called:', {
+        forceRefresh,
+        isFetching: state.isFetching,
+        isInitialized: state.isInitialized,
+        hasAnnual: state.annualPredictions.length,
+        hasQuarterly: state.quarterlyPredictions.length,
+        lastFetched: state.lastFetched ? new Date(state.lastFetched).toISOString() : 'never'
+      })
 
       // Prevent multiple simultaneous calls
       if (state.isFetching) {
@@ -139,13 +159,13 @@ export const usePredictionsStore = create<PredictionsState>((set, get) => {
         return
       }
 
-      // Don't fetch if we already have recent data (less than 30 minutes old) and app is initialized, unless forcing refresh
+      // Don't fetch if we already have recent data and app is initialized, unless forcing refresh
       if (!forceRefresh && state.isInitialized && state.lastFetched && Date.now() - state.lastFetched < 30 * 60 * 1000) {
-        console.log('📋 Using cached predictions data - no API call needed')
+        console.log('📋 Using cached predictions data (less than 30 min old) - no API call needed')
         return
       }
 
-      console.log('🚀 Fetching fresh predictions data from API...')
+      console.log('� Making API calls to fetch predictions...')
       set({ isLoading: true, error: null, isFetching: true })
 
       try {
@@ -181,30 +201,65 @@ export const usePredictionsStore = create<PredictionsState>((set, get) => {
           }
         }
 
+        // Get pagination settings
+        const { annualPagination, quarterlyPagination } = get()
+
         const [annualResponse, quarterlyResponse] = await Promise.all([
-          predictionsApi.annual.getAnnualPredictions({ page: 1, size: 100 }),
-          predictionsApi.quarterly.getQuarterlyPredictions({ page: 1, size: 100 })
+          predictionsApi.annual.getAnnualPredictions({
+            page: 1, // Always start from page 1 for fresh fetch
+            size: annualPagination.pageSize
+          }),
+          predictionsApi.quarterly.getQuarterlyPredictions({
+            page: 1, // Always start from page 1 for fresh fetch
+            size: quarterlyPagination.pageSize
+          })
         ])
 
-        // Handle the new API response structure with predictions array
-        const annualData = annualResponse?.data?.predictions || annualResponse?.data || []
-        const quarterlyData = quarterlyResponse?.data?.predictions || quarterlyResponse?.data || []
+        // Handle the new API response structure with predictions array and pagination info
+        const annualData = annualResponse?.data?.items || annualResponse?.data?.predictions || annualResponse?.data || []
+        const quarterlyData = quarterlyResponse?.data?.items || quarterlyResponse?.data?.predictions || quarterlyResponse?.data || []
+
+        // Get pagination info from response
+        const annualMeta = annualResponse?.data
+        const quarterlyMeta = quarterlyResponse?.data
 
         console.log('Raw annual predictions data:', annualData)
         console.log("****")
         console.log('Raw quarterly predictions data:', quarterlyData)
 
-        // Transform annual predictions
+        // Transform annual predictions - NO ROLE FILTERING, only data transformation
         let annualPredictions = Array.isArray(annualData) ? annualData.map((pred: any) => {
           console.log('Transforming annual prediction:', pred)
+
+          // Properly map organization_access from API response
+          let organization_access = pred.access_level || pred.organization_access || 'personal'
+
+          // For tenant admin, map based on actual data relationships
+          if (user.role === 'tenant_admin' && pred.tenant_id === user.tenant_id) {
+            if (pred.organization_id && tenantOrganizations.some(org => org.id === pred.organization_id)) {
+              organization_access = 'organization'
+            } else if (pred.created_by === user.id) {
+              organization_access = 'personal'
+            }
+          }
+
+          // For org users, map based on organization relationships
+          if ((user.role === 'org_admin' || user.role === 'org_member') && user.organization_id) {
+            if (pred.organization_id === user.organization_id) {
+              organization_access = 'organization'
+            } else if (pred.created_by === user.id) {
+              organization_access = 'personal'
+            }
+          }
+
           return {
             ...pred,
             // Add computed fields for backward compatibility
             default_probability: pred.probability || 0,
             risk_category: pred.risk_level,
             reporting_year: pred.reporting_year?.toString() || new Date().getFullYear().toString(),
-            // Ensure organization_access is properly mapped from the new backend
-            organization_access: pred.access_level || pred.organization_access || 'personal',
+            // Use properly mapped organization_access
+            organization_access,
             // Map financial ratios to legacy format for annual predictions
             financial_ratios: {
               ltdtc: pred.long_term_debt_to_total_capital,
@@ -214,9 +269,31 @@ export const usePredictionsStore = create<PredictionsState>((set, get) => {
           }
         }) : []
 
-        // Transform quarterly predictions  
+        // Transform quarterly predictions - NO ROLE FILTERING, only data transformation
         let quarterlyPredictions = Array.isArray(quarterlyData) ? quarterlyData.map((pred: any) => {
           console.log('Transforming quarterly prediction:', pred)
+
+          // Properly map organization_access from API response
+          let organization_access = pred.access_level || pred.organization_access || 'personal'
+
+          // For tenant admin, map based on actual data relationships
+          if (user.role === 'tenant_admin' && pred.tenant_id === user.tenant_id) {
+            if (pred.organization_id && tenantOrganizations.some(org => org.id === pred.organization_id)) {
+              organization_access = 'organization'
+            } else if (pred.created_by === user.id) {
+              organization_access = 'personal'
+            }
+          }
+
+          // For org users, map based on organization relationships
+          if ((user.role === 'org_admin' || user.role === 'org_member') && user.organization_id) {
+            if (pred.organization_id === user.organization_id) {
+              organization_access = 'organization'
+            } else if (pred.created_by === user.id) {
+              organization_access = 'personal'
+            }
+          }
+
           return {
             ...pred,
             // Add computed fields for backward compatibility
@@ -224,8 +301,8 @@ export const usePredictionsStore = create<PredictionsState>((set, get) => {
             risk_category: pred.risk_level,
             reporting_year: pred.reporting_year?.toString() || new Date().getFullYear().toString(),
             reporting_quarter: pred.reporting_quarter?.toUpperCase() || "Q1",
-            // Ensure organization_access is properly mapped from the new backend
-            organization_access: pred.access_level || pred.organization_access || 'personal',
+            // Use properly mapped organization_access
+            organization_access,
             // Map financial ratios to legacy format for quarterly predictions
             financial_ratios: {
               ltdtc: pred.long_term_debt_to_total_capital,
@@ -236,53 +313,7 @@ export const usePredictionsStore = create<PredictionsState>((set, get) => {
           }
         }) : []
 
-        // Filter predictions based on user role - but ALWAYS include system data
-        if (user.role === 'tenant_admin' && tenantOrganizations.length > 0) {
-          const orgIds = tenantOrganizations.map(org => org.id)
-          console.log('🔍 Filtering predictions for tenant admin organizations:', orgIds)
-
-          annualPredictions = annualPredictions.filter(p =>
-            // Always include system data
-            p.organization_access === 'system' ||
-            // Include tenant's data
-            p.tenant_id === user.tenant_id ||
-            // Include organization data for tenant's organizations
-            (p.organization_id && orgIds.includes(p.organization_id))
-          )
-
-          quarterlyPredictions = quarterlyPredictions.filter(p =>
-            // Always include system data
-            p.organization_access === 'system' ||
-            // Include tenant's data
-            p.tenant_id === user.tenant_id ||
-            // Include organization data for tenant's organizations
-            (p.organization_id && orgIds.includes(p.organization_id))
-          )
-
-          console.log('🔍 Filtered to tenant predictions (including system):', {
-            annual: annualPredictions.length,
-            quarterly: quarterlyPredictions.length
-          })
-        } else if (user.role === 'org_admin' || user.role === 'org_member') {
-          // Filter by organization for org-level users - but keep system data
-          if (user.organization_id) {
-            annualPredictions = annualPredictions.filter(p =>
-              // Always include system data
-              p.organization_access === 'system' ||
-              // Include organization data
-              p.organization_id === user.organization_id
-            )
-            quarterlyPredictions = quarterlyPredictions.filter(p =>
-              // Always include system data
-              p.organization_access === 'system' ||
-              // Include organization data
-              p.organization_id === user.organization_id
-            )
-            console.log('🔍 Filtered to organization predictions (including system):', user.organization_id)
-          }
-        }
-        // Super admin sees all predictions (no filtering)
-
+        // NO ROLE-BASED FILTERING - data transformation already handled organization_access properly
         console.log("quarterly prediction", quarterlyPredictions)
         console.log("annual predictions after transformation:", annualPredictions)
         console.log(`✅ Loaded ${annualPredictions.length} annual and ${quarterlyPredictions.length} quarterly predictions`)
@@ -291,6 +322,45 @@ export const usePredictionsStore = create<PredictionsState>((set, get) => {
         console.log('Annual predictions access levels:', annualPredictions.map(p => ({ id: p.id, company: p.company_symbol, access: p.organization_access })))
         console.log('Quarterly predictions access levels:', quarterlyPredictions.map(p => ({ id: p.id, company: p.company_symbol, access: p.organization_access })))
 
+        // Calculate proper pagination totals based on dashboard stats instead of just API response
+        const calculatePaginationTotals = (meta: any, currentData: any[]) => {
+          // Try to get dashboard stats to calculate real totals
+          const dashboardStatsStore = require('@/lib/stores/dashboard-stats-store').useDashboardStatsStore.getState()
+          const dashboardStats = dashboardStatsStore.stats
+
+          let realTotalPredictions = meta?.total || currentData.length
+
+          // Use dashboard stats for more accurate totals if available
+          if (dashboardStats) {
+            const state = get()
+            const isShowingPlatform = state.activeDataFilter === 'system'
+
+            if (isShowingPlatform && dashboardStats.platform_statistics) {
+              // Platform tab: use platform statistics total
+              realTotalPredictions = dashboardStats.platform_statistics.total_predictions || realTotalPredictions
+            } else if (!isShowingPlatform && dashboardStats.user_dashboard) {
+              // User tabs: use user dashboard total
+              realTotalPredictions = dashboardStats.user_dashboard.total_predictions || realTotalPredictions
+            }
+          }
+
+          console.log(`📊 Pagination calculation:`, {
+            apiMetaTotal: meta?.total,
+            currentDataLength: currentData.length,
+            dashboardTotal: realTotalPredictions,
+            activeDataFilter: get().activeDataFilter
+          })
+
+          return {
+            totalItems: realTotalPredictions,
+            totalPages: Math.ceil(realTotalPredictions / (meta?.size || 200)),
+            hasMore: currentData.length < realTotalPredictions
+          }
+        }
+
+        const annualPaginationData = calculatePaginationTotals(annualMeta, annualPredictions)
+        const quarterlyPaginationData = calculatePaginationTotals(quarterlyMeta, quarterlyPredictions)
+
         set({
           annualPredictions,
           quarterlyPredictions,
@@ -298,7 +368,22 @@ export const usePredictionsStore = create<PredictionsState>((set, get) => {
           error: null,
           lastFetched: Date.now(),
           isInitialized: true,
-          isFetching: false
+          isFetching: false,
+          // Update pagination state with dashboard-aware totals
+          annualPagination: {
+            currentPage: 1,
+            totalPages: annualPaginationData.totalPages,
+            totalItems: annualPaginationData.totalItems,
+            pageSize: annualPagination.pageSize,
+            hasMore: annualPaginationData.hasMore
+          },
+          quarterlyPagination: {
+            currentPage: 1,
+            totalPages: quarterlyPaginationData.totalPages,
+            totalItems: quarterlyPaginationData.totalItems,
+            pageSize: quarterlyPagination.pageSize,
+            hasMore: quarterlyPaginationData.hasMore
+          }
         })
       } catch (error: any) {
         console.error('Failed to fetch predictions:', error)
@@ -331,14 +416,250 @@ export const usePredictionsStore = create<PredictionsState>((set, get) => {
       }
     },
 
+    loadMorePredictions: async (type: 'annual' | 'quarterly') => {
+      const state = get()
+
+      // Prevent multiple simultaneous calls
+      if (state.isFetching) {
+        console.log('📦 Predictions already being fetched - skipping load more call')
+        return
+      }
+
+      const pagination = type === 'annual' ? state.annualPagination : state.quarterlyPagination
+
+      // Check if there are more pages to load
+      if (!pagination.hasMore) {
+        console.log(`📋 No more ${type} predictions to load`)
+        return
+      }
+
+      console.log(`🚀 Loading more ${type} predictions (page ${pagination.currentPage + 1})...`)
+      set({ isFetching: true, error: null })
+
+      try {
+        const authStore = useAuthStore.getState()
+        const user = authStore.user
+
+        if (!user) {
+          set({ isFetching: false, error: 'User not authenticated' })
+          return
+        }
+
+        const nextPage = pagination.currentPage + 1
+        const apiCall = type === 'annual'
+          ? predictionsApi.annual.getAnnualPredictions({ page: nextPage, size: pagination.pageSize })
+          : predictionsApi.quarterly.getQuarterlyPredictions({ page: nextPage, size: pagination.pageSize })
+
+        const response = await apiCall
+        const newData = response?.data?.items || response?.data?.predictions || response?.data || []
+        const meta = response?.data
+
+        // Transform new predictions same as in fetchPredictions
+        let newPredictions = Array.isArray(newData) ? newData.map((pred: any) => {
+          if (type === 'annual') {
+            return {
+              ...pred,
+              default_probability: pred.probability || 0,
+              risk_category: pred.risk_level,
+              reporting_year: pred.reporting_year?.toString() || new Date().getFullYear().toString(),
+              organization_access: pred.access_level || pred.organization_access || 'personal',
+              financial_ratios: {
+                ltdtc: pred.long_term_debt_to_total_capital,
+                roa: pred.return_on_assets,
+                ebitint: pred.ebit_to_interest_expense
+              }
+            }
+          } else {
+            return {
+              ...pred,
+              default_probability: pred.ensemble_probability || pred.logistic_probability || pred.gbm_probability || 0,
+              risk_category: pred.risk_level,
+              reporting_year: pred.reporting_year?.toString() || new Date().getFullYear().toString(),
+              reporting_quarter: pred.reporting_quarter?.toString() || 'Q1',
+              organization_access: pred.access_level || pred.organization_access || 'personal'
+            }
+          }
+        }) : []
+
+        // Apply same filtering logic as fetchPredictions
+        if (user.role === 'tenant_admin' && user.tenant_id) {
+          // Get tenant organizations (you might want to cache this)
+          let orgIds: string[] = []
+          try {
+            const orgResponse = await organizationsApi.list({
+              tenant_id: user.tenant_id,
+              page: 1,
+              limit: 1000
+            })
+            if (orgResponse.success) {
+              orgIds = (orgResponse.data?.organizations || []).map((org: any) => org.id)
+            }
+          } catch (error) {
+            console.warn('⚠️ Failed to fetch tenant organizations for load more:', error)
+          }
+
+          newPredictions = newPredictions.filter(p =>
+            // Include tenant's personal data
+            (p.organization_access === 'personal' && p.created_by === user.id) ||
+            // Include organization data for tenant's organizations
+            (p.organization_access === 'organization' && p.organization_id && orgIds.includes(p.organization_id)) ||
+            // Include system data (but will be filtered later based on activeDataFilter)
+            p.organization_access === 'system'
+          )
+        } else if ((user.role === 'org_admin' || user.role === 'org_member') && user.organization_id) {
+          newPredictions = newPredictions.filter(p =>
+            // Include user's personal data
+            (p.organization_access === 'personal' && p.created_by === user.id) ||
+            // Include organization data
+            (p.organization_access === 'organization' && p.organization_id === user.organization_id) ||
+            // Include system data (but will be filtered later based on activeDataFilter)
+            p.organization_access === 'system'
+          )
+        }
+
+        console.log(`✅ Loaded ${newPredictions.length} more ${type} predictions`)
+
+        // Update state with new predictions and pagination info
+        set({
+          [type === 'annual' ? 'annualPredictions' : 'quarterlyPredictions']: [
+            ...(type === 'annual' ? state.annualPredictions : state.quarterlyPredictions),
+            ...newPredictions
+          ],
+          [`${type}Pagination`]: {
+            currentPage: nextPage,
+            totalPages: meta?.pages || pagination.totalPages,
+            totalItems: meta?.total || pagination.totalItems,
+            pageSize: pagination.pageSize,
+            hasMore: nextPage < (meta?.pages || pagination.totalPages)
+          },
+          isFetching: false
+        })
+      } catch (error: any) {
+        console.error(`Failed to load more ${type} predictions:`, error)
+        set({
+          isFetching: false,
+          error: error.message || `Failed to load more ${type} predictions`
+        })
+      }
+    },
+
+    fetchPage: async (type: 'annual' | 'quarterly', page: number) => {
+      const state = get()
+
+      // Prevent multiple simultaneous calls
+      if (state.isFetching) {
+        console.log('📦 Predictions already being fetched - skipping page fetch call')
+        return
+      }
+
+      console.log(`🚀 Fetching ${type} predictions page ${page}...`)
+      set({ isFetching: true, error: null })
+
+      try {
+        // Get current user from auth store
+        const authStore = useAuthStore.getState()
+        const user = authStore.user
+
+        if (!user) {
+          set({
+            isFetching: false,
+            error: 'User not authenticated'
+          })
+          return
+        }
+
+        const pagination = type === 'annual' ? state.annualPagination : state.quarterlyPagination
+
+        // Use 10 for first page, 20 for subsequent pages
+        const pageSize = page === 1 ? 10 : 20
+
+        console.log(`📄 Page ${page} with size ${pageSize}`)
+
+        // Make API call to get specific page
+        const response = type === 'annual'
+          ? await predictionsApi.annual.getAnnualPredictions({ page, size: pageSize })
+          : await predictionsApi.quarterly.getQuarterlyPredictions({ page, size: pageSize })
+
+        if (!response.success) {
+          throw new Error(typeof response.error === 'string' ? response.error : `Failed to fetch ${type} predictions`)
+        }
+
+        let predictions = response.data?.predictions || []
+        const meta = response.data?.meta
+
+        // Apply role-based filtering (same as other functions)
+        if (user.role === 'tenant_admin' && user.tenant_id) {
+          let orgIds: string[] = []
+          try {
+            const orgResponse = await organizationsApi.list({
+              tenant_id: user.tenant_id,
+              page: 1,
+              limit: 1000
+            })
+            if (orgResponse.success) {
+              orgIds = (orgResponse.data?.organizations || []).map((org: any) => org.id)
+            }
+          } catch (error) {
+            console.warn('⚠️ Failed to fetch tenant organizations for page fetch:', error)
+          }
+
+          predictions = predictions.filter((p: any) =>
+            // Include tenant's personal data
+            (p.organization_access === 'personal' && p.created_by === user.id) ||
+            // Include organization data for tenant's organizations
+            (p.organization_access === 'organization' && p.organization_id && orgIds.includes(p.organization_id)) ||
+            // Include system data (but will be filtered later based on activeDataFilter)
+            p.organization_access === 'system'
+          )
+        } else if ((user.role === 'org_admin' || user.role === 'org_member') && user.organization_id) {
+          predictions = predictions.filter((p: any) =>
+            // Include user's personal data
+            (p.organization_access === 'personal' && p.created_by === user.id) ||
+            // Include organization data
+            (p.organization_access === 'organization' && p.organization_id === user.organization_id) ||
+            // Include system data (but will be filtered later based on activeDataFilter)
+            p.organization_access === 'system'
+          )
+        }
+
+        console.log(`✅ Fetched ${predictions.length} ${type} predictions for page ${page}`)
+        console.log(`📊 API Response sample:`, predictions.slice(0, 2).map((p: any) => ({
+          company: p.company_symbol,
+          access: p.organization_access,
+          org_name: p.organization_name,
+          org_id: p.organization_id
+        })))
+
+        // Update state with page predictions (replace, not append)
+        set({
+          [type === 'annual' ? 'annualPredictions' : 'quarterlyPredictions']: predictions,
+          [`${type}Pagination`]: {
+            currentPage: page,
+            totalPages: meta?.pages || pagination.totalPages,
+            totalItems: meta?.total || pagination.totalItems,
+            pageSize: pageSize, // Update pageSize for this page
+            hasMore: page < (meta?.pages || pagination.totalPages)
+          },
+          isFetching: false
+        })
+      } catch (error: any) {
+        console.error(`Failed to fetch ${type} predictions page ${page}:`, error)
+        set({
+          isFetching: false,
+          error: error.message || `Failed to fetch ${type} predictions`
+        })
+      }
+    },
+
     refetchPredictions: async () => {
       set({ lastFetched: null, isInitialized: false }) // Force refetch and reset initialization
       return get().fetchPredictions(true)
     },
 
     invalidateCache: () => {
+      console.log('🗑️ Invalidating predictions cache - will fetch on next request')
       set({ lastFetched: null, isInitialized: false })
-      get().fetchPredictions(true)
+      // Don't automatically fetch - let components request fresh data when needed
     },
 
     clearError: () => set({ error: null }),
@@ -348,7 +669,24 @@ export const usePredictionsStore = create<PredictionsState>((set, get) => {
       quarterlyPredictions: [],
       isLoading: false,
       error: null,
-      lastFetched: null
+      lastFetched: null,
+      isInitialized: false,
+      isFetching: false,
+      // Reset pagination state
+      annualPagination: {
+        currentPage: 1,
+        totalPages: 0,
+        totalItems: 0,
+        pageSize: 10, // Reset to 10 for first load
+        hasMore: false
+      },
+      quarterlyPagination: {
+        currentPage: 1,
+        totalPages: 0,
+        totalItems: 0,
+        pageSize: 10, // Reset to 10 for first load
+        hasMore: false
+      }
     }),
 
     addPrediction: (prediction: Prediction, type: 'annual' | 'quarterly') => {
@@ -478,56 +816,51 @@ export const usePredictionsStore = create<PredictionsState>((set, get) => {
       const state = get()
       const predictions = type === 'annual' ? state.annualPredictions : state.quarterlyPredictions
 
-      console.log(`🔍 Filtering ${type} predictions with filter: ${state.activeDataFilter}`)
-      console.log(`Total ${type} predictions:`, predictions.length)
-      console.log(`Access levels in data:`, predictions.map(p => p.organization_access))
+      console.log(`🔍 FILTERING ${type} predictions:`)
+      console.log(`   - activeDataFilter: "${state.activeDataFilter}"`)
+      console.log(`   - Total predictions: ${predictions.length}`)
+      console.log(`   - Raw prediction sample:`, predictions.slice(0, 2).map(p => ({
+        id: p.id,
+        company: p.company_symbol,
+        access: p.organization_access,
+        org_id: p.organization_id
+      })))
 
-      // Filter based on activeDataFilter
+      // STRICT Data Source Separation (matching dashboard stats logic):
       let filtered
-      switch (state.activeDataFilter) {
-        case 'personal':
-          // Only personal data (no system data mixed in)
-          filtered = predictions.filter(p => p.organization_access === 'personal')
-          break
-
-        case 'organization':
-          // Only organization data (no system data mixed in)
-          filtered = predictions.filter(p => p.organization_access === 'organization')
-          break
-
-        case 'system':
-          // Only system data
-          filtered = predictions.filter(p => p.organization_access === 'system')
-          break
-
-        case 'all':
-          // All data (for super admin)
-          filtered = predictions
-          break
-
-        default:
-          // Default: show system data
-          filtered = predictions.filter(p => p.organization_access === 'system')
-          break
+      if (state.activeDataFilter === 'system') {
+        // Platform tab: ONLY system/platform predictions
+        filtered = predictions.filter(p => p.organization_access === 'system')
+        console.log(`   🔵 Platform filter: ${filtered.length} system predictions`)
+      } else {
+        // User tabs (personal/organization): ONLY user data, NEVER system data
+        filtered = predictions.filter(p =>
+          p.organization_access === 'personal' ||
+          p.organization_access === 'organization'
+        )
+        console.log(`   🟢 User filter: ${filtered.length} personal/org predictions`)
       }
 
-      console.log(`Filtered ${type} predictions:`, filtered.length)
-      console.log(`Filtered data:`, filtered.map(p => ({ id: p.id, company: p.company_symbol, access: p.organization_access })))
+      console.log(`   - Filtered results: ${filtered.length} predictions`)
+      console.log(`   - Filtered sample:`, filtered.slice(0, 2).map(p => ({
+        company: p.company_symbol,
+        access: p.organization_access
+      })))
 
       return filtered
     },
 
     getDefaultFilterForUser: (user: any) => {
       if (!user) {
-        console.log('🔍 No user, returning default filter: system')
-        return 'system'
+        console.log('🔍 No user, returning default filter: personal')
+        return 'personal'
       }
 
       console.log('🔍 Getting default filter for user role:', user.role)
 
-      // Normal user: start with system data (most users don't have personal data initially)
+      // Normal user: start with their personal data
       if (user.role === 'user') {
-        return 'system'
+        return 'personal'
       }
 
       // Super admin: start with system data to see platform overview
@@ -535,18 +868,18 @@ export const usePredictionsStore = create<PredictionsState>((set, get) => {
         return 'system'
       }
 
-      // Tenant admin: start with system data to see platform overview
+      // Tenant admin: start with organization data (their managed organizations)
       if (user.role === 'tenant_admin') {
-        return 'system'
+        return 'organization'
       }
 
-      // Org admin/members: start with system data to see platform overview
+      // Org admin/members: start with their organization data (NOT system)
       if (user.role === 'org_admin' || user.role === 'org_member') {
-        return 'system'
+        return 'organization'
       }
 
-      console.log('🔍 Default filter fallback: system')
-      return 'system'
+      console.log('🔍 Default filter fallback: personal')
+      return 'personal'
     }
   }
 })

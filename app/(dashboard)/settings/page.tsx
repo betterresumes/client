@@ -294,11 +294,11 @@ export default function SettingsPage() {
       if (profile?.role === 'tenant_admin' && user?.tenant_id) {
         params.tenant_id = user.tenant_id
       }
-
+      
       const response = await organizationsApi.list(params)
       if (response.success && response.data) {
         setOrganizations(response.data.organizations || [])
-
+        
         // If user is tenant admin, refresh predictions to show filtered data
         if (profile?.role === 'tenant_admin' && user?.tenant_id) {
           const predictionsStore = usePredictionsStore.getState()
