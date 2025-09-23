@@ -16,7 +16,15 @@ export function DataSourceTabs() {
   useEffect(() => {
     if (user) {
       const defaultFilter = getDefaultFilterForUser(user)
-      console.log('🎯 Setting data filter for user role:', user.role, 'to:', defaultFilter)
+      console.log('🎯 DataSourceTabs - Setting data filter for user:', {
+        userId: user.id,
+        userRole: user.role,
+        isAdmin: isAdmin(),
+        isTenantAdmin: isTenantAdmin(),
+        isOrgAdmin: isOrgAdmin(),
+        defaultFilter,
+        activeDataFilter
+      })
       if (activeDataFilter !== defaultFilter) {
         setDataFilter(defaultFilter)
       }
@@ -46,21 +54,13 @@ export function DataSourceTabs() {
     )
   }
 
-  // Super admin: Personal + Organizations + System tabs (removed "All Data" tab)
+  // Super admin: Only Platform tab (removed personal and organizations access)
   if (isAdmin()) {
     return (
       <div className="flex items-center gap-2">
         <span className="text-xs text-gray-500">Data Source:</span>
         <Tabs value={activeDataFilter} onValueChange={setDataFilter} className="w-auto">
           <TabsList className="bg-gray-100 dark:bg-gray-800">
-            <TabsTrigger value="personal" className="text-sm flex items-center gap-1">
-              <User className="h-3 w-3" />
-              Personal
-            </TabsTrigger>
-            <TabsTrigger value="organization" className="text-sm flex items-center gap-1">
-              <Building2 className="h-3 w-3" />
-              Organizations
-            </TabsTrigger>
             <TabsTrigger value="system" className="text-sm flex items-center gap-1">
               <Globe className="h-3 w-3" />
               Platform

@@ -70,8 +70,11 @@ export function LoginForm() {
           )
 
           toast.success('Login successful!', {
-            description: 'Welcome back! Redirecting to dashboard...',
+            description: 'Welcome back! Loading your dashboard...',
           })
+
+          // Small delay to ensure auth state is propagated
+          await new Promise(resolve => setTimeout(resolve, 200))
 
           // Check if there's a redirect URL stored in sessionStorage
           const redirectUrl = sessionStorage.getItem('redirectAfterLogin')

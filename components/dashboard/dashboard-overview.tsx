@@ -108,7 +108,7 @@ export function DashboardOverview() {
     }
   }, [])
 
-  // Single useEffect to fetch initial data - should only run once after login
+  // Enhanced useEffect to fetch initial data - handles auth state changes properly
   useEffect(() => {
     console.log('🔍 Dashboard useEffect triggered:', {
       isClient,
@@ -116,28 +116,48 @@ export function DashboardOverview() {
       hasUser: !!user,
       userRole: user?.role,
       annualCount: annualPredictions.length,
-      quarterlyCount: quarterlyPredictions.length
+      quarterlyCount: quarterlyPredictions.length,
+      lastFetched: lastFetched ? new Date(lastFetched).toISOString() : 'never'
     })
 
     if (isClient && isAuthenticated && user) {
-      console.log('📊 Dashboard mounted - making exactly 3 API calls')
+      console.log('📊 Dashboard mounted - making API calls for authenticated user')
 
-      // 1. Fetch dashboard stats (summary statistics) - /predictions/dashboard
+      // 1. Always fetch dashboard stats (summary statistics) - /predictions/dashboard
       fetchStats()
 
-      // 2 & 3. Fetch predictions only if we don't have any data
-      // /predictions/annual?page=1&size=20 and /predictions/quarterly?page=1&size=20
-      if (annualPredictions.length === 0 && quarterlyPredictions.length === 0) {
-        console.log('📊 Fetching predictions (page 1, size 20)...')
-        fetchPredictions()
+      // 2 & 3. Fetch predictions - force refresh if no data or stale data
+      const hasNoData = annualPredictions.length === 0 && quarterlyPredictions.length === 0
+      const hasStaleData = lastFetched && (Date.now() - lastFetched > 5 * 60 * 1000) // 5 minutes
+
+      if (hasNoData || hasStaleData) {
+        console.log('📊 Fetching predictions - reason:', hasNoData ? 'no data' : 'stale data')
+        fetchPredictions(true) // Force refresh
       } else {
-        console.log('📊 Skipping predictions fetch - already have data:', {
+        console.log('📊 Using existing predictions data:', {
           annual: annualPredictions.length,
-          quarterly: quarterlyPredictions.length
+          quarterly: quarterlyPredictions.length,
+          age: lastFetched ? `${Math.round((Date.now() - lastFetched) / 60000)}min` : 'unknown'
         })
       }
     }
-  }, [isClient, isAuthenticated, user]) // Only depend on auth state - no other dependencies
+  }, [isClient, isAuthenticated, user, fetchStats, fetchPredictions]) // Include fetchStats and fetchPredictions
+
+  // Listen for auth login success to refresh data
+  useEffect(() => {
+    const handleAuthSuccess = () => {
+      console.log('🔄 Auth login success - refreshing dashboard data')
+      setTimeout(() => {
+        fetchStats(true)
+        fetchPredictions(true)
+      }, 500) // Small delay to ensure auth is fully set
+    }
+
+    if (typeof window !== 'undefined') {
+      window.addEventListener('auth-login-success', handleAuthSuccess)
+      return () => window.removeEventListener('auth-login-success', handleAuthSuccess)
+    }
+  }, [fetchStats, fetchPredictions])
 
   // Removed excessive useEffects to prevent too many API calls
 
@@ -190,6 +210,18 @@ export function DashboardOverview() {
   const isLoading = isStatsLoading || isPredictionsLoading
   const error = statsError || predictionsError
 
+  console.log('🚨 DASHBOARD RENDER CHECK:', {
+    isLoading,
+    error,
+    filteredAnnualLength: filteredAnnualPredictions.length,
+    filteredQuarterlyLength: filteredQuarterlyPredictions.length,
+    rawAnnualLength: safeAnnualPredictions.length,
+    rawQuarterlyLength: safeQuarterlyPredictions.length,
+    activeDataFilter,
+    isAuthenticated,
+    hasUser: !!user
+  })
+
   // Check if filtered data is empty (not loading)
   if (!isLoading && filteredAnnualPredictions.length === 0 && filteredQuarterlyPredictions.length === 0) {
     return (
@@ -216,6 +248,10 @@ export function DashboardOverview() {
               </h3>
               <p className="text-gray-600 dark:text-gray-400 mb-6 max-w-md mx-auto">
                 No prediction data is available for your current data source selection. Please check your permissions or try refreshing.
+                <br />
+                <small className="text-xs text-gray-500 mt-2 block">
+                  Debug: Filter={activeDataFilter}, Annual={filteredAnnualPredictions.length}, Quarterly={filteredQuarterlyPredictions.length}
+                </small>
               </p>
             </div>
           </Card>

@@ -97,4 +97,18 @@ if (typeof window !== 'undefined') {
       store.invalidateCache()
     })
   })
+
+  // Listen for auth events
+  window.addEventListener('auth-login-success', () => {
+    console.log('🔑 Login success detected - invalidating dashboard stats cache')
+    const store = useDashboardStatsStore.getState()
+    store.invalidateCache()
+  })
+
+  window.addEventListener('auth-logout', () => {
+    console.log('🔓 Logout detected - clearing dashboard stats')
+    const store = useDashboardStatsStore.getState()
+    store.stats = null
+    store.lastFetched = null
+  })
 }

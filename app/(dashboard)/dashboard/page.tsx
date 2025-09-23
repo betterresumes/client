@@ -18,17 +18,45 @@ export default function DashboardPage() {
   const { fetchPredictions, annualPredictions, quarterlyPredictions, isLoading } = usePredictionsStore()
   const [hasInitializedData, setHasInitializedData] = useState(false)
 
-  // Single source of data loading - fetch predictions once when user is authenticated
+  // Enhanced data loading - fetch predictions when user is authenticated and handle auth events
   useEffect(() => {
     if (isAuthenticated && user && !hasInitializedData && !isLoading) {
       console.log('🚀 Dashboard page - initializing data for authenticated user')
       setHasInitializedData(true)
-      // Only fetch if we don't have any data
-      if (annualPredictions.length === 0 && quarterlyPredictions.length === 0) {
-        fetchPredictions()
-      }
+
+      // Add small delay to ensure auth state is fully propagated
+      setTimeout(() => {
+        // Always fetch if we don't have any data or if it's a fresh login
+        if (annualPredictions.length === 0 && quarterlyPredictions.length === 0) {
+          console.log('📊 Fetching predictions for authenticated user')
+          fetchPredictions(true) // Force refresh for fresh login
+        }
+      }, 100)
     }
   }, [isAuthenticated, user, hasInitializedData, isLoading, annualPredictions.length, quarterlyPredictions.length, fetchPredictions])
+
+  // Listen for auth events to reset initialization state
+  useEffect(() => {
+    const handleAuthLoginSuccess = () => {
+      console.log('🔄 Auth login success detected on dashboard - resetting initialization')
+      setHasInitializedData(false) // Reset to allow data refetch
+    }
+
+    const handleAuthLogout = () => {
+      console.log('🔓 Auth logout detected on dashboard - resetting state')
+      setHasInitializedData(false)
+    }
+
+    if (typeof window !== 'undefined') {
+      window.addEventListener('auth-login-success', handleAuthLoginSuccess)
+      window.addEventListener('auth-logout', handleAuthLogout)
+
+      return () => {
+        window.removeEventListener('auth-login-success', handleAuthLoginSuccess)
+        window.removeEventListener('auth-logout', handleAuthLogout)
+      }
+    }
+  }, [])
 
   return (
     <div className="space-y-6">

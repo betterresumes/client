@@ -99,6 +99,7 @@ class ApiClient {
   setAuthToken(accessToken: string, refreshToken: string): void {
     this.accessToken = accessToken
     this.refreshToken = refreshToken
+    console.log('🔑 API Client - Auth token set, client ready for authenticated requests')
   }
 
   clearAuth(): void {
@@ -141,6 +142,18 @@ class ApiClient {
   async get<T>(url: string, config?: AxiosRequestConfig): Promise<ApiResponse<T>> {
     try {
       const response: AxiosResponse<T> = await this.client.get(url, config)
+
+      // Temporary debugging for predictions APIs
+      if (url.includes('/predictions/')) {
+        console.log(`🌐 API Response for ${url}:`, {
+          status: response.status,
+          dataType: typeof response.data,
+          isArray: Array.isArray(response.data),
+          dataKeys: response.data && typeof response.data === 'object' ? Object.keys(response.data) : 'not object',
+          sampleData: response.data
+        })
+      }
+
       return {
         success: true,
         data: response.data,
