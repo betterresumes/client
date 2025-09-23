@@ -25,21 +25,29 @@ export function RiskInsightsView() {
   const { isAuthenticated, user } = useAuthStore()
   const {
     annualPredictions,
-    isLoading,
-    refetchPredictions,
+    quarterlyPredictions,
+    systemAnnualPredictions,
+    systemQuarterlyPredictions,
+    isLoading: isPredictionsLoading,
+    error: predictionsError,
     fetchPredictions,
-    getFilteredPredictions
+    getPredictionProbability,
+    getRiskBadgeColor,
+    formatPredictionDate,
+    getFilteredPredictions,
+    activeDataFilter,
+    lastFetched
   } = usePredictionsStore()
 
   const [forceRefresh, setForceRefresh] = useState(0)
 
   // Only fetch predictions if we don't have any data and user is authenticated
   useEffect(() => {
-    if (isAuthenticated && user && annualPredictions.length === 0 && !isLoading) {
+    if (isAuthenticated && user && annualPredictions.length === 0 && !isPredictionsLoading) {
       console.log('⚠️ Risk insights view - fetching predictions as none exist')
       fetchPredictions()
     }
-  }, [isAuthenticated, user, annualPredictions.length, isLoading, fetchPredictions])
+  }, [isAuthenticated, user, annualPredictions.length, isPredictionsLoading, fetchPredictions])
 
   // Listen for data filter changes to refresh the view
   useEffect(() => {
@@ -57,7 +65,7 @@ export function RiskInsightsView() {
   }, [])
 
   // Ensure predictions are arrays - use filtered data (trigger with forceRefresh)
-  const filteredPredictions = useMemo(() => getFilteredPredictions('annual'), [getFilteredPredictions, forceRefresh])
+  const filteredPredictions = useMemo(() => getFilteredPredictions('annual'), [getFilteredPredictions, forceRefresh, annualPredictions, systemAnnualPredictions, activeDataFilter])
   const safePredictions = Array.isArray(filteredPredictions) ? filteredPredictions : []
 
   console.log('🔍 Risk insights using filtered predictions:', safePredictions.length)
@@ -94,7 +102,7 @@ export function RiskInsightsView() {
     }
   }, [safePredictions])
 
-  if (isLoading) {
+  if (isPredictionsLoading) {
     return (
       <div className="space-y-6">
         <div className="flex items-center justify-between">

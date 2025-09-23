@@ -60,6 +60,31 @@ export const predictionsApi = {
 
       return apiClient.upload<any>('/predictions/annual/bulk-upload-async', formData)
     },
+
+    // Get system annual predictions (platform-wide data)
+    async getSystemAnnualPredictions(params?: {
+      page?: number
+      size?: number
+      company_symbol?: string
+      reporting_year?: string
+      sector?: string
+      risk_level?: string
+    }): Promise<ApiResponse<any>> {
+      const searchParams = new URLSearchParams()
+
+      if (params) {
+        Object.entries(params).forEach(([key, value]) => {
+          if (value !== undefined && value !== null && value !== '') {
+            searchParams.append(key, String(value))
+          }
+        })
+      }
+
+      const queryString = searchParams.toString()
+      const url = queryString ? `/predictions/annual/system?${queryString}` : '/predictions/annual/system'
+
+      return apiClient.get<any>(url)
+    },
   },
 
   // Quarterly predictions endpoints
@@ -109,6 +134,32 @@ export const predictionsApi = {
       formData.append('file', file)
 
       return apiClient.upload<any>('/predictions/quarterly/bulk-upload-async', formData)
+    },
+
+    // Get system quarterly predictions (platform-wide data)
+    async getSystemQuarterlyPredictions(params?: {
+      page?: number
+      size?: number
+      company_symbol?: string
+      reporting_year?: string
+      reporting_quarter?: string
+      sector?: string
+      risk_level?: string
+    }): Promise<ApiResponse<any>> {
+      const searchParams = new URLSearchParams()
+
+      if (params) {
+        Object.entries(params).forEach(([key, value]) => {
+          if (value !== undefined && value !== null && value !== '') {
+            searchParams.append(key, String(value))
+          }
+        })
+      }
+
+      const queryString = searchParams.toString()
+      const url = queryString ? `/predictions/quarterly/system?${queryString}` : '/predictions/quarterly/system'
+
+      return apiClient.get<any>(url)
     },
   },
 

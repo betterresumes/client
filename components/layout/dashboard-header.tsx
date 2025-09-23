@@ -169,11 +169,15 @@ export function DashboardHeader() {
                       <Badge variant="secondary" className="text-xs font-bold">
                         {getRoleDisplayText()}
                       </Badge>
-                      <Badge variant="secondary" className="text-xs mt-1 font-semibold">
-                        {getOrganizationDisplayName() && user?.role !== 'super_admin' && user?.role !== 'user' && (
-                          <> {getOrganizationDisplayName()}</>
-                        )}
-                      </Badge>
+                      {
+                        user?.role !== 'super_admin' && user?.role !== 'user' && (
+                          <Badge variant="secondary" className="text-xs mt-1 font-semibold">
+                            {getOrganizationDisplayName() && (
+                              <> {getOrganizationDisplayName()}</>
+                            )}
+                          </Badge>
+                        )
+                      }
                     </div>
                   </div>
                 </DropdownMenuLabel>

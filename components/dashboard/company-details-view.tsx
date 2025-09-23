@@ -5,10 +5,18 @@ import { ChevronLeft, ChevronRight } from 'lucide-react'
 import { usePredictionsStore } from '@/lib/stores/predictions-store'
 import { useAuthStore } from '@/lib/stores/auth-store'
 import { useDashboardStore } from '@/lib/stores/dashboard-store'
+import { useDashboardStatsStore } from '@/lib/stores/dashboard-stats-store'
 import { Card } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { CompanyAnalysisPanel } from './company-analysis-panel'
 import {
   Building2,
@@ -23,17 +31,27 @@ import {
 export function CompanyDetailsView() {
   const { selectedCompany, selectedPredictionType, setSelectedCompany, clearSelection } = useDashboardStore()
   const { isAuthenticated, user } = useAuthStore()
+  const { stats: dashboardStats, fetchStats } = useDashboardStatsStore()
   const [currentPage, setCurrentPage] = useState(1)
   const [activeTab, setActiveTab] = useState<'annual' | 'quarterly'>('annual')
   const [forceRefresh, setForceRefresh] = useState(0)
-  const itemsPerPage = 5
+  const [pageSize, setPageSize] = useState(5) // Default to 5 per page as requested
+  const itemsPerPage = pageSize
 
   const {
     annualPredictions,
     quarterlyPredictions,
-    isLoading,
+    systemAnnualPredictions,
+    systemQuarterlyPredictions,
+    isLoading: isPredictionsLoading,
+    error: predictionsError,
     fetchPredictions,
-    getFilteredPredictions
+    getPredictionProbability,
+    getRiskBadgeColor,
+    formatPredictionDate,
+    getFilteredPredictions,
+    activeDataFilter,
+    lastFetched
   } = usePredictionsStore()
 
   // Set active tab based on selectedPredictionType when navigating from table
@@ -45,11 +63,19 @@ export function CompanyDetailsView() {
 
   // Only fetch predictions if we don't have any data and user is authenticated
   useEffect(() => {
-    if (isAuthenticated && user && annualPredictions.length === 0 && quarterlyPredictions.length === 0 && !isLoading) {
+    if (isAuthenticated && user && annualPredictions.length === 0 && quarterlyPredictions.length === 0 && !isPredictionsLoading) {
       console.log('🏢 Company details view - fetching predictions as none exist')
       fetchPredictions()
     }
-  }, [isAuthenticated, user, annualPredictions.length, quarterlyPredictions.length, isLoading, fetchPredictions])
+  }, [isAuthenticated, user, annualPredictions.length, quarterlyPredictions.length, isPredictionsLoading, fetchPredictions])
+
+  // Fetch dashboard stats on mount to get total prediction counts
+  useEffect(() => {
+    if (isAuthenticated && !dashboardStats) {
+      console.log('🏢 Company details view - fetching dashboard stats for totals')
+      fetchStats()
+    }
+  }, [isAuthenticated, dashboardStats, fetchStats])
 
   // Listen for data filter changes to refresh the view
   useEffect(() => {
@@ -67,8 +93,8 @@ export function CompanyDetailsView() {
   }, [])
 
   // Ensure predictions are arrays - use filtered data (trigger with forceRefresh)
-  const filteredAnnualPredictions = useMemo(() => getFilteredPredictions('annual'), [getFilteredPredictions, forceRefresh])
-  const filteredQuarterlyPredictions = useMemo(() => getFilteredPredictions('quarterly'), [getFilteredPredictions, forceRefresh])
+  const filteredAnnualPredictions = useMemo(() => getFilteredPredictions('annual'), [getFilteredPredictions, forceRefresh, annualPredictions, systemAnnualPredictions, activeDataFilter])
+  const filteredQuarterlyPredictions = useMemo(() => getFilteredPredictions('quarterly'), [getFilteredPredictions, forceRefresh, quarterlyPredictions, systemQuarterlyPredictions, activeDataFilter])
   const safePredictions = Array.isArray(filteredAnnualPredictions) ? filteredAnnualPredictions : []
   const safeQuarterlyPredictions = Array.isArray(filteredQuarterlyPredictions) ? filteredQuarterlyPredictions : []
 
@@ -149,39 +175,179 @@ export function CompanyDetailsView() {
         setActiveTab("quarterly")
       }
     }
-  }, [selectedCompany, hasAnnualData, hasQuarterlyData, activeTab])  // Pagination logic
-  const totalItems = companies.length
-  const totalPages = Math.ceil(totalItems / itemsPerPage)
+  }, [selectedCompany, hasAnnualData, hasQuarterlyData, activeTab])
+
+  // Pagination logic - use dashboard total predictions to estimate companies
+  const getTotalPredictionsFromStats = () => {
+    if (!dashboardStats) return 0
+
+    // Get the appropriate total based on user scope and data filter
+    if (activeDataFilter === 'system' && dashboardStats.platform_statistics) {
+      return dashboardStats.platform_statistics.total_predictions || 0
+    } else if (activeDataFilter === 'user' && dashboardStats.user_dashboard) {
+      return dashboardStats.user_dashboard.total_predictions || 0
+    }
+
+    // Fallback to main dashboard stats
+    return dashboardStats.total_predictions || 0
+  }
+
+  const totalPredictionsInDB = getTotalPredictionsFromStats()
+  const totalLoadedCompanies = companies.length
+
+  // Better estimation of total companies based on database total predictions
+  const estimatedTotalCompanies = (() => {
+    if (totalPredictionsInDB === 0) return totalLoadedCompanies
+    if (totalLoadedCompanies === 0) return 0
+
+    // If we've loaded significant data, we can estimate better
+    const currentPredictionsLoaded = safePredictions.length + safeQuarterlyPredictions.length
+    if (currentPredictionsLoaded >= totalPredictionsInDB) {
+      return totalLoadedCompanies // We have all the data
+    }
+
+    // If we haven't loaded much data yet, be more aggressive about estimating
+    if (currentPredictionsLoaded < totalPredictionsInDB * 0.5) {
+      // We've loaded less than 50% of predictions, estimate more conservatively
+      // but ensure we show enough pages to trigger loading
+      const estimatedFromTotal = Math.floor(totalPredictionsInDB / 2.0) // Assume 2 predictions per company average
+      const minEstimate = totalLoadedCompanies + Math.ceil(totalLoadedCompanies * 0.5) // At least 50% more than loaded
+      return Math.max(estimatedFromTotal, minEstimate)
+    }
+
+    // If we've loaded a good portion, estimate based on the ratio we've seen
+    const loadedRatio = currentPredictionsLoaded / totalPredictionsInDB
+    const predictionsPerCompany = currentPredictionsLoaded / totalLoadedCompanies
+    const estimatedFromRatio = Math.floor(totalPredictionsInDB / predictionsPerCompany)
+
+    // Use the higher of current loaded or estimated total
+    return Math.max(totalLoadedCompanies, estimatedFromRatio)
+  })()
+
+  const totalPages = Math.ceil(estimatedTotalCompanies / itemsPerPage)
   const startIndex = (currentPage - 1) * itemsPerPage
   const endIndex = startIndex + itemsPerPage
   const paginatedCompanies = companies.slice(startIndex, endIndex)
-  console.log(paginatedCompanies)
+
+  console.log('🏢 Company Details Smart Pagination:', {
+    totalLoadedCompanies,
+    totalPredictionsInDB,
+    estimatedTotalCompanies,
+    currentPage,
+    totalPages,
+    pageSize: itemsPerPage,
+    currentPredictionsLoaded: safePredictions.length + safeQuarterlyPredictions.length,
+    loadedRatio: (safePredictions.length + safeQuarterlyPredictions.length) / Math.max(totalPredictionsInDB, 1)
+  })
+
+  // Auto-load more data if we have significantly fewer companies than expected
+  useEffect(() => {
+    if (dashboardStats && companies.length > 0 && !isPredictionsLoading) {
+      const totalPredictions = getTotalPredictionsFromStats()
+      const currentPredictionsLoaded = safePredictions.length + safeQuarterlyPredictions.length
+
+      // If we have total predictions data but haven't loaded much, and companies seem low
+      if (totalPredictions > 0 && currentPredictionsLoaded < totalPredictions * 0.3) {
+        const expectedMinCompanies = Math.floor(totalPredictions / 3) // Very conservative estimate
+
+        if (companies.length < expectedMinCompanies * 0.5) {
+          console.log('🏢 Auto-loading more predictions - too few companies loaded:', {
+            companiesLoaded: companies.length,
+            expectedMinCompanies,
+            totalPredictions,
+            currentPredictionsLoaded,
+            loadedRatio: currentPredictionsLoaded / totalPredictions
+          })
+          fetchPredictions()
+        }
+      }
+    }
+  }, [dashboardStats, companies.length, safePredictions.length, safeQuarterlyPredictions.length, isPredictionsLoading, fetchPredictions, getTotalPredictionsFromStats])
 
   const handlePageChange = (page: number) => {
+    if (page < 1 || page > totalPages) return
+
+    // Calculate how many unique companies we need for this page
+    const requiredCompanies = page * itemsPerPage
+    const currentlyLoadedCompanies = companies.length
+    const currentPredictionsLoaded = safePredictions.length + safeQuarterlyPredictions.length
+
+    console.log('🏢 Page change requested:', {
+      page,
+      itemsPerPage,
+      requiredCompanies,
+      currentlyLoadedCompanies,
+      currentPredictionsLoaded,
+      totalPredictionsInDB,
+      needsMoreCompanies: requiredCompanies > currentlyLoadedCompanies,
+      hasMorePredictions: currentPredictionsLoaded < totalPredictionsInDB,
+      estimatedTotalCompanies
+    })
+
+    // Check if we need to load more predictions
+    // Load more if:
+    // 1. We need more companies than currently loaded, OR
+    // 2. We haven't loaded all available predictions and current page is getting close to our limit
+    const shouldLoadMore = (
+      // Case 1: Need more companies than we have
+      (requiredCompanies > currentlyLoadedCompanies) ||
+      // Case 2: Haven't loaded all predictions and we're near the end of what we can estimate
+      (currentPredictionsLoaded < totalPredictionsInDB &&
+        page >= Math.floor(currentlyLoadedCompanies / itemsPerPage))
+    ) && !isPredictionsLoading
+
+    if (shouldLoadMore) {
+      console.log('🏢 Need to load more predictions for page', page, {
+        reason: requiredCompanies > currentlyLoadedCompanies ? 'need_more_companies' : 'approaching_limit',
+        currentlyLoadedCompanies,
+        requiredCompanies,
+        currentPredictionsLoaded,
+        totalPredictionsInDB
+      })
+      fetchPredictions() // This will load more data
+    }
+
     setCurrentPage(page)
   }
 
+  // Keyboard navigation for pagination
+  useEffect(() => {
+    const handleKeyPress = (event: KeyboardEvent) => {
+      // Only handle if no input is focused and pagination has multiple pages  
+      if (document.activeElement?.tagName === 'INPUT' || totalPages <= 1) return
+
+      if (event.key === 'ArrowLeft' && currentPage > 1) {
+        event.preventDefault()
+        handlePageChange(currentPage - 1)
+      } else if (event.key === 'ArrowRight' && currentPage < totalPages) {
+        event.preventDefault()
+        handlePageChange(currentPage + 1)
+      } else if (event.key === 'Home') {
+        event.preventDefault()
+        handlePageChange(1)
+      } else if (event.key === 'End') {
+        event.preventDefault()
+        handlePageChange(totalPages)
+      }
+    }
+
+    window.addEventListener('keydown', handleKeyPress)
+    return () => window.removeEventListener('keydown', handleKeyPress)
+  }, [currentPage, totalPages, handlePageChange]) // Added handlePageChange to dependencies
+
   const getPageNumbers = () => {
     const pages = []
-    const maxVisiblePages = 3
+    const maxVisiblePages = 8 // Show up to 8 page numbers as requested
 
     if (totalPages <= maxVisiblePages) {
+      // Show all pages if total is small
       for (let i = 1; i <= totalPages; i++) {
         pages.push(i)
       }
     } else {
-      if (currentPage <= 2) {
-        for (let i = 1; i <= 3; i++) {
-          pages.push(i)
-        }
-      } else if (currentPage >= totalPages - 1) {
-        for (let i = totalPages - 2; i <= totalPages; i++) {
-          pages.push(i)
-        }
-      } else {
-        for (let i = currentPage - 1; i <= currentPage + 1; i++) {
-          pages.push(i)
-        }
+      // Always show first 8 pages as requested
+      for (let i = 1; i <= Math.min(8, totalPages); i++) {
+        pages.push(i)
       }
     }
 
@@ -259,7 +425,7 @@ export function CompanyDetailsView() {
       {/* Company selection and browsing */}
 
       {/* Show "No Data Available" if no companies exist */}
-      {!isLoading && companies.length === 0 && (
+      {!isPredictionsLoading && companies.length === 0 && (
         <Card className="border border-gray-200 dark:border-gray-700 shadow-sm">
           <div className="text-center py-16 px-6">
             <div className="mx-auto flex items-center justify-center h-16 w-16 rounded-full bg-gray-100 dark:bg-gray-800 mb-6">
@@ -276,7 +442,7 @@ export function CompanyDetailsView() {
       )}
 
       {/* Only show the rest if we have companies or are loading */}
-      {(isLoading || companies.length > 0) && (
+      {(isPredictionsLoading || companies.length > 0) && (
         <div className="space-y-4">
           {/* Show current selection with option to browse freely */}
           {selectedCompany && currentCompany && (
@@ -299,8 +465,8 @@ export function CompanyDetailsView() {
       )}
 
       {/* Main content area - only show if loading or have companies */}
-      {(isLoading || companies.length > 0) && (
-        isLoading && companies.length === 0 ? (
+      {(isPredictionsLoading || companies.length > 0) && (
+        isPredictionsLoading && companies.length === 0 ? (
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 font-bricolage">
             {/* Left Panel Skeleton */}
             <div className="h-[600px]">
@@ -434,12 +600,12 @@ export function CompanyDetailsView() {
                   <h3 className="text-lg font-semibold text-gray-900 dark:text-white font-bricolage">
                     S&P 500 Companies
                   </h3>
-                  {isLoading && (
+                  {isPredictionsLoading && (
                     <Loader2 className="h-4 w-4 animate-spin" />
                   )}
                 </div>
 
-                {isLoading ? (
+                {isPredictionsLoading ? (
                   <div className="space-y-2 flex-1">
                     {/* Company list skeleton */}
                     {Array.from({ length: 4 }).map((_, index) => (
@@ -496,52 +662,70 @@ export function CompanyDetailsView() {
                       ))}
                     </div>
 
-                    {/* Pagination - Fixed at bottom */}
+                    {/* Simple Pagination - Prev/Next with page info */}
                     {totalPages > 1 && (
-                      <div className="mt-auto pt-4 border-t border-gray-200 dark:border-gray-700 flex-shrink-0">
+                      <div className="mt-auto pt-4 border-t border-gray-200 flex-shrink-0">
                         <div className="flex items-center justify-between">
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => handlePageChange(currentPage - 1)}
-                            disabled={currentPage === 1}
-                            className="font-bricolage"
-                          >
-                            <ChevronLeft className="h-4 w-4 mr-1" />
-                            Previous
-                          </Button>
-
-                          <div className="flex items-center space-x-1">
-                            {getPageNumbers().map((page) => (
-                              <Button
-                                key={page}
-                                variant={currentPage === page ? "default" : "outline"}
-                                size="sm"
-                                onClick={() => handlePageChange(page)}
-                                className="w-8 h-8 p-0 font-bricolage"
-                              >
-                                {page}
-                              </Button>
-                            ))}
+                          {/* Show X per page */}
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs text-gray-600 font-bricolage">Show</span>
+                            <Select value={pageSize.toString()} onValueChange={(value) => {
+                              setPageSize(Number(value))
+                              setCurrentPage(1) // Reset to first page when changing page size
+                            }}>
+                              <SelectTrigger className="w-14 h-7">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="5">5</SelectItem>
+                                <SelectItem value="10">10</SelectItem>
+                                <SelectItem value="15">15</SelectItem>
+                                <SelectItem value="20">20</SelectItem>
+                              </SelectContent>
+                            </Select>
+                            <span className="text-xs text-gray-600 font-bricolage">per page</span>
                           </div>
 
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => handlePageChange(currentPage + 1)}
-                            disabled={currentPage === totalPages}
-                            className="font-bricolage"
-                          >
-                            Next
-                            <ChevronRight className="h-4 w-4 ml-1" />
-                          </Button>
+                          {/* Page info and navigation */}
+                          <div className="flex items-center gap-3">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => handlePageChange(currentPage - 1)}
+                              disabled={currentPage <= 1}
+                              className="h-7 px-2 text-xs font-bricolage"
+                            >
+                              Prev
+                            </Button>
+
+                            <span className="text-xs text-gray-600 font-bricolage">
+                              Page {currentPage} of {totalPages}
+                            </span>
+
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => handlePageChange(currentPage + 1)}
+                              disabled={currentPage >= totalPages || (isPredictionsLoading && currentPage * itemsPerPage > totalLoadedCompanies)}
+                              className="h-7 px-2 text-xs font-bricolage"
+                            >
+                              {isPredictionsLoading && currentPage * itemsPerPage > totalLoadedCompanies ? (
+                                <Loader2 className="h-3 w-3 animate-spin" />
+                              ) : (
+                                'Next'
+                              )}
+                            </Button>
+                          </div>
                         </div>
 
-                        {/* Page info */}
+                        {/* Status info */}
                         <div className="text-center mt-2">
-                          <p className="text-xs text-gray-500 dark:text-gray-400 font-bricolage">
-                            Page {currentPage} of {totalPages} • {totalItems} companies
-                          </p>
+                          <span className="text-xs text-gray-500 font-bricolage">
+                            {totalLoadedCompanies < estimatedTotalCompanies
+                              ? `Showing ${totalLoadedCompanies} companies loaded (estimated ${estimatedTotalCompanies} total)`
+                              : `Showing ${totalLoadedCompanies} companies`
+                            }
+                          </span>
                         </div>
                       </div>
                     )}
@@ -562,7 +746,7 @@ export function CompanyDetailsView() {
                     annualPredictions={currentAnnualPredictions}
                     quarterlyPredictions={currentQuarterlyPredictions}
                     activeTab={activeTab}
-                    isLoading={isLoading}
+                    isLoading={isPredictionsLoading}
                   />
                 </div>
               </div>

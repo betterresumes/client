@@ -3,6 +3,7 @@
 import { useState, useMemo, useEffect } from 'react'
 import { usePredictionsStore } from '@/lib/stores/predictions-store'
 import { useDashboardStore } from '@/lib/stores/dashboard-store'
+import { useDashboardStatsStore } from '@/lib/stores/dashboard-stats-store'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -66,14 +67,24 @@ export function CompanyAnalysisTable({
   onRefetch
 }: CompanyAnalysisTableProps) {
   const {
+    annualPredictions,
+    quarterlyPredictions,
+    isLoading: isStoreLoading,
     getPredictionProbability,
     getRiskBadgeColor,
     formatPredictionDate,
     isFetching,
     annualPagination,
     quarterlyPagination,
-    fetchPage
+    fetchPage,
+    fetchPredictions,
+    fetchBatch, // NEW: For batch loading
+    activeDataFilter,
+    setSmartPageSize,
+    setSmartCurrentPage
   } = usePredictionsStore()
+
+  const { stats: dashboardStats } = useDashboardStatsStore()
 
   // Get pagination info for current prediction type
   const pagination = type === 'annual' ? annualPagination : quarterlyPagination
@@ -89,24 +100,53 @@ export function CompanyAnalysisTable({
 
   const { navigateToCompanyDetails, navigateToCustomAnalysisWithData, setActiveTab } = useDashboardStore()
 
-  // Removed client-side pagination - using only server-side pagination
+  // Smart pagination state - connects to API when needed  
+  const [pageSize, setPageSize] = useState(10)
   const [sortField, setSortField] = useState<SortField>('company')
   const [sortDirection, setSortDirection] = useState<SortDirection>('asc')
+  const [currentPage, setCurrentPage] = useState(1)  // Use local state for pagination
+  const [isLoadingBatch, setIsLoadingBatch] = useState(false) // Prevent simultaneous API calls
+  const [loadedBatches, setLoadedBatches] = useState<Set<number>>(new Set()) // Track which batches have been loaded
 
-  // Dialog states (only for delete)
-  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
-  const [selectedPrediction, setSelectedPrediction] = useState<any>(null)
+  // Get total predictions from dashboard stats for smart pagination - FIXED for annual/quarterly
+  const getTotalPredictionsFromStats = (predictionType: 'annual' | 'quarterly') => {
+    if (!dashboardStats) return data.length
 
-  // Reset to first page when filters change
-  useEffect(() => {
-    if (pagination.currentPage !== 1) {
-      fetchPage(type, 1)
+    // Get the appropriate total based on prediction type and user scope
+    if (activeDataFilter === 'system' && dashboardStats.platform_statistics) {
+      return predictionType === 'annual'
+        ? dashboardStats.platform_statistics.annual_predictions || data.length
+        : dashboardStats.platform_statistics.quarterly_predictions || data.length
+    } else if (activeDataFilter === 'user' && dashboardStats.user_dashboard) {
+      return predictionType === 'annual'
+        ? dashboardStats.user_dashboard.annual_predictions || data.length
+        : dashboardStats.user_dashboard.quarterly_predictions || data.length
     }
-  }, [searchTerm, selectedSector, selectedRiskLevel])
 
-  // Filter and sort data (client-side for current page only)
+    // Fallback to main dashboard stats
+    return predictionType === 'annual'
+      ? dashboardStats.annual_predictions || data.length
+      : dashboardStats.quarterly_predictions || data.length
+  }
+
+  const totalPredictionsInDB = getTotalPredictionsFromStats(type)
+
+  // Use store data instead of prop data - this is the core fix!
+  const storeData = type === 'annual' ? annualPredictions : quarterlyPredictions
+  const actualData = storeData || data // Fallback to prop data if store is empty
+  const totalLoadedPredictions = actualData.length
+
+  console.log(`🔧 CORE FIX - Using store data:`, {
+    type,
+    propDataLength: data.length,
+    storeDataLength: storeData.length,
+    actualDataUsed: actualData.length,
+    totalInDB: totalPredictionsInDB
+  })
+
+  // Filter and sort data (client-side) - now using store data!
   const filteredAndSortedData = useMemo(() => {
-    let filtered = data.filter((item: any) => {
+    let filtered = actualData.filter((item: any) => {
       // Search filter
       const searchMatch = searchTerm === '' ||
         item.company_symbol?.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -166,10 +206,79 @@ export function CompanyAnalysisTable({
     })
 
     return filtered
-  }, [data, searchTerm, selectedSector, selectedRiskLevel, sortField, sortDirection, getPredictionProbability, formatPredictionDate])
+  }, [actualData, searchTerm, selectedSector, selectedRiskLevel, sortField, sortDirection, getPredictionProbability, formatPredictionDate])
 
-  // Use filtered data directly (no client-side pagination slicing)
-  const currentData = filteredAndSortedData
+  // Get paginated data - only show items for current page
+  const paginatedData = useMemo(() => {
+    const startIndex = (currentPage - 1) * pageSize
+    const endIndex = startIndex + pageSize
+    return filteredAndSortedData.slice(startIndex, endIndex)
+  }, [filteredAndSortedData, currentPage, pageSize])
+
+  // Smart pagination - calculate total pages from database total, not just loaded data
+  const realTotalPages = Math.ceil(totalPredictionsInDB / pageSize) // Based on actual DB total
+  const loadedPages = Math.ceil(totalLoadedPredictions / pageSize) // Based on loaded data
+  const totalPages = Math.max(realTotalPages, loadedPages) // Use the higher value
+
+  console.log(`📊 Smart Pagination for ${type}:`, {
+    totalLoadedPredictions,
+    totalPredictionsInDB,
+    filteredDataLength: filteredAndSortedData.length,
+    realTotalPages,
+    loadedPages,
+    totalPages,
+    currentPage,
+    pageSize,
+    'PAGINATION_SOURCE': 'local calculation',
+    'STORE_CURRENT_PAGE': pagination?.currentPage,
+    'STORE_TOTAL_PAGES': pagination?.totalPages
+  })
+
+  // Use paginated data for display
+  const currentData = paginatedData
+
+  // Dialog states (only for delete)
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
+  const [selectedPrediction, setSelectedPrediction] = useState<any>(null)
+
+  // Reset to first page when filters change
+  useEffect(() => {
+    setCurrentPage(1) // Use local state
+  }, [searchTerm, selectedSector, selectedRiskLevel])
+
+  // Simple batch loading - trigger only at pages 6, 16, 26, etc.
+  useEffect(() => {
+    // Don't trigger if already loading or fetching  
+    if (isLoadingBatch || isLoading || isFetching) return
+
+    // Only trigger at specific threshold pages (6, 16, 26, etc.)
+    const isTriggerPage = currentPage % 10 === 6
+    if (!isTriggerPage) return
+
+    const currentBatch = Math.floor((currentPage - 1) / 10) + 1
+
+    // Don't load if this batch has already been loaded
+    if (loadedBatches.has(currentBatch)) {
+      console.log(`📦 Batch ${currentBatch} already loaded for ${type} - skipping`)
+      return
+    }
+
+    const currentlyLoaded = actualData.length
+    const totalAvailable = totalPredictionsInDB
+    const expectedDataForBatch = currentBatch * 100
+    const needsThisBatch = currentlyLoaded < expectedDataForBatch && currentlyLoaded < totalAvailable
+
+    if (needsThisBatch) {
+      console.log(`🚀 BATCH ${currentBatch}: Loading 100 ${type} predictions at page ${currentPage}`)
+      setIsLoadingBatch(true)
+
+      // Mark this batch as being loaded
+      setLoadedBatches(prev => new Set([...prev, currentBatch]))
+
+      fetchBatch(type, 100)
+        .finally(() => setIsLoadingBatch(false))
+    }
+  }, [currentPage, type, totalPredictionsInDB, isLoadingBatch, isLoading, isFetching, fetchBatch, loadedBatches])
 
   const handleSort = (field: SortField) => {
     if (sortField === field) {
@@ -180,11 +289,36 @@ export function CompanyAnalysisTable({
     }
   }
 
-  // Server-side page change handler
+  // Smart page change handler - simplified to just change pages
   const handlePageChange = (page: number) => {
-    console.log(`📄 Fetching page ${page} for ${type} predictions`)
-    fetchPage(type, page)
+    if (page < 1 || page > totalPages || isLoadingBatch) return
+
+    console.log(`📄 Page change for ${type}: ${currentPage} → ${page}`)
+
+    // Update local pagination state
+    setCurrentPage(page)
+
+    // Note: Batch loading is handled by the threshold useEffect (pages 6, 16, 26, etc.)
   }
+
+  // Keyboard navigation
+  useEffect(() => {
+    const handleKeyPress = (event: KeyboardEvent) => {
+      // Only handle if no input is focused and pagination has multiple pages
+      if (document.activeElement?.tagName === 'INPUT' || totalPages <= 1) return
+
+      if (event.key === 'ArrowLeft' && currentPage > 1) {
+        event.preventDefault()
+        handlePageChange(currentPage - 1)
+      } else if (event.key === 'ArrowRight' && currentPage < totalPages) {
+        event.preventDefault()
+        handlePageChange(currentPage + 1)
+      }
+    }
+
+    window.addEventListener('keydown', handleKeyPress)
+    return () => window.removeEventListener('keydown', handleKeyPress)
+  }, [currentPage, totalPages])
 
   const getSortIcon = (field: SortField) => {
     if (sortField !== field) {
@@ -197,18 +331,38 @@ export function CompanyAnalysisTable({
 
   const getPageNumbers = () => {
     const pages = []
-    const showPages = 5
+    const maxVisiblePages = 7
+    const halfVisible = Math.floor(maxVisiblePages / 2)
 
-    if (pagination.totalPages <= showPages) {
+    if (pagination.totalPages <= maxVisiblePages) {
+      // Show all pages if total is small
       for (let i = 1; i <= pagination.totalPages; i++) {
         pages.push(i)
       }
     } else {
-      const start = Math.max(1, pagination.currentPage - 2)
-      const end = Math.min(pagination.totalPages, start + showPages - 1)
+      let start = Math.max(1, pagination.currentPage - halfVisible)
+      let end = Math.min(pagination.totalPages, start + maxVisiblePages - 1)
 
+      // Adjust start if we're near the end
+      if (end - start < maxVisiblePages - 1) {
+        start = Math.max(1, end - maxVisiblePages + 1)
+      }
+
+      // Add ellipsis and first page if needed
+      if (start > 1) {
+        pages.push(1)
+        if (start > 2) pages.push('...')
+      }
+
+      // Add visible page range
       for (let i = start; i <= end; i++) {
         pages.push(i)
+      }
+
+      // Add ellipsis and last page if needed
+      if (end < pagination.totalPages) {
+        if (end < pagination.totalPages - 1) pages.push('...')
+        pages.push(pagination.totalPages)
       }
     }
 
@@ -237,7 +391,7 @@ export function CompanyAnalysisTable({
 
 
 
-  if (data.length === 0 && !isLoading) {
+  if (actualData.length === 0 && !isLoading) {
     return (
       <div className="text-center py-12">
         <div className="text-gray-500 mb-4">
@@ -273,8 +427,10 @@ export function CompanyAnalysisTable({
             </h3>
             <p className="text-sm text-gray-600 dark:text-gray-400 font-bricolage">
               {isLoading
-                ? "Loading companies..."
-                : `Showing page ${pagination.currentPage} of ${pagination.totalPages} (${pagination.totalItems} total ${type} predictions)`
+                ? "Loading predictions..."
+                : totalLoadedPredictions < totalPredictionsInDB
+                  ? `${filteredAndSortedData.length} filtered from ${totalLoadedPredictions} loaded (${totalPredictionsInDB} total ${type} predictions)`
+                  : `${filteredAndSortedData.length} of ${totalLoadedPredictions} ${type} predictions`
               }
             </p>
           </div>
@@ -489,63 +645,73 @@ export function CompanyAnalysisTable({
           </div>
         )}
 
-        {/* Server-side Pagination Info and Load More */}
-        <div className="flex items-center justify-between mt-6">
-          <div className="text-sm text-gray-600 font-bricolage">
-            Loaded {data.length} of {pagination.totalItems} {type} predictions
-            {pagination.totalPages > 1 && (
-              <span className="ml-2 text-gray-500">
-                (Server: page {pagination.currentPage} of {pagination.totalPages})
-              </span>
-            )}
-          </div>
+        {/* Smart Pagination - Show per page + page numbers + Next */}
+        {filteredAndSortedData.length > 0 && totalPages > 1 && (
+          <div className="mt-6 pt-4 border-t border-gray-200">
+            <div className="flex items-center justify-between">
+              {/* Show X per page */}
+              <div className="flex items-center gap-2">
+                <span className="text-sm text-gray-600 font-bricolage">Show</span>
+                <Select
+                  value={pageSize.toString()}
+                  onValueChange={(value) => {
+                    setPageSize(Number(value))
+                    setCurrentPage(1) // Reset to first page using local state
+                  }}
+                >
+                  <SelectTrigger className="w-16 h-8">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="10">10</SelectItem>
+                    <SelectItem value="20">20</SelectItem>
+                    <SelectItem value="50">50</SelectItem>
+                  </SelectContent>
+                </Select>
+                <span className="text-sm text-gray-600 font-bricolage">per page</span>
+              </div>
 
-        </div>
-
-        {/* Server-side Pagination - Always show if we have pagination data */}
-        {(pagination.totalPages > 1 || pagination.totalItems > 10) && (
-          <div className="flex items-center justify-between mt-4 pt-4 border-t border-gray-200">
-            <div className="text-sm text-gray-500 font-bricolage">
-              Showing page {pagination.currentPage} of {pagination.totalPages} ({pagination.totalItems} total results)
-            </div>
-
-            <div className="flex items-center gap-1">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => handlePageChange(pagination.currentPage - 1)}
-                disabled={pagination.currentPage === 1 || isFetching}
-                className="flex items-center gap-1 font-bricolage"
-              >
-                <ChevronLeft className="w-4 h-4" />
-                Previous
-              </Button>
-
+              {/* Page numbers - show up to 8 + Next */}
               <div className="flex items-center gap-1">
-                {getPageNumbers().map((page) => (
+                {Array.from({ length: Math.min(8, totalPages) }, (_, i) => i + 1).map((page) => (
                   <Button
                     key={page}
-                    variant={pagination.currentPage === page ? "default" : "outline"}
+                    variant={page === currentPage ? "default" : "outline"}
                     size="sm"
-                    onClick={() => handlePageChange(page)}
-                    disabled={isFetching}
-                    className="w-8 h-8 p-0 font-bricolage"
+                    onClick={() => {
+                      console.log(`🎯 Clicking page ${page}, current: ${currentPage}`)
+                      handlePageChange(page)
+                    }}
+                    disabled={isLoadingBatch}
+                    className="font-bricolage w-8 h-8 p-0"
                   >
                     {page}
                   </Button>
                 ))}
-              </div>
 
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => handlePageChange(pagination.currentPage + 1)}
-                disabled={pagination.currentPage === pagination.totalPages || isFetching}
-                className="flex items-center gap-1 font-bricolage"
-              >
-                Next
-                <ChevronRight className="w-4 h-4" />
-              </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    console.log(`🎯 Clicking Next, current: ${currentPage}, total: ${totalPages}`)
+                    handlePageChange(currentPage + 1)
+                  }}
+                  disabled={currentPage >= totalPages || isLoadingBatch}
+                  className="font-bricolage ml-2"
+                >
+                  {isLoadingBatch ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : null}
+                  Next
+                </Button>
+              </div>
+            </div>
+
+            {/* Status info */}
+            <div className="text-center mt-3">
+              <span className="text-xs text-gray-500 font-bricolage">
+                Page {currentPage} of {totalPages}
+                {isLoadingBatch && ` (loading more ${type} predictions...)`}
+                {!isLoadingBatch && totalLoadedPredictions < totalPredictionsInDB && ` (${totalLoadedPredictions} of ${totalPredictionsInDB} loaded - more will load automatically)`}
+              </span>
             </div>
           </div>
         )}

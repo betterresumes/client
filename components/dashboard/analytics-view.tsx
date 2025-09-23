@@ -31,9 +31,17 @@ export function AnalyticsView() {
   const {
     annualPredictions,
     quarterlyPredictions,
-    isLoading,
+    systemAnnualPredictions,
+    systemQuarterlyPredictions,
+    isLoading: isPredictionsLoading,
+    error: predictionsError,
     fetchPredictions,
-    getFilteredPredictions
+    getPredictionProbability,
+    getRiskBadgeColor,
+    formatPredictionDate,
+    getFilteredPredictions,
+    activeDataFilter,
+    lastFetched
   } = usePredictionsStore()
 
   const [forceRefresh, setForceRefresh] = useState(0)
@@ -42,11 +50,11 @@ export function AnalyticsView() {
 
   // Only fetch predictions if we don't have any data and user is authenticated
   useEffect(() => {
-    if (isAuthenticated && user && annualPredictions.length === 0 && quarterlyPredictions.length === 0 && !isLoading) {
+    if (isAuthenticated && user && annualPredictions.length === 0 && quarterlyPredictions.length === 0 && !isPredictionsLoading) {
       console.log('📊 Analytics view - fetching predictions as none exist')
       fetchPredictions()
     }
-  }, [isAuthenticated, user, annualPredictions.length, quarterlyPredictions.length, isLoading, fetchPredictions])
+  }, [isAuthenticated, user, annualPredictions.length, quarterlyPredictions.length, isPredictionsLoading, fetchPredictions])
 
   // Listen for data filter changes to refresh the view
   useEffect(() => {
@@ -68,7 +76,7 @@ export function AnalyticsView() {
   const safeQuarterlyPredictions = useMemo(() => Array.isArray(quarterlyPredictions) ? quarterlyPredictions : [], [quarterlyPredictions, forceRefresh])
 
   // Get filtered predictions based on data access settings (trigger with forceRefresh)
-  const filteredAnnualPredictions = useMemo(() => getFilteredPredictions('annual'), [getFilteredPredictions, forceRefresh])
+  const filteredAnnualPredictions = useMemo(() => getFilteredPredictions('annual'), [getFilteredPredictions, forceRefresh, annualPredictions, systemAnnualPredictions, activeDataFilter])
   const filteredQuarterlyPredictions = useMemo(() => getFilteredPredictions('quarterly'), [getFilteredPredictions, forceRefresh])
 
   // Convert filtered predictions to match expected format
@@ -594,7 +602,7 @@ export function AnalyticsView() {
       </div>
     )
   }
-  if (isLoading) {
+  if (isPredictionsLoading) {
     return (
       <div className="space-y-6 font-bricolage">
         <div className="flex items-center justify-between">

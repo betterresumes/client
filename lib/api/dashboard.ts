@@ -8,6 +8,8 @@ export interface DashboardStats {
   organization_name?: string
   total_companies: number
   total_predictions: number
+  annual_predictions?: number  // NEW: Annual predictions count
+  quarterly_predictions?: number  // NEW: Quarterly predictions count
   average_default_rate: number
   high_risk_companies: number
   sectors_covered: number
@@ -25,6 +27,8 @@ export interface UserDashboardData {
   organization_name?: string
   total_companies: number
   total_predictions: number
+  annual_predictions: number  // NEW: Annual predictions count
+  quarterly_predictions: number  // NEW: Quarterly predictions count
   average_default_rate: number
   high_risk_companies: number
   sectors_covered: number
@@ -98,6 +102,8 @@ export const dashboardApi = {
       organization_name: data.organization_name || userDashboard.organization_name,
       total_companies: userDashboard.total_companies || 0,
       total_predictions: userDashboard.total_predictions || 0,
+      annual_predictions: userDashboard.annual_predictions || 0,  // NEW
+      quarterly_predictions: userDashboard.quarterly_predictions || 0,  // NEW
       average_default_rate: userDashboard.average_default_rate || 0,
       high_risk_companies: userDashboard.high_risk_companies || 0,
       sectors_covered: userDashboard.sectors_covered || 0,

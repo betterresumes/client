@@ -53,6 +53,8 @@ export function DashboardOverview() {
   const {
     annualPredictions,
     quarterlyPredictions,
+    systemAnnualPredictions,
+    systemQuarterlyPredictions,
     isLoading: isPredictionsLoading,
     error: predictionsError,
     fetchPredictions,
@@ -148,13 +150,13 @@ export function DashboardOverview() {
     const filtered = getFilteredPredictions('annual')
     console.log('🔄 Recalculating filtered annual predictions:', filtered.length, 'forceRefresh:', forceRefresh)
     return filtered
-  }, [getFilteredPredictions, forceRefresh, annualPredictions, lastFetched])
+  }, [getFilteredPredictions, forceRefresh, annualPredictions, systemAnnualPredictions, activeDataFilter, lastFetched])
 
   const filteredQuarterlyPredictions = useMemo(() => {
     const filtered = getFilteredPredictions('quarterly')
     console.log('🔄 Recalculating filtered quarterly predictions:', filtered.length, 'forceRefresh:', forceRefresh)
     return filtered
-  }, [getFilteredPredictions, forceRefresh, quarterlyPredictions, lastFetched])
+  }, [getFilteredPredictions, forceRefresh, quarterlyPredictions, systemQuarterlyPredictions, activeDataFilter, lastFetched])
 
   // Debug logging to track prediction updates
   console.log('📊 Dashboard render - Annual predictions:', filteredAnnualPredictions.length)
@@ -306,9 +308,6 @@ export function DashboardOverview() {
                           }
                           return value?.toString() || '0';
                         })()}
-                      </p>
-                      <p className={`text-xs font-medium ${isShowingPlatform ? 'text-blue-600' : 'text-green-600'}`}>
-                        {dataSourceLabel}
                       </p>
                     </>
                   )}

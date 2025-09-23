@@ -68,39 +68,6 @@ interface PredictionsState {
   isInitialized: boolean
   isFetching: boolean // Add flag to prevent multiple simultaneous calls
 
-  // Smart pagination state
-  smartPagination: {
-    annual: {
-      currentPage: number
-      pageSize: number
-      totalItems: number // From dashboard stats
-      loadedItems: number // Actually loaded predictions
-      hasLoadedInitialBatch: boolean
-    }
-    quarterly: {
-      currentPage: number
-      pageSize: number
-      totalItems: number // From dashboard stats
-      loadedItems: number // Actually loaded predictions
-      hasLoadedInitialBatch: boolean
-    }
-    systemAnnual: {
-      currentPage: number
-      pageSize: number
-      totalItems: number // From dashboard stats
-      loadedItems: number // Actually loaded predictions
-      hasLoadedInitialBatch: boolean
-    }
-    systemQuarterly: {
-      currentPage: number
-      pageSize: number
-      totalItems: number // From dashboard stats
-      loadedItems: number // Actually loaded predictions
-      hasLoadedInitialBatch: boolean
-    }
-  }
-
-  // Legacy pagination for backward compatibility
   // Separate pagination for user and system data
   annualPagination: {
     currentPage: number
@@ -134,22 +101,11 @@ interface PredictionsState {
   // Data access filter state  
   activeDataFilter: string // 'personal', 'organization', 'system', or 'all' for viewing
 
-}
-
-type PredictionsStore = PredictionsState & {
   // Actions
   fetchPredictions: (forceRefresh?: boolean) => Promise<void>
   loadMorePredictions: (type: 'annual' | 'quarterly') => Promise<void>
   fetchPage: (type: 'annual' | 'quarterly', page: number) => Promise<void>
-  fetchBatch: (type: 'annual' | 'quarterly', batchSize?: number) => Promise<void> // NEW: Batch loading
   refetchPredictions: () => Promise<void>
-
-  // Smart pagination actions
-  setSmartPageSize: (type: 'annual' | 'quarterly', pageSize: number) => void
-  setSmartCurrentPage: (type: 'annual' | 'quarterly', page: number) => void
-  getSmartPaginatedData: (type: 'annual' | 'quarterly') => Prediction[]
-  loadMoreDataIfNeeded: (type: 'annual' | 'quarterly', page: number) => Promise<void>
-  initializeSmartPaginationFromStats: (annualTotal: number, quarterlyTotal: number) => void
   clearError: () => void
   reset: () => void
   invalidateCache: () => void
@@ -166,7 +122,7 @@ type PredictionsStore = PredictionsState & {
   getFilteredPredictions: (type: 'annual' | 'quarterly') => Prediction[]
 }
 
-export const usePredictionsStore = create<PredictionsStore>((set, get) => {
+export const usePredictionsStore = create<PredictionsState>((set, get) => {
   // Set up minimal event listeners - avoid automatic fetching
   if (typeof window !== 'undefined') {
     // Only listen for logout to clear data
@@ -188,39 +144,6 @@ export const usePredictionsStore = create<PredictionsStore>((set, get) => {
     isFetching: false,
     activeDataFilter: 'system', // Start with 'system' for user role
 
-    // Smart pagination - client-side pagination with lazy loading
-    smartPagination: {
-      annual: {
-        currentPage: 1,
-        pageSize: 10,
-        totalItems: 0,
-        loadedItems: 0,
-        hasLoadedInitialBatch: false
-      },
-      quarterly: {
-        currentPage: 1,
-        pageSize: 10,
-        totalItems: 0,
-        loadedItems: 0,
-        hasLoadedInitialBatch: false
-      },
-      systemAnnual: {
-        currentPage: 1,
-        pageSize: 10,
-        totalItems: 0,
-        loadedItems: 0,
-        hasLoadedInitialBatch: false
-      },
-      systemQuarterly: {
-        currentPage: 1,
-        pageSize: 10,
-        totalItems: 0,
-        loadedItems: 0,
-        hasLoadedInitialBatch: false
-      }
-    },
-
-    // Legacy server-side pagination
     // User data pagination - fetch smaller amounts for user-specific data
     annualPagination: {
       currentPage: 1,
@@ -669,219 +592,8 @@ export const usePredictionsStore = create<PredictionsStore>((set, get) => {
     },
 
     fetchPage: async (type: 'annual' | 'quarterly', page: number) => {
-      console.log(`📄 Fetching page ${page} for ${type} predictions`)
-
-      const { activeDataFilter } = get()
-      const { user } = useAuthStore.getState()
-
-      if (!user) {
-        console.error('No user found for fetchPage')
-        return
-      }
-
-      try {
-        set({ isFetching: true, error: null })
-
-        // Determine which pagination object to update and which API to call
-        const isSystemData = activeDataFilter === 'system'
-
-        let response: any
-        let paginationKey: keyof PredictionsState
-        let predictionKey: keyof PredictionsState
-
-        if (type === 'annual') {
-          paginationKey = isSystemData ? 'systemAnnualPagination' : 'annualPagination'
-          predictionKey = isSystemData ? 'systemAnnualPredictions' : 'annualPredictions'
-          const pageSize = isSystemData ? 20 : 10
-
-          if (isSystemData) {
-            response = await predictionsApi.annual.getSystemAnnualPredictions({
-              page,
-              size: pageSize
-            })
-          } else {
-            response = await predictionsApi.annual.getAnnualPredictions({
-              page,
-              size: pageSize
-            })
-          }
-        } else {
-          paginationKey = isSystemData ? 'systemQuarterlyPagination' : 'quarterlyPagination'
-          predictionKey = isSystemData ? 'systemQuarterlyPredictions' : 'quarterlyPredictions'
-          const pageSize = isSystemData ? 20 : 10
-
-          if (isSystemData) {
-            response = await predictionsApi.quarterly.getSystemQuarterlyPredictions({
-              page,
-              size: pageSize
-            })
-          } else {
-            response = await predictionsApi.quarterly.getQuarterlyPredictions({
-              page,
-              size: pageSize
-            })
-          }
-        }
-
-        // Handle response - check if it's paginated response format
-        const predictions = response.data || []
-        const totalPages = response.pages || Math.ceil((response.total || predictions.length) / (isSystemData ? 20 : 10))
-        const totalItems = response.total || predictions.length
-
-        // Update the specific data array and pagination info
-        set((state) => {
-          const updateObj: Partial<PredictionsState> = {}
-          const currentPredictions = state[predictionKey] as Prediction[] || []
-
-          // For batch loading: append new data to existing data
-          // Remove duplicates by filtering out predictions with same ID
-          const existingIds = new Set(currentPredictions.map(p => p.id))
-          const newPredictions = predictions.filter((p: Prediction) => !existingIds.has(p.id))
-
-          // Append new predictions to existing ones
-          updateObj[predictionKey] = [...currentPredictions, ...newPredictions]
-
-          console.log(`📊 Batch loading: ${currentPredictions.length} existing + ${newPredictions.length} new = ${currentPredictions.length + newPredictions.length} total ${type} predictions`)
-
-          // Update pagination info
-          updateObj[paginationKey] = {
-            currentPage: page,
-            totalPages: totalPages,
-            totalItems: totalItems,
-            pageSize: response.size || (isSystemData ? 20 : 10),
-            hasMore: page < totalPages
-          } as any
-
-          updateObj.isFetching = false
-          updateObj.lastFetched = Date.now()
-
-          return { ...state, ...updateObj }
-        })
-
-        console.log(`✅ Successfully loaded page ${page} for ${type} predictions (${isSystemData ? 'system' : 'user'} data)`)
-
-      } catch (error) {
-        console.error(`❌ Failed to fetch page ${page} for ${type}:`, error)
-        set({
-          error: error instanceof Error ? error.message : 'Failed to fetch predictions',
-          isFetching: false
-        })
-      }
-    },
-
-    // NEW: Batch loading function to load 100 predictions at once
-    fetchBatch: async (type: 'annual' | 'quarterly', batchSize: number = 100) => {
-      const state = get()
-
-      // Prevent multiple simultaneous batch calls
-      if (state.isFetching) {
-        console.log(`📦 Batch loading already in progress for ${type} - skipping duplicate call`)
-        return
-      }
-
-      console.log(`📦 Loading batch of ${batchSize} ${type} predictions`)
-
-      const { activeDataFilter } = get()
-      const { user } = useAuthStore.getState()
-
-      if (!user) {
-        console.error('No user found for fetchBatch')
-        return
-      }
-
-      try {
-        set({ isFetching: true, error: null })
-
-        // Determine which data to update and which API to call
-        const isSystemData = activeDataFilter === 'system'
-
-        let response: any
-        let paginationKey: keyof PredictionsState
-        let predictionKey: keyof PredictionsState
-
-        // Calculate the next page to load based on current data
-        const currentData = isSystemData
-          ? (type === 'annual' ? get().systemAnnualPredictions : get().systemQuarterlyPredictions)
-          : (type === 'annual' ? get().annualPredictions : get().quarterlyPredictions)
-
-        const nextPage = Math.floor(currentData.length / 10) + 1 // Assuming 10 items per page in API
-
-        if (type === 'annual') {
-          paginationKey = isSystemData ? 'systemAnnualPagination' : 'annualPagination'
-          predictionKey = isSystemData ? 'systemAnnualPredictions' : 'annualPredictions'
-
-          if (isSystemData) {
-            response = await predictionsApi.annual.getSystemAnnualPredictions({
-              page: nextPage,
-              size: batchSize // Load full batch at once
-            })
-          } else {
-            response = await predictionsApi.annual.getAnnualPredictions({
-              page: nextPage,
-              size: batchSize // Load full batch at once
-            })
-          }
-        } else {
-          paginationKey = isSystemData ? 'systemQuarterlyPagination' : 'quarterlyPagination'
-          predictionKey = isSystemData ? 'systemQuarterlyPredictions' : 'quarterlyPredictions'
-
-          if (isSystemData) {
-            response = await predictionsApi.quarterly.getSystemQuarterlyPredictions({
-              page: nextPage,
-              size: batchSize // Load full batch at once
-            })
-          } else {
-            response = await predictionsApi.quarterly.getQuarterlyPredictions({
-              page: nextPage,
-              size: batchSize // Load full batch at once
-            })
-          }
-        }
-
-        // Handle response
-        const predictions = response.data || []
-        const totalPages = response.pages || Math.ceil((response.total || predictions.length) / batchSize)
-        const totalItems = response.total || predictions.length
-
-        // Update the specific data array and pagination info
-        set((state) => {
-          const updateObj: Partial<PredictionsState> = {}
-          const currentPredictions = state[predictionKey] as Prediction[] || []
-
-          // For batch loading: append new data to existing data
-          // Remove duplicates by filtering out predictions with same ID
-          const existingIds = new Set(currentPredictions.map(p => p.id))
-          const newPredictions = predictions.filter((p: Prediction) => !existingIds.has(p.id))
-
-          // Append new predictions to existing ones
-          updateObj[predictionKey] = [...currentPredictions, ...newPredictions]
-
-          console.log(`📦 BATCH LOADING: ${currentPredictions.length} existing + ${newPredictions.length} new = ${currentPredictions.length + newPredictions.length} total ${type} predictions`)
-
-          // Update pagination info
-          updateObj[paginationKey] = {
-            currentPage: nextPage,
-            totalPages: totalPages,
-            totalItems: totalItems,
-            pageSize: batchSize,
-            hasMore: (currentPredictions.length + newPredictions.length) < totalItems
-          } as any
-
-          updateObj.isFetching = false
-          updateObj.lastFetched = Date.now()
-
-          return { ...state, ...updateObj }
-        })
-
-        console.log(`✅ Successfully loaded batch of ${predictions.length} ${type} predictions (${isSystemData ? 'system' : 'user'} data)`)
-
-      } catch (error) {
-        console.error(`❌ Failed to fetch batch for ${type}:`, error)
-        set({
-          error: error instanceof Error ? error.message : 'Failed to load batch of predictions',
-          isFetching: false
-        })
-      }
+      // Implementation for specific page fetching
+      console.log(`Fetching page ${page} for ${type} predictions...`)
     },
 
     refetchPredictions: async () => {
@@ -897,71 +609,6 @@ export const usePredictionsStore = create<PredictionsStore>((set, get) => {
 
     clearError: () => set({ error: null }),
 
-    // Smart pagination methods
-    setSmartPageSize: (type: 'annual' | 'quarterly', pageSize: number) => {
-      set((state) => ({
-        smartPagination: {
-          ...state.smartPagination,
-          [type]: {
-            ...state.smartPagination[type],
-            pageSize,
-            currentPage: 1 // Reset to first page when changing page size
-          }
-        }
-      }))
-    },
-
-    setSmartCurrentPage: (type: 'annual' | 'quarterly', page: number) => {
-      set((state) => ({
-        smartPagination: {
-          ...state.smartPagination,
-          [type]: {
-            ...state.smartPagination[type],
-            currentPage: page
-          }
-        }
-      }))
-    },
-
-    getSmartPaginatedData: (type: 'annual' | 'quarterly') => {
-      const state = get()
-      const smartPag = state.smartPagination[type]
-      const data = type === 'annual' ? state.annualPredictions : state.quarterlyPredictions
-
-      const startIndex = (smartPag.currentPage - 1) * smartPag.pageSize
-      const endIndex = startIndex + smartPag.pageSize
-
-      return data.slice(startIndex, endIndex)
-    },
-
-    loadMoreDataIfNeeded: async (type: 'annual' | 'quarterly', page: number) => {
-      const state = get()
-      const smartPag = state.smartPagination[type]
-      const requiredEndIndex = page * smartPag.pageSize
-
-      if (requiredEndIndex > smartPag.loadedItems && smartPag.loadedItems < smartPag.totalItems) {
-        console.log(`🔄 Loading more ${type} data for smart pagination...`)
-        // This would trigger API call to load next batch
-        await get().fetchPredictions()
-      }
-    },
-
-    initializeSmartPaginationFromStats: (annualTotal: number, quarterlyTotal: number) => {
-      set((state) => ({
-        smartPagination: {
-          ...state.smartPagination,
-          annual: {
-            ...state.smartPagination.annual,
-            totalItems: annualTotal
-          },
-          quarterly: {
-            ...state.smartPagination.quarterly,
-            totalItems: quarterlyTotal
-          }
-        }
-      }))
-    },
-
     reset: () => set({
       annualPredictions: [],
       quarterlyPredictions: [],
@@ -973,39 +620,6 @@ export const usePredictionsStore = create<PredictionsStore>((set, get) => {
       isInitialized: false,
       isFetching: false,
       activeDataFilter: 'system',
-
-      // Reset smart pagination
-      smartPagination: {
-        annual: {
-          currentPage: 1,
-          pageSize: 10,
-          totalItems: 0,
-          loadedItems: 0,
-          hasLoadedInitialBatch: false
-        },
-        quarterly: {
-          currentPage: 1,
-          pageSize: 10,
-          totalItems: 0,
-          loadedItems: 0,
-          hasLoadedInitialBatch: false
-        },
-        systemAnnual: {
-          currentPage: 1,
-          pageSize: 10,
-          totalItems: 0,
-          loadedItems: 0,
-          hasLoadedInitialBatch: false
-        },
-        systemQuarterly: {
-          currentPage: 1,
-          pageSize: 10,
-          totalItems: 0,
-          loadedItems: 0,
-          hasLoadedInitialBatch: false
-        }
-      },
-
       annualPagination: {
         currentPage: 1,
         totalPages: 0,
