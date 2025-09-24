@@ -66,10 +66,6 @@ interface PredictionsState {
   lastFetched: number | null
   isInitialized: boolean
   isFetching: boolean
-
-  // Legacy pagination for backward compatibility
-  // Separate pagination for user and system data
-  isFetching: boolean
   activeDataFilter: string // 'personal', 'organization', 'system', or 'all'
 
   // Basic pagination info
@@ -101,9 +97,6 @@ interface PredictionsState {
     pageSize: number
     hasMore: boolean
   }
-
-  // Data access filter state  
-  activeDataFilter: string // 'personal', 'organization', 'system', or 'all' for viewing
 }
 
 type PredictionsStore = PredictionsState & {
@@ -121,8 +114,6 @@ type PredictionsStore = PredictionsState & {
   addPrediction: (prediction: Prediction, type: 'annual' | 'quarterly') => void
   replacePrediction: (prediction: Prediction, type: 'annual' | 'quarterly', tempId: string) => void
   removePrediction: (predictionId: string, type: 'annual' | 'quarterly') => void
-  setDataFilter: (filter: string) => void
-  getDefaultFilterForUser: (user: any) => string
 
   // Helper method for processing predictions data  
   processAllPredictionsData: (
@@ -137,238 +128,248 @@ type PredictionsStore = PredictionsState & {
     transformedSystemAnnual: Prediction[]
     transformedSystemQuarterly: Prediction[]
   }>
-
-  // Utility functions
-  getPredictionProbability: (prediction: Prediction) => number
-  getRiskBadgeColor: (riskLevel: string | undefined | null) => string
-  formatPredictionDate: (prediction: Prediction) => string
-  getFilteredPredictions: (type: 'annual' | 'quarterly') => Prediction[]
 }
 
-export const usePredictionsStore = create<PredictionsStore>((set, get) => {
-  // Set up event listeners for auth state changes
-  if (typeof window !== 'undefined') {
-    window.addEventListener('auth-logout', () => {
-      get().reset()
-    })
+export const usePredictionsStore = create<PredictionsStore>()(
+  persist(
+    (set, get) => {
+      // Set up event listeners for auth state changes
+      if (typeof window !== 'undefined') {
+        window.addEventListener('auth-logout', () => {
+          get().reset()
+        })
 
-    window.addEventListener('auth-login-success', () => {
-      get().invalidateCache()
-    })
-  }
-
-  return {
-    // Initial state
-    annualPredictions: [],
-    quarterlyPredictions: [],
-    systemAnnualPredictions: [],
-    systemQuarterlyPredictions: [],
-    isLoading: false,
-    error: null,
-    lastFetched: null,
-    isInitialized: false,
-    isFetching: false,
-    activeDataFilter: 'system',
-
-    // Basic pagination state
-    annualPagination: {
-      currentPage: 1,
-      totalPages: 1,
-      totalItems: 0,
-      pageSize: 10,
-      hasMore: false
-    },
-    quarterlyPagination: {
-      currentPage: 1,
-      totalPages: 1,
-      totalItems: 0,
-      pageSize: 10,
-      hasMore: false
-    },
-
-    /**
-     * Main fetch function - loads BOTH user and system data on first render
-     * Then caches them separately for the entire application
-     */
-    fetchPredictions: async (forceRefresh = false) => {
-      const state = get()
-      const authStore = useAuthStore.getState()
-      const user = authStore.user
-
-      if (!user || state.isFetching) return
-
-      // Always fetch both user and system data on initial load for proper caching
-      const needsUserData = user.role !== 'super_admin'
-      const needsSystemData = true // ALWAYS fetch system data
-
-      // Check cache validity - 5 minutes
-      const cacheValidTime = 5 * 60 * 1000
-      const isCacheValid = !forceRefresh && state.isInitialized && state.lastFetched &&
-        (Date.now() - state.lastFetched < cacheValidTime)
-
-      // Use cache if valid and we have the required data
-      if (isCacheValid) {
-        const hasSystemData = state.systemAnnualPredictions.length > 0 && state.systemQuarterlyPredictions.length > 0
-        const hasUserData = !needsUserData || (state.annualPredictions.length > 0 && state.quarterlyPredictions.length > 0)
-
-        if (hasSystemData && hasUserData) return
+        window.addEventListener('auth-login-success', () => {
+          get().invalidateCache()
+        })
       }
 
-      set({ isLoading: true, error: null, isFetching: true })
+      return {
+        // Initial state
+        annualPredictions: [],
+        quarterlyPredictions: [],
+        systemAnnualPredictions: [],
+        systemQuarterlyPredictions: [],
+        isLoading: false,
+        error: null,
+        lastFetched: null,
+        isInitialized: false,
+        isFetching: false,
+        activeDataFilter: 'system',
 
-      try {
-        const apiPromises = []
-
-        // User predictions (if not super admin)
-        if (needsUserData) {
-          apiPromises.push(
-            predictionsApi.annual.getAnnualPredictions({ page: 1, size: 100 }),
-            predictionsApi.quarterly.getQuarterlyPredictions({ page: 1, size: 100 })
-          )
-        } else {
-          apiPromises.push(null, null) // Placeholders for super admin
-        }
-
-        // System predictions (ALWAYS fetch these)
-        apiPromises.push(
-          predictionsApi.annual.getSystemAnnualPredictions({ page: 1, size: 100 }),
-          predictionsApi.quarterly.getSystemQuarterlyPredictions({ page: 1, size: 100 })
-        )
-
-        const [userAnnualResponse, userQuarterlyResponse, systemAnnualResponse, systemQuarterlyResponse] = await Promise.all(apiPromises)
-
-        // Transform USER data
-        let transformedUserAnnual: Prediction[] = []
-        let transformedUserQuarterly: Prediction[] = []
-
-        if (userAnnualResponse && needsUserData) {
-          // API returns array directly, not wrapped in data property
-          const userData = Array.isArray(userAnnualResponse) ? userAnnualResponse : (userAnnualResponse?.data || [])
-          console.log('🔍 USER Annual Response - FIXED:', {
-            responseType: Array.isArray(userAnnualResponse) ? 'direct array' : 'wrapped',
-            itemCount: userData.length,
-            firstItem: userData.length > 0 ? userData[0] : 'none'
-          })
-
-          transformedUserAnnual = userData.map((pred: any) => ({
-            ...pred,
-            default_probability: pred.probability || pred.default_probability || 0,
-            risk_category: pred.risk_level || pred.risk_category,
-            reporting_year: pred.reporting_year?.toString() || new Date().getFullYear().toString(),
-            organization_access: pred.access_level || pred.organization_access || 'personal',
-          }))
-        }
-
-        if (userQuarterlyResponse && needsUserData) {
-          // API returns array directly, not wrapped in data property
-          const userData = Array.isArray(userQuarterlyResponse) ? userQuarterlyResponse : (userQuarterlyResponse?.data || [])
-          console.log('🔍 USER Quarterly Response - FIXED:', {
-            responseType: Array.isArray(userQuarterlyResponse) ? 'direct array' : 'wrapped',
-            itemCount: userData.length,
-            firstItem: userData.length > 0 ? userData[0] : 'none'
-          })
-
-          transformedUserQuarterly = userData.map((pred: any) => ({
-            ...pred,
-            default_probability: pred.logistic_probability || pred.probability || pred.default_probability || 0,
-            risk_category: pred.risk_level || pred.risk_category,
-            reporting_year: pred.reporting_year?.toString() || new Date().getFullYear().toString(),
-            reporting_quarter: pred.reporting_quarter?.toUpperCase() || "Q1",
-            organization_access: pred.access_level || pred.organization_access || 'personal',
-          }))
-        }
-
-        // Transform SYSTEM data (ALWAYS)
-        let transformedSystemAnnual: Prediction[] = []
-        let transformedSystemQuarterly: Prediction[] = []
-
-        if (systemAnnualResponse) {
-          // API returns array directly, not wrapped in data property
-          const systemData = Array.isArray(systemAnnualResponse) ? systemAnnualResponse : (systemAnnualResponse?.data || [])
-          console.log('🔍 SYSTEM Annual Response - FIXED:', {
-            responseType: Array.isArray(systemAnnualResponse) ? 'direct array' : 'wrapped',
-            itemCount: systemData.length,
-            firstItem: systemData.length > 0 ? systemData[0] : 'none'
-          })
-
-          transformedSystemAnnual = systemData.map((pred: any) => ({
-            ...pred,
-            default_probability: pred.probability || pred.default_probability || 0,
-            risk_category: pred.risk_level || pred.risk_category,
-            reporting_year: pred.reporting_year?.toString() || new Date().getFullYear().toString(),
-            organization_access: 'system', // ALWAYS system
-          }))
-        }
-
-        if (systemQuarterlyResponse) {
-          // API returns array directly, not wrapped in data property
-          const systemData = Array.isArray(systemQuarterlyResponse) ? systemQuarterlyResponse : (systemQuarterlyResponse?.data || [])
-          console.log('🔍 SYSTEM Quarterly Response - FIXED:', {
-            responseType: Array.isArray(systemQuarterlyResponse) ? 'direct array' : 'wrapped',
-            itemCount: systemData.length,
-            firstItem: systemData.length > 0 ? systemData[0] : 'none'
-          })
-
-          transformedSystemQuarterly = systemData.map((pred: any) => ({
-            ...pred,
-            default_probability: pred.logistic_probability || pred.probability || pred.default_probability || 0,
-            risk_category: pred.risk_level || pred.risk_category,
-            reporting_year: pred.reporting_year?.toString() || new Date().getFullYear().toString(),
-            reporting_quarter: pred.reporting_quarter?.toUpperCase() || "Q1",
-            organization_access: 'system', // ALWAYS system
-          }))
-        }
-
-        // Log the final transformed data counts
-        console.log('🎯 Final Data Transformation Results:', {
-          userAnnual: transformedUserAnnual.length,
-          userQuarterly: transformedUserQuarterly.length,
-          systemAnnual: transformedSystemAnnual.length,
-          systemQuarterly: transformedSystemQuarterly.length,
-          userRole: user?.role,
-          needsUserData,
-          needsSystemData
-        })
-
-        // Set proper data filter based on user role
-        const initialFilter = get().getDefaultFilterForUser(user)
-
-        // Update pagination info based on data
-        const annualPaginationUpdate = {
+        // Basic pagination state
+        annualPagination: {
           currentPage: 1,
-          totalPages: Math.ceil((transformedUserAnnual.length + transformedSystemAnnual.length) / 10),
-          totalItems: transformedUserAnnual.length + transformedSystemAnnual.length,
+          totalPages: 1,
+          totalItems: 0,
           pageSize: 10,
           hasMore: false
-        }
-
-        const quarterlyPaginationUpdate = {
+        },
+        quarterlyPagination: {
           currentPage: 1,
-          totalPages: Math.ceil((transformedUserQuarterly.length + transformedSystemQuarterly.length) / 10),
-          totalItems: transformedUserQuarterly.length + transformedSystemQuarterly.length,
+          totalPages: 1,
+          totalItems: 0,
           pageSize: 10,
           hasMore: false
-        }
+        },
+        systemAnnualPagination: {
+          currentPage: 1,
+          totalPages: 1,
+          totalItems: 0,
+          pageSize: 10,
+          hasMore: false
+        },
+        systemQuarterlyPagination: {
+          currentPage: 1,
+          totalPages: 1,
+          totalItems: 0,
+          pageSize: 10,
+          hasMore: false
+        },
 
-        // Update state with SEPARATED data
-        set({
-          // User data (empty array for super admin)
-          annualPredictions: transformedUserAnnual,
-          quarterlyPredictions: transformedUserQuarterly,
-          // System data (ALWAYS populated)
-          systemAnnualPredictions: transformedSystemAnnual,
-          systemQuarterlyPredictions: transformedSystemQuarterly,
-          // Pagination info
-          annualPagination: annualPaginationUpdate,
-          quarterlyPagination: quarterlyPaginationUpdate,
-          // State management
-          isLoading: false,
-          error: null,
-          lastFetched: Date.now(),
-          isInitialized: true,
-          isFetching: false,
-          activeDataFilter: initialFilter,
-        })
+        /**
+         * Main fetch function - loads BOTH user and system data on first render
+         * Then caches them separately for the entire application
+         */
+        fetchPredictions: async (forceRefresh = false) => {
+          const state = get()
+          const authStore = useAuthStore.getState()
+          const user = authStore.user
+
+          if (!user || state.isFetching) return
+
+          // Always fetch both user and system data on initial load for proper caching
+          const needsUserData = user.role !== 'super_admin'
+          const needsSystemData = true // ALWAYS fetch system data
+
+          // Check cache validity - 5 minutes
+          const cacheValidTime = 5 * 60 * 1000
+          const isCacheValid = !forceRefresh && state.isInitialized && state.lastFetched &&
+            (Date.now() - state.lastFetched < cacheValidTime)
+
+          // Use cache if valid and we have the required data
+          if (isCacheValid) {
+            const hasSystemData = state.systemAnnualPredictions.length > 0 && state.systemQuarterlyPredictions.length > 0
+            const hasUserData = !needsUserData || (state.annualPredictions.length > 0 && state.quarterlyPredictions.length > 0)
+
+            if (hasSystemData && hasUserData) return
+          }
+
+          set({ isLoading: true, error: null, isFetching: true })
+
+          try {
+            const apiPromises = []
+
+            // User predictions (if not super admin)
+            if (needsUserData) {
+              apiPromises.push(
+                predictionsApi.annual.getAnnualPredictions({ page: 1, size: 100 }),
+                predictionsApi.quarterly.getQuarterlyPredictions({ page: 1, size: 100 })
+              )
+            } else {
+              apiPromises.push(null, null) // Placeholders for super admin
+            }
+
+            // System predictions (ALWAYS fetch these)
+            apiPromises.push(
+              predictionsApi.annual.getSystemAnnualPredictions({ page: 1, size: 100 }),
+              predictionsApi.quarterly.getSystemQuarterlyPredictions({ page: 1, size: 100 })
+            )
+
+            const [userAnnualResponse, userQuarterlyResponse, systemAnnualResponse, systemQuarterlyResponse] = await Promise.all(apiPromises)
+
+            // Transform USER data
+            let transformedUserAnnual: Prediction[] = []
+            let transformedUserQuarterly: Prediction[] = []
+
+            if (userAnnualResponse && needsUserData) {
+              // API returns array directly, not wrapped in data property
+              const userData = Array.isArray(userAnnualResponse) ? userAnnualResponse : (userAnnualResponse?.data || [])
+              console.log('🔍 USER Annual Response - FIXED:', {
+                responseType: Array.isArray(userAnnualResponse) ? 'direct array' : 'wrapped',
+                itemCount: userData.length,
+                firstItem: userData.length > 0 ? userData[0] : 'none'
+              })
+
+              transformedUserAnnual = userData.map((pred: any) => ({
+                ...pred,
+                default_probability: pred.probability || pred.default_probability || 0,
+                risk_category: pred.risk_level || pred.risk_category,
+                reporting_year: pred.reporting_year?.toString() || new Date().getFullYear().toString(),
+                organization_access: pred.access_level || pred.organization_access || 'personal',
+              }))
+            }
+
+            if (userQuarterlyResponse && needsUserData) {
+              // API returns array directly, not wrapped in data property
+              const userData = Array.isArray(userQuarterlyResponse) ? userQuarterlyResponse : (userQuarterlyResponse?.data || [])
+              console.log('🔍 USER Quarterly Response - FIXED:', {
+                responseType: Array.isArray(userQuarterlyResponse) ? 'direct array' : 'wrapped',
+                itemCount: userData.length,
+                firstItem: userData.length > 0 ? userData[0] : 'none'
+              })
+
+              transformedUserQuarterly = userData.map((pred: any) => ({
+                ...pred,
+                default_probability: pred.logistic_probability || pred.probability || pred.default_probability || 0,
+                risk_category: pred.risk_level || pred.risk_category,
+                reporting_year: pred.reporting_year?.toString() || new Date().getFullYear().toString(),
+                reporting_quarter: pred.reporting_quarter?.toUpperCase() || "Q1",
+                organization_access: pred.access_level || pred.organization_access || 'personal',
+              }))
+            }
+
+            // Transform SYSTEM data (ALWAYS)
+            let transformedSystemAnnual: Prediction[] = []
+            let transformedSystemQuarterly: Prediction[] = []
+
+            if (systemAnnualResponse) {
+              // API returns array directly, not wrapped in data property
+              const systemData = Array.isArray(systemAnnualResponse) ? systemAnnualResponse : (systemAnnualResponse?.data || [])
+              console.log('🔍 SYSTEM Annual Response - FIXED:', {
+                responseType: Array.isArray(systemAnnualResponse) ? 'direct array' : 'wrapped',
+                itemCount: systemData.length,
+                firstItem: systemData.length > 0 ? systemData[0] : 'none'
+              })
+
+              transformedSystemAnnual = systemData.map((pred: any) => ({
+                ...pred,
+                default_probability: pred.probability || pred.default_probability || 0,
+                risk_category: pred.risk_level || pred.risk_category,
+                reporting_year: pred.reporting_year?.toString() || new Date().getFullYear().toString(),
+                organization_access: 'system', // ALWAYS system
+              }))
+            }
+
+            if (systemQuarterlyResponse) {
+              // API returns array directly, not wrapped in data property
+              const systemData = Array.isArray(systemQuarterlyResponse) ? systemQuarterlyResponse : (systemQuarterlyResponse?.data || [])
+              console.log('🔍 SYSTEM Quarterly Response - FIXED:', {
+                responseType: Array.isArray(systemQuarterlyResponse) ? 'direct array' : 'wrapped',
+                itemCount: systemData.length,
+                firstItem: systemData.length > 0 ? systemData[0] : 'none'
+              })
+
+              transformedSystemQuarterly = systemData.map((pred: any) => ({
+                ...pred,
+                default_probability: pred.logistic_probability || pred.probability || pred.default_probability || 0,
+                risk_category: pred.risk_level || pred.risk_category,
+                reporting_year: pred.reporting_year?.toString() || new Date().getFullYear().toString(),
+                reporting_quarter: pred.reporting_quarter?.toUpperCase() || "Q1",
+                organization_access: 'system', // ALWAYS system
+              }))
+            }
+
+            // Log the final transformed data counts
+            console.log('🎯 Final Data Transformation Results:', {
+              userAnnual: transformedUserAnnual.length,
+              userQuarterly: transformedUserQuarterly.length,
+              systemAnnual: transformedSystemAnnual.length,
+              systemQuarterly: transformedSystemQuarterly.length,
+              userRole: user?.role,
+              needsUserData,
+              needsSystemData
+            })
+
+            // Set proper data filter based on user role
+            const initialFilter = get().getDefaultFilterForUser(user)
+
+            // Update pagination info based on data
+            const annualPaginationUpdate = {
+              currentPage: 1,
+              totalPages: Math.ceil((transformedUserAnnual.length + transformedSystemAnnual.length) / 10),
+              totalItems: transformedUserAnnual.length + transformedSystemAnnual.length,
+              pageSize: 10,
+              hasMore: false
+            }
+
+            const quarterlyPaginationUpdate = {
+              currentPage: 1,
+              totalPages: Math.ceil((transformedUserQuarterly.length + transformedSystemQuarterly.length) / 10),
+              totalItems: transformedUserQuarterly.length + transformedSystemQuarterly.length,
+              pageSize: 10,
+              hasMore: false
+            }
+
+            // Update state with SEPARATED data
+            set({
+              // User data (empty array for super admin)
+              annualPredictions: transformedUserAnnual,
+              quarterlyPredictions: transformedUserQuarterly,
+              // System data (ALWAYS populated)
+              systemAnnualPredictions: transformedSystemAnnual,
+              systemQuarterlyPredictions: transformedSystemQuarterly,
+              // Pagination info
+              annualPagination: annualPaginationUpdate,
+              quarterlyPagination: quarterlyPaginationUpdate,
+              // State management
+              isLoading: false,
+              error: null,
+              lastFetched: Date.now(),
+              isInitialized: true,
+              isFetching: false,
+              activeDataFilter: initialFilter,
+            })
 
           } catch (error) {
             console.error('Failed to fetch predictions:', error)
@@ -946,7 +947,7 @@ export const usePredictionsStore = create<PredictionsStore>((set, get) => {
     },
     {
       name: 'predictions-storage',
-      partialize: (state) => ({
+      partialize: (state: PredictionsStore) => ({
         // Only persist data, not loading states
         annualPredictions: state.annualPredictions,
         quarterlyPredictions: state.quarterlyPredictions,
@@ -958,7 +959,7 @@ export const usePredictionsStore = create<PredictionsStore>((set, get) => {
         // Don't persist pagination as it can be recalculated
       }),
       // Clear persisted data when no user is authenticated
-      onRehydrateStorage: () => (state) => {
+      onRehydrateStorage: () => (state: PredictionsStore | undefined) => {
         if (state) {
           const authStore = useAuthStore.getState()
           if (!authStore.isAuthenticated) {
@@ -973,4 +974,5 @@ export const usePredictionsStore = create<PredictionsStore>((set, get) => {
         }
       }
     }
-  ))
+  )
+)
