@@ -8,14 +8,8 @@ import {
 } from '../types/prediction'
 import { ApiResponse, PaginatedResponse } from '../types/common'
 
-/**
- * Predictions API service functions based on OpenAPI spec
- * Base path: /api/v1/predictions
- */
 export const predictionsApi = {
-  // Annual predictions endpoints
   annual: {
-    // Get annual predictions with filtering
     async getAnnualPredictions(params?: {
       page?: number
       size?: number
@@ -38,22 +32,18 @@ export const predictionsApi = {
       return apiClient.get<any>(url)
     },
 
-    // Create annual prediction
     async createAnnualPrediction(data: AnnualPredictionRequest): Promise<ApiResponse<any>> {
       return apiClient.post<any>('/predictions/annual', data)
     },
 
-    // Update annual prediction
     async updateAnnualPrediction(predictionId: string, data: AnnualPredictionRequest): Promise<ApiResponse<any>> {
       return apiClient.put<any>(`/predictions/annual/${predictionId}`, data)
     },
 
-    // Delete annual prediction
     async deleteAnnualPrediction(predictionId: string): Promise<ApiResponse<any>> {
       return apiClient.delete<any>(`/predictions/annual/${predictionId}`)
     },
 
-    // Bulk upload annual predictions (async)
     async bulkUploadAnnualAsync(file: File): Promise<ApiResponse<any>> {
       const formData = new FormData()
       formData.append('file', file)
@@ -61,7 +51,6 @@ export const predictionsApi = {
       return apiClient.upload<any>('/predictions/annual/bulk-upload-async', formData)
     },
 
-    // Get system annual predictions (platform-wide data)
     async getSystemAnnualPredictions(params?: {
       page?: number
       size?: number
@@ -87,9 +76,7 @@ export const predictionsApi = {
     },
   },
 
-  // Quarterly predictions endpoints
   quarterly: {
-    // Get quarterly predictions with filtering
     async getQuarterlyPredictions(params?: {
       page?: number
       size?: number
@@ -113,22 +100,18 @@ export const predictionsApi = {
       return apiClient.get<any>(url)
     },
 
-    // Create quarterly prediction
     async createQuarterlyPrediction(data: QuarterlyPredictionRequest): Promise<ApiResponse<any>> {
       return apiClient.post<any>('/predictions/quarterly', data)
     },
 
-    // Update quarterly prediction
     async updateQuarterlyPrediction(predictionId: string, data: QuarterlyPredictionRequest): Promise<ApiResponse<any>> {
       return apiClient.put<any>(`/predictions/quarterly/${predictionId}`, data)
     },
 
-    // Delete quarterly prediction
     async deleteQuarterlyPrediction(predictionId: string): Promise<ApiResponse<any>> {
       return apiClient.delete<any>(`/predictions/quarterly/${predictionId}`)
     },
 
-    // Bulk upload quarterly predictions (async)
     async bulkUploadQuarterlyAsync(file: File): Promise<ApiResponse<any>> {
       const formData = new FormData()
       formData.append('file', file)
@@ -136,7 +119,6 @@ export const predictionsApi = {
       return apiClient.upload<any>('/predictions/quarterly/bulk-upload-async', formData)
     },
 
-    // Get system quarterly predictions (platform-wide data)
     async getSystemQuarterlyPredictions(params?: {
       page?: number
       size?: number
@@ -163,7 +145,6 @@ export const predictionsApi = {
     },
   },
 
-  // Bulk upload (sync) - unified endpoint
   async bulkUploadPredictions(file: File, predictionType: string = 'annual'): Promise<ApiResponse<any>> {
     const formData = new FormData()
     formData.append('file', file)
@@ -171,14 +152,11 @@ export const predictionsApi = {
     return apiClient.upload<any>(`/predictions/bulk-upload?prediction_type=${predictionType}`, formData)
   },
 
-  // Job management endpoints
   jobs: {
-    // Get bulk upload job status
     async getJobStatus(jobId: string): Promise<ApiResponse<any>> {
       return apiClient.get<any>(`/predictions/jobs/${jobId}/status`)
     },
 
-    // List bulk upload jobs
     async listJobs(params?: {
       status?: string
       limit?: number
@@ -199,11 +177,17 @@ export const predictionsApi = {
 
       return apiClient.get<any>(url)
     },
+
+    async cancelJob(jobId: string): Promise<ApiResponse<any>> {
+      return apiClient.post<any>(`/predictions/jobs/${jobId}/cancel`, {})
+    },
+
+    async deleteJob(jobId: string): Promise<ApiResponse<any>> {
+      return apiClient.delete<any>(`/predictions/jobs/${jobId}`)
+    },
   },
 
-  // Unified methods for easier use
   async getPredictions(params?: PredictionParams): Promise<ApiResponse<PaginatedResponse<any>>> {
-    // Determine which endpoint to use based on model type or use annual as default
     const modelType = params?.model_type || 'annual'
 
     if (modelType === 'quarterly') {
@@ -248,7 +232,6 @@ export const predictionsApi = {
     }
   },
 
-  // Export predictions (custom implementation)
   async exportPredictions(params?: PredictionParams & { format?: 'csv' | 'xlsx' }): Promise<Blob> {
     const modelType = params?.model_type || 'annual'
     const searchParams = new URLSearchParams()

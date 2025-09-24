@@ -1,7 +1,6 @@
 import type { BaseEntity, JobStatus, PaginatedResponse } from './common'
 import type { PredictionResult } from './prediction'
 
-// Job types for bulk upload operations
 export interface BulkJob extends BaseEntity {
   file_name: string
   file_size: number

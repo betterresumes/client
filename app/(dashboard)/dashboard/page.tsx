@@ -15,23 +15,18 @@ import { usePredictionsStore } from '@/lib/stores/predictions-store'
 export default function DashboardPage() {
   const { activeTab, setActiveTab } = useDashboardStore()
   const { user, isAdmin, isTenantAdmin, isAuthenticated } = useAuthStore()
-  const { fetchPredictions, annualPredictions, quarterlyPredictions, isLoading } = usePredictionsStore()
+  const { fetchPredictions, annualPredictions, quarterlyPredictions, isLoading, isInitialized } = usePredictionsStore()
   const [hasInitializedData, setHasInitializedData] = useState(false)
 
   // Enhanced data loading - fetch predictions when user is authenticated and handle auth events
   useEffect(() => {
-    if (isAuthenticated && user && !hasInitializedData && !isLoading) {
-      console.log('🚀 Dashboard page - initializing data for authenticated user')
+    if (isAuthenticated && user && !hasInitializedData) {
+      console.log('🚀 Dashboard page - initializing data for authenticated user:', user.email)
       setHasInitializedData(true)
-
-      // Add small delay to ensure auth state is fully propagated
-      setTimeout(() => {
-        // Always fetch if we don't have any data or if it's a fresh login
-        if (annualPredictions.length === 0 && quarterlyPredictions.length === 0) {
-          console.log('📊 Fetching predictions for authenticated user')
-          fetchPredictions(true) // Force refresh for fresh login
-        }
-      }, 100)
+      // Only fetch if we don't have any data
+      if (annualPredictions.length === 0 && quarterlyPredictions.length === 0) {
+        fetchPredictions()
+      }
     }
   }, [isAuthenticated, user, hasInitializedData, isLoading, annualPredictions.length, quarterlyPredictions.length, fetchPredictions])
 

@@ -5,6 +5,7 @@ import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { Building, Plus } from 'lucide-react'
+import { toast } from 'sonner'
 
 import {
   Dialog,
@@ -63,22 +64,28 @@ export function CreateOrganizationDialog({
       const orgData: OrganizationCreate = {
         name: data.name,
         description: data.description || undefined,
+        domain: data.website ? new URL(data.website).hostname : undefined,
       }
 
+      console.log('Creating organization with data:', orgData)
       const response = await organizationsApi.create(orgData)
 
       if (response.success) {
+        toast.success(`Organization "${data.name}" created successfully! 🏢`)
         form.reset()
         onOpenChange(false)
         if (onOrganizationCreated) {
           onOrganizationCreated()
         }
       } else {
-        setError(response.error?.message || 'Failed to create organization')
+        console.error('Organization creation failed:', response.error)
+        const errorMessage = response.error?.message || 'Failed to create organization'
+        setError(errorMessage)
+        toast.error(`Failed to create organization: ${errorMessage}`)
       }
     } catch (error) {
       console.error('Error creating organization:', error)
-      setError('Failed to create organization')
+      setError('Failed to create organization. Please check your inputs and try again.')
     } finally {
       setLoading(false)
     }
@@ -103,7 +110,7 @@ export function CreateOrganizationDialog({
         <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
           {error && (
             <Alert className="border-red-200 bg-red-50">
-              <AlertDescription className="text-red-800">
+              <AlertDescription className="text-red-800 whitespace-pre-wrap">
                 {error}
               </AlertDescription>
             </Alert>
@@ -115,6 +122,7 @@ export function CreateOrganizationDialog({
               id="name"
               {...form.register('name')}
               placeholder="Acme Corporation"
+              className="mt-1"
             />
             {form.formState.errors.name && (
               <p className="text-sm text-red-600 mt-1">
@@ -130,6 +138,7 @@ export function CreateOrganizationDialog({
               {...form.register('description')}
               placeholder="Brief description of the organization..."
               rows={3}
+              className="mt-1"
             />
             {form.formState.errors.description && (
               <p className="text-sm text-red-600 mt-1">
@@ -139,27 +148,31 @@ export function CreateOrganizationDialog({
           </div>
 
           <div>
-            <Label htmlFor="website">Website</Label>
+            <Label htmlFor="website">Website (Optional)</Label>
             <Input
               id="website"
               type="url"
               {...form.register('website')}
               placeholder="https://example.com"
+              className="mt-1"
             />
             {form.formState.errors.website && (
               <p className="text-sm text-red-600 mt-1">
                 {form.formState.errors.website.message}
               </p>
             )}
+            <p className="text-xs text-muted-foreground mt-1">
+              Enter the full URL including https://
+            </p>
           </div>
 
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between p-3 bg-gray-50 rounded-md">
             <div>
               <Label htmlFor="is_active" className="text-sm font-medium">
                 Active Organization
               </Label>
-              <p className="text-xs text-gray-500">
-                Users can join and use this organization
+              <p className="text-xs text-gray-500 mt-1">
+                Users can join and use this organization when active
               </p>
             </div>
             <Switch

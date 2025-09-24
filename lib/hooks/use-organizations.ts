@@ -6,7 +6,6 @@ import {
   type WhitelistCreate
 } from '../api'
 
-// Query keys for organizations
 export const organizationKeys = {
   all: ['organizations'] as const,
   lists: () => [...organizationKeys.all, 'list'] as const,
@@ -19,7 +18,6 @@ export const organizationKeys = {
   globalAccess: (id: string) => [...organizationKeys.detail(id), 'global-access'] as const,
 }
 
-// List organizations with role-based access control
 export function useOrganizations(params?: {
   page?: number
   limit?: number
@@ -41,7 +39,6 @@ export function useOrganizations(params?: {
   })
 }
 
-// Get single organization details
 export function useOrganization(orgId: string) {
   return useQuery({
     queryKey: organizationKeys.detail(orgId),
@@ -58,7 +55,6 @@ export function useOrganization(orgId: string) {
   })
 }
 
-// Get detailed organization information
 export function useOrganizationDetails(orgId: string) {
   return useQuery({
     queryKey: [...organizationKeys.detail(orgId), 'details'],
@@ -75,7 +71,6 @@ export function useOrganizationDetails(orgId: string) {
   })
 }
 
-// Get organization administrators
 export function useOrganizationAdmins(orgId: string) {
   return useQuery({
     queryKey: organizationKeys.admins(orgId),
@@ -92,7 +87,6 @@ export function useOrganizationAdmins(orgId: string) {
   })
 }
 
-// Get organization users
 export function useOrganizationUsers(orgId: string, params?: {
   skip?: number
   limit?: number
@@ -113,7 +107,6 @@ export function useOrganizationUsers(orgId: string, params?: {
   })
 }
 
-// Get global data access status
 export function useOrganizationGlobalAccess(orgId: string) {
   return useQuery({
     queryKey: organizationKeys.globalAccess(orgId),
@@ -130,7 +123,6 @@ export function useOrganizationGlobalAccess(orgId: string) {
   })
 }
 
-// Get organization whitelist
 export function useOrganizationWhitelist(orgId: string, params?: {
   skip?: number
   limit?: number
@@ -150,7 +142,6 @@ export function useOrganizationWhitelist(orgId: string, params?: {
   })
 }
 
-// Create organization mutation
 export function useCreateOrganization() {
   const queryClient = useQueryClient()
 
@@ -168,7 +159,6 @@ export function useCreateOrganization() {
   })
 }
 
-// Update organization mutation
 export function useUpdateOrganization() {
   const queryClient = useQueryClient()
 
@@ -187,7 +177,6 @@ export function useUpdateOrganization() {
   })
 }
 
-// Delete organization mutation
 export function useDeleteOrganization() {
   const queryClient = useQueryClient()
 
@@ -206,7 +195,6 @@ export function useDeleteOrganization() {
   })
 }
 
-// Regenerate join token mutation
 export function useRegenerateJoinToken() {
   const queryClient = useQueryClient()
 
@@ -224,7 +212,6 @@ export function useRegenerateJoinToken() {
   })
 }
 
-// Update global data access mutation
 export function useUpdateGlobalDataAccess() {
   const queryClient = useQueryClient()
 
@@ -243,7 +230,6 @@ export function useUpdateGlobalDataAccess() {
   })
 }
 
-// Whitelist management mutations
 export function useAddToWhitelist() {
   const queryClient = useQueryClient()
 

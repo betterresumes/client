@@ -2,31 +2,22 @@ import { apiClient } from './client'
 import {
   Job,
   JobProgress,
-  JobStatsResponse,
   JobParams,
-  JobLogsResponse,
-  JobResultsResponse,
   BulkJobOperationResponse
 } from '../types/job'
 import { JobStatus } from '../types/common'
 import { ApiResponse, PaginatedResponse } from '../types/common'
 
-/**
- * Jobs API service functions based on OpenAPI spec
- * Base path: /api/v1/jobs
- */
+
 export const jobsApi = {
-  // Get job status by ID
   async getJobStatus(jobId: string): Promise<ApiResponse<JobProgress>> {
     return apiClient.get<JobProgress>(`/jobs/${jobId}`)
   },
 
-  // Get job details
   async getJobDetails(jobId: string): Promise<ApiResponse<Job>> {
     return apiClient.get<Job>(`/jobs/${jobId}/details`)
   },
 
-  // List user's jobs with filtering
   async listJobs(params?: JobParams): Promise<ApiResponse<PaginatedResponse<Job>>> {
     const searchParams = new URLSearchParams()
 
@@ -44,27 +35,22 @@ export const jobsApi = {
     return apiClient.get<PaginatedResponse<Job>>(url)
   },
 
-  // Cancel a running job
   async cancelJob(jobId: string): Promise<ApiResponse<{ message: string }>> {
     return apiClient.post<{ message: string }>(`/jobs/${jobId}/cancel`)
   },
 
-  // Retry a failed job
   async retryJob(jobId: string): Promise<ApiResponse<Job>> {
     return apiClient.post<Job>(`/jobs/${jobId}/retry`)
   },
 
-  // Delete a job (admin only)
   async deleteJob(jobId: string): Promise<ApiResponse<{ message: string }>> {
     return apiClient.delete<{ message: string }>(`/jobs/${jobId}`)
   },
 
-  // Get job logs/errors
   async getJobLogs(jobId: string): Promise<ApiResponse<{ logs: string[] }>> {
     return apiClient.get<{ logs: string[] }>(`/jobs/${jobId}/logs`)
   },
 
-  // Download job result/output file
   async downloadJobResult(jobId: string): Promise<Blob> {
     const response = await apiClient.get<Blob>(`/jobs/${jobId}/download`, {
       responseType: 'blob'
@@ -77,7 +63,6 @@ export const jobsApi = {
     throw new Error('Failed to download job result')
   },
 
-  // Get job statistics (admin only)
   async getJobStatistics(params?: {
     start_date?: string
     end_date?: string
@@ -110,9 +95,7 @@ export const jobsApi = {
     }>(url)
   },
 
-  // Utilities for real-time job tracking
   polling: {
-    // Poll job status until completion
     async pollJobStatus(
       jobId: string,
       onProgress?: (status: JobProgress) => void,
@@ -134,11 +117,9 @@ export const jobsApi = {
               onProgress(status)
             }
 
-            // Check if job is complete (JobStatus from common.ts)
             if (status.status === 'completed' || status.status === 'failed') {
               resolve(status)
             } else {
-              // Continue polling
               setTimeout(poll, intervalMs)
             }
           } catch (error) {
@@ -150,7 +131,6 @@ export const jobsApi = {
       })
     },
 
-    // Start real-time job monitoring
     startJobMonitoring(
       jobId: string,
       onStatusUpdate: (status: JobProgress) => void,
@@ -188,21 +168,17 @@ export const jobsApi = {
 
       monitor()
 
-      // Return cleanup function
       return () => {
         isActive = false
       }
     },
   },
 
-  // Bulk operations
   bulk: {
-    // Cancel multiple jobs
     async cancelJobs(jobIds: string[]): Promise<ApiResponse<BulkJobOperationResponse>> {
       return apiClient.post<BulkJobOperationResponse>('/jobs/bulk/cancel', { job_ids: jobIds })
     },
 
-    // Delete multiple jobs (admin only)
     async deleteJobs(jobIds: string[]): Promise<ApiResponse<BulkJobOperationResponse>> {
       return apiClient.delete<BulkJobOperationResponse>('/jobs/bulk/delete', {
         data: { job_ids: jobIds }
@@ -210,9 +186,7 @@ export const jobsApi = {
     },
   },
 
-  // Prediction-specific job operations
   predictions: {
-    // Get bulk upload job status
     async getBulkUploadJobStatus(jobId: string): Promise<ApiResponse<{
       job_id: string
       status: 'pending' | 'processing' | 'completed' | 'failed'
@@ -230,7 +204,6 @@ export const jobsApi = {
       return apiClient.get<any>(`/predictions/jobs/${jobId}/status`)
     },
 
-    // Get bulk upload job results
     async getBulkUploadJobResults(jobId: string): Promise<ApiResponse<{
       job_id: string
       results: Array<{
@@ -252,7 +225,6 @@ export const jobsApi = {
       return apiClient.get<any>(`/predictions/jobs/${jobId}/results`)
     },
 
-    // List bulk upload jobs
     async listBulkUploadJobs(params?: {
       status?: string
       limit?: number
@@ -287,7 +259,6 @@ export const jobsApi = {
       return apiClient.get<any>(url)
     },
 
-    // Delete a bulk upload job
     async deleteBulkUploadJob(jobId: string): Promise<ApiResponse<{ message: string }>> {
       return apiClient.delete<{ message: string }>(`/predictions/jobs/${jobId}`)
     }

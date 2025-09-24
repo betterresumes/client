@@ -11,7 +11,6 @@ export function usePredictionMutations() {
   const queryClient = useQueryClient()
   const { refetchPredictions, removePrediction } = usePredictionsStore()
 
-  // Update prediction mutation
   const updatePredictionMutation = useMutation({
     mutationFn: async ({
       id,
@@ -31,7 +30,6 @@ export function usePredictionMutations() {
     onSuccess: (response, variables) => {
       const { type } = variables
 
-      // Invalidate queries to refresh data
       queryClient.invalidateQueries({ queryKey: predictionKeys.all })
       if (type === 'annual') {
         queryClient.invalidateQueries({ queryKey: predictionKeys.annual() })
@@ -39,7 +37,6 @@ export function usePredictionMutations() {
         queryClient.invalidateQueries({ queryKey: predictionKeys.quarterly() })
       }
 
-      // Refresh store data
       refetchPredictions()
 
       toast.success(`${type === 'annual' ? 'Annual' : 'Quarterly'} prediction updated successfully! 🎉`)
@@ -54,7 +51,6 @@ export function usePredictionMutations() {
     }
   })
 
-  // Delete prediction mutation
   const deletePredictionMutation = useMutation({
     mutationFn: async ({
       id,
@@ -63,10 +59,8 @@ export function usePredictionMutations() {
       id: string
       type: 'annual' | 'quarterly'
     }) => {
-      // Optimistically remove the prediction from the store
       removePrediction(id, type)
 
-      // Make API call
       if (type === 'annual') {
         return await predictionsApi.annual.deleteAnnualPrediction(id)
       } else {
@@ -76,7 +70,6 @@ export function usePredictionMutations() {
     onSuccess: (response, variables) => {
       const { type } = variables
 
-      // Invalidate queries to refresh data
       queryClient.invalidateQueries({ queryKey: predictionKeys.all })
       if (type === 'annual') {
         queryClient.invalidateQueries({ queryKey: predictionKeys.annual() })
@@ -84,7 +77,6 @@ export function usePredictionMutations() {
         queryClient.invalidateQueries({ queryKey: predictionKeys.quarterly() })
       }
 
-      // The prediction is already removed optimistically, just show success message
       toast.success(`${type === 'annual' ? 'Annual' : 'Quarterly'} prediction deleted successfully! 🗑️`)
 
       return response
@@ -92,7 +84,6 @@ export function usePredictionMutations() {
     onError: (error, variables) => {
       console.error(`${variables.type} prediction deletion failed:`, error)
 
-      // On error, refresh data to restore the optimistically removed prediction
       refetchPredictions()
 
       toast.error(`Failed to delete ${variables.type} prediction`, {

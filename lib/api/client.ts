@@ -2,10 +2,6 @@ import axios, { AxiosInstance, AxiosRequestConfig, AxiosResponse } from 'axios'
 import { API_CONFIG } from '../config/constants'
 import { ApiResponse } from '../types/common'
 
-/**
- * API client instance with interceptors for authentication and error handling
- * Base URL: http://localhost:8000/api/v1
- */
 class ApiClient {
   private client: AxiosInstance
   private accessToken: string | null = null
@@ -24,7 +20,6 @@ class ApiClient {
   }
 
   private setupInterceptors() {
-    // Request interceptor to add auth token
     this.client.interceptors.request.use(
       (config) => {
         if (this.accessToken) {
@@ -35,7 +30,6 @@ class ApiClient {
       (error) => Promise.reject(error)
     )
 
-    // Response interceptor for error handling and token refresh
     this.client.interceptors.response.use(
       (response) => response,
       async (error) => {
@@ -45,7 +39,6 @@ class ApiClient {
           originalRequest._retry = true
 
           try {
-            // Try to refresh token using auth store
             const refreshed = await this.refreshTokenViaStore()
             if (refreshed) {
               originalRequest.headers.Authorization = `Bearer ${this.accessToken}`
@@ -64,7 +57,6 @@ class ApiClient {
 
   private async refreshTokenViaStore(): Promise<boolean> {
     try {
-      // Import auth store dynamically to avoid circular dependencies
       const { useAuthStore } = await import('../stores/auth-store')
       const store = useAuthStore.getState()
 
@@ -72,10 +64,10 @@ class ApiClient {
       if (refreshed) {
         this.accessToken = store.accessToken
         return true
+      } else {
+        return false
       }
-      return false
     } catch (error) {
-      console.error('Token refresh via store failed:', error)
       return false
     }
   }
@@ -83,19 +75,16 @@ class ApiClient {
   private handleAuthError(): void {
     this.clearAuth()
 
-    // Import and clear auth store
     import('../stores/auth-store').then(({ useAuthStore }) => {
       const store = useAuthStore.getState()
       store.clearAuth()
     })
 
-    // Force redirect to login
     if (typeof window !== 'undefined') {
       window.location.href = '/login'
     }
   }
 
-  // Public methods for token management
   setAuthToken(accessToken: string, refreshToken: string): void {
     this.accessToken = accessToken
     this.refreshToken = refreshToken
@@ -109,17 +98,28 @@ class ApiClient {
 
   private formatError(error: any): ApiResponse<never> {
     if (error.response) {
+      console.error('API Error Response:', {
+        status: error.response.status,
+        statusText: error.response.statusText,
+        data: error.response.data,
+        url: error.config?.url,
+        method: error.config?.method
+      })
+
       return {
         success: false,
         error: {
           code: error.response.status,
-          message: error.response.data?.message || error.response.statusText,
-          details: error.response.data?.details,
+          message: error.response.data?.detail ||
+            error.response.data?.message ||
+            error.response.statusText,
+          details: error.response.data?.details || error.response.data,
         },
       }
     }
 
     if (error.request) {
+      console.error('Network Error:', error.request)
       return {
         success: false,
         error: {
@@ -129,6 +129,7 @@ class ApiClient {
       }
     }
 
+    console.error('Unexpected Error:', error)
     return {
       success: false,
       error: {
@@ -138,7 +139,6 @@ class ApiClient {
     }
   }
 
-  // Public methods for making requests
   async get<T>(url: string, config?: AxiosRequestConfig): Promise<ApiResponse<T>> {
     try {
       const response: AxiosResponse<T> = await this.client.get(url, config)
@@ -211,7 +211,6 @@ class ApiClient {
     }
   }
 
-  // Upload files with multipart/form-data
   async upload<T>(url: string, formData: FormData, config?: AxiosRequestConfig): Promise<ApiResponse<T>> {
     try {
       const response: AxiosResponse<T> = await this.client.post(url, formData, {
@@ -230,17 +229,14 @@ class ApiClient {
     }
   }
 
-  // Check if user is authenticated
   isAuthenticated(): boolean {
     return !!this.accessToken
   }
 
-  // Get base URL for SSE connections
   getBaseUrl(): string {
     return API_CONFIG.BASE_URL
   }
 }
 
-// Export singleton instance
 export const apiClient = new ApiClient()
 export default apiClient

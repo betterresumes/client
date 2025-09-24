@@ -7,9 +7,6 @@ import type {
   PredictionParams
 } from '../types/prediction'
 
-/**
- * Prediction query keys for cache management
- */
 export const predictionKeys = {
   all: ['predictions'] as const,
   lists: () => [...predictionKeys.all, 'list'] as const,
@@ -20,9 +17,6 @@ export const predictionKeys = {
   quarterlyList: (filters: any) => [...predictionKeys.quarterly(), 'list', { filters }] as const,
 } as const
 
-/**
- * Get annual predictions with filtering and pagination
- */
 export function useAnnualPredictions(params?: {
   page?: number
   size?: number
@@ -38,13 +32,10 @@ export function useAnnualPredictions(params?: {
       }
       return response.data
     },
-    staleTime: 2 * 60 * 1000, // 2 minutes
+    staleTime: 2 * 60 * 1000, 
   })
 }
 
-/**
- * Get quarterly predictions with filtering and pagination
- */
 export function useQuarterlyPredictions(params?: {
   page?: number
   size?: number
@@ -61,13 +52,10 @@ export function useQuarterlyPredictions(params?: {
       }
       return response.data
     },
-    staleTime: 2 * 60 * 1000, // 2 minutes
+    staleTime: 2 * 60 * 1000, 
   })
 }
 
-/**
- * Unified predictions hook that can fetch either annual or quarterly
- */
 export function usePredictions(params?: PredictionParams) {
   const modelType = params?.model_type || 'annual'
 
@@ -80,13 +68,10 @@ export function usePredictions(params?: PredictionParams) {
       }
       return response.data
     },
-    staleTime: 2 * 60 * 1000, // 2 minutes
+    staleTime: 2 * 60 * 1000, 
   })
 }
 
-/**
- * Create annual prediction mutation
- */
 export function useCreateAnnualPrediction() {
   const queryClient = useQueryClient()
 
@@ -99,7 +84,6 @@ export function useCreateAnnualPrediction() {
       return response.data
     },
     onSuccess: () => {
-      // Invalidate annual predictions list
       queryClient.invalidateQueries({ queryKey: predictionKeys.annual() })
       toast.success('Annual prediction created successfully')
     },
@@ -109,9 +93,6 @@ export function useCreateAnnualPrediction() {
   })
 }
 
-/**
- * Create quarterly prediction mutation
- */
 export function useCreateQuarterlyPrediction() {
   const queryClient = useQueryClient()
 
@@ -124,7 +105,6 @@ export function useCreateQuarterlyPrediction() {
       return response.data
     },
     onSuccess: () => {
-      // Invalidate quarterly predictions list
       queryClient.invalidateQueries({ queryKey: predictionKeys.quarterly() })
       toast.success('Quarterly prediction created successfully')
     },
@@ -134,9 +114,6 @@ export function useCreateQuarterlyPrediction() {
   })
 }
 
-/**
- * Update annual prediction mutation
- */
 export function useUpdateAnnualPrediction() {
   const queryClient = useQueryClient()
 
@@ -149,7 +126,6 @@ export function useUpdateAnnualPrediction() {
       return response.data
     },
     onSuccess: () => {
-      // Invalidate annual predictions list
       queryClient.invalidateQueries({ queryKey: predictionKeys.annual() })
       toast.success('Annual prediction updated successfully')
     },
@@ -159,9 +135,6 @@ export function useUpdateAnnualPrediction() {
   })
 }
 
-/**
- * Update quarterly prediction mutation
- */
 export function useUpdateQuarterlyPrediction() {
   const queryClient = useQueryClient()
 
@@ -174,7 +147,6 @@ export function useUpdateQuarterlyPrediction() {
       return response.data
     },
     onSuccess: () => {
-      // Invalidate quarterly predictions list
       queryClient.invalidateQueries({ queryKey: predictionKeys.quarterly() })
       toast.success('Quarterly prediction updated successfully')
     },
@@ -184,9 +156,6 @@ export function useUpdateQuarterlyPrediction() {
   })
 }
 
-/**
- * Delete annual prediction mutation
- */
 export function useDeleteAnnualPrediction() {
   const queryClient = useQueryClient()
 
@@ -199,7 +168,6 @@ export function useDeleteAnnualPrediction() {
       return predictionId
     },
     onSuccess: () => {
-      // Invalidate annual predictions list
       queryClient.invalidateQueries({ queryKey: predictionKeys.annual() })
       toast.success('Annual prediction deleted successfully')
     },
@@ -209,9 +177,6 @@ export function useDeleteAnnualPrediction() {
   })
 }
 
-/**
- * Delete quarterly prediction mutation
- */
 export function useDeleteQuarterlyPrediction() {
   const queryClient = useQueryClient()
 
@@ -224,7 +189,6 @@ export function useDeleteQuarterlyPrediction() {
       return predictionId
     },
     onSuccess: () => {
-      // Invalidate quarterly predictions list
       queryClient.invalidateQueries({ queryKey: predictionKeys.quarterly() })
       toast.success('Quarterly prediction deleted successfully')
     },
@@ -234,9 +198,6 @@ export function useDeleteQuarterlyPrediction() {
   })
 }
 
-/**
- * Bulk upload annual predictions mutation
- */
 export function useBulkUploadAnnualPredictions() {
   const queryClient = useQueryClient()
 
@@ -249,7 +210,6 @@ export function useBulkUploadAnnualPredictions() {
       return response.data
     },
     onSuccess: () => {
-      // Invalidate predictions list
       queryClient.invalidateQueries({ queryKey: predictionKeys.annual() })
       toast.success('Bulk upload started successfully')
     },
@@ -259,9 +219,6 @@ export function useBulkUploadAnnualPredictions() {
   })
 }
 
-/**
- * Bulk upload quarterly predictions mutation
- */
 export function useBulkUploadQuarterlyPredictions() {
   const queryClient = useQueryClient()
 
@@ -274,7 +231,6 @@ export function useBulkUploadQuarterlyPredictions() {
       return response.data
     },
     onSuccess: () => {
-      // Invalidate predictions list
       queryClient.invalidateQueries({ queryKey: predictionKeys.quarterly() })
       toast.success('Bulk upload started successfully')
     },
@@ -284,15 +240,11 @@ export function useBulkUploadQuarterlyPredictions() {
   })
 }
 
-/**
- * Export predictions mutation
- */
 export function useExportPredictions() {
   return useMutation({
     mutationFn: async (params: PredictionParams & { format?: 'csv' | 'xlsx' }) => {
       const blob = await predictionsApi.exportPredictions(params)
 
-      // Create download link
       const url = window.URL.createObjectURL(blob)
       const link = document.createElement('a')
       link.href = url

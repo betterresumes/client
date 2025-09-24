@@ -82,31 +82,40 @@ export function DashboardOverview() {
   // Listen for essential prediction events only
   useEffect(() => {
     const handlePredictionCreated = (event: CustomEvent) => {
-      console.log('🆕 Prediction created - refreshing dashboard')
+      console.log('🆕 Prediction created - refreshing dashboard without full reload')
       setForceRefresh(prev => prev + 1)
       setCurrentPage(1) // Reset pagination
 
-      // Refresh dashboard stats only
+      // Invalidate dashboard stats cache to trigger refresh
       const statsStore = useDashboardStatsStore.getState()
       statsStore.invalidateCache()
+      
+      // No need to manually fetch predictions - the store already has the new data
+      // from the mutation's addPrediction call
+    }
+
+    const handlePredictionsUpdated = () => {
+      console.log('📊 Predictions updated - refreshing view')
+      setForceRefresh(prev => prev + 1)
     }
 
     const handleNavigateToDashboard = () => {
-      console.log('🚀 Navigate to dashboard - refreshing')
-      setForceRefresh(prev => prev + 1)
-      setCurrentPage(1)
-      fetchStats(true) // Force refresh stats
+      console.log('🚀 Navigate to dashboard - refreshing stats')
+      fetchStats(true) // Only refresh stats, not predictions
     }
 
     if (typeof window !== 'undefined') {
       window.addEventListener('prediction-created', handlePredictionCreated as EventListener)
-      window.addEventListener('prediction-created-navigate-dashboard', handleNavigateToDashboard as EventListener)
+      window.addEventListener('predictions-updated', handlePredictionsUpdated as EventListener)  
+      window.addEventListener('navigate-to-dashboard', handleNavigateToDashboard as EventListener)
+
       return () => {
         window.removeEventListener('prediction-created', handlePredictionCreated as EventListener)
-        window.removeEventListener('prediction-created-navigate-dashboard', handleNavigateToDashboard as EventListener)
+        window.removeEventListener('predictions-updated', handlePredictionsUpdated as EventListener)
+        window.removeEventListener('navigate-to-dashboard', handleNavigateToDashboard as EventListener)
       }
     }
-  }, [])
+  }, [fetchStats])
 
   // Enhanced useEffect to fetch initial data - handles auth state changes properly
   useEffect(() => {
@@ -168,32 +177,40 @@ export function DashboardOverview() {
   // Get filtered predictions based on data access settings (include forceRefresh to trigger re-evaluation)
   const filteredAnnualPredictions = useMemo(() => {
     const filtered = getFilteredPredictions('annual')
-    console.log('🔄 Recalculating filtered annual predictions:', filtered.length, 'forceRefresh:', forceRefresh)
+    console.log('🔄 Dashboard - Filtered annual predictions:', {
+      count: filtered.length,
+      activeFilter: activeDataFilter,
+      forceRefresh,
+      userRole: user?.role,
+      sample: filtered.slice(0, 3).map(p => ({
+        company: p.company_symbol,
+        access: p.organization_access,
+        id: p.id
+      }))
+    })
     return filtered
   }, [getFilteredPredictions, forceRefresh, annualPredictions, systemAnnualPredictions, activeDataFilter, lastFetched])
 
   const filteredQuarterlyPredictions = useMemo(() => {
     const filtered = getFilteredPredictions('quarterly')
-    console.log('🔄 Recalculating filtered quarterly predictions:', filtered.length, 'forceRefresh:', forceRefresh)
+    console.log('🔄 Dashboard - Filtered quarterly predictions:', {
+      count: filtered.length,
+      activeFilter: activeDataFilter,
+      forceRefresh,
+      userRole: user?.role,
+      sample: filtered.slice(0, 3).map(p => ({
+        company: p.company_symbol,
+        access: p.organization_access,
+        id: p.id
+      }))
+    })
     return filtered
   }, [getFilteredPredictions, forceRefresh, quarterlyPredictions, systemQuarterlyPredictions, activeDataFilter, lastFetched])
 
-  // Debug logging to track prediction updates
-  console.log('📊 Dashboard render - Annual predictions:', filteredAnnualPredictions.length)
-  console.log('📊 Dashboard render - Quarterly predictions:', filteredQuarterlyPredictions.length)
-  console.log('📊 Dashboard render - Last fetched:', lastFetched)
-  console.log('📊 Dashboard render - Force refresh counter:', forceRefresh)
-  console.log('📊 Dashboard render - Active Data Filter:', activeDataFilter)
-  console.log('📊 Dashboard render - RAW Annual sample:', safeAnnualPredictions.slice(0, 3).map(p => ({
-    company: p.company_symbol,
-    access: p.organization_access,
-    org_name: p.organization_name
-  })))
-
   console.log('Annual Predictions:', safeAnnualPredictions)
 
-  // Format company data for display
-  const companyData = safeAnnualPredictions.map((pred: any, index: number) => ({
+  // Format company data for display - FIXED: Use filteredAnnualPredictions instead of safeAnnualPredictions
+  const companyData = filteredAnnualPredictions.map((pred: any, index: number) => ({
     id: index + 1,
     company: pred.company_symbol,
     subtitle: pred.company_name,
@@ -205,6 +222,8 @@ export function DashboardOverview() {
     keyRatios: pred.financial_ratios,
     riskColor: getRiskBadgeColor(pred.risk_level || pred.risk_category || 'unknown')
   }))
+
+  console.log('📊 Formatted company data:', companyData.length, 'items')
 
   // Check if any data is loading
   const isLoading = isStatsLoading || isPredictionsLoading
@@ -283,26 +302,33 @@ export function DashboardOverview() {
 
         <div className="grid grid-cols-1 md:grid-cols-5 gap-6">
           {(() => {
-            // STRICT Data Source Separation:
-            // - 'system' (Platform tab) -> ONLY show platform_statistics
-            // - 'personal'/'organization' (User tabs) -> ONLY show user_dashboard, NEVER platform data
+            // FIXED: Data Source Separation based on user role:
+            // - Super admin: ONLY platform_statistics, never user_dashboard
+            // - Other roles: 'system' filter -> platform_statistics, other filters -> user_dashboard
             const isShowingPlatform = activeDataFilter === 'system';
+            const isSuperAdmin = user?.role === 'super_admin';
 
             let statsToShow = null;
             let dataSourceLabel = '';
 
-            if (isShowingPlatform) {
-              // Platform tab: Only platform_statistics
+            if (isSuperAdmin) {
+              // Super admin: ALWAYS show platform statistics regardless of filter
+              statsToShow = dashboardStats?.platform_statistics;
+              dataSourceLabel = 'Platform Data';
+            } else if (isShowingPlatform) {
+              // Other users on Platform tab: Only platform_statistics
               statsToShow = dashboardStats?.platform_statistics;
               dataSourceLabel = 'Platform Data';
             } else {
-              // User tabs (personal/organization): Only user_dashboard, never platform data
+              // Other users on Personal/Organization tabs: Only user_dashboard, never platform data
               statsToShow = dashboardStats?.user_dashboard;
               dataSourceLabel = 'User Data';
             }
 
-            console.log('📊 STRICT Data Separation:', {
+            console.log('📊 FIXED Data Separation:', {
+              userRole: user?.role,
               activeDataFilter,
+              isSuperAdmin,
               isShowingPlatform,
               userScope: dashboardStats?.scope,
               hasUserDashboard: !!dashboardStats?.user_dashboard,

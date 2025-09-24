@@ -71,7 +71,7 @@ export function DataSourceTabs() {
     )
   }
 
-  // Tenant admin: Organizations + System tabs (organization selector shown separately above)
+  // Tenant admin: Organizations + Platform tabs (no personal - they manage organizations)
   if (isTenantAdmin()) {
     return (
       <div className="flex items-center gap-2">
@@ -92,7 +92,7 @@ export function DataSourceTabs() {
     )
   }
 
-  // Org admin/member: Organization + System tabs (show "Your Org")
+  // Org admin/member: Organization + Platform tabs ONLY (no personal data access)
   if (isOrgAdmin() || user.role === 'org_member') {
     return (
       <div className="flex items-center gap-2">

@@ -4,6 +4,7 @@ import { useState, useMemo, useEffect } from 'react'
 import { usePredictionsStore } from '@/lib/stores/predictions-store'
 import { useDashboardStore } from '@/lib/stores/dashboard-store'
 import { useDashboardStatsStore } from '@/lib/stores/dashboard-stats-store'
+import { useAuthStore } from '@/lib/stores/auth-store'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -54,7 +55,7 @@ interface CompanyAnalysisTableProps {
   onRefetch: () => void
 }
 
-type SortField = 'company' | 'defaultRate' | 'riskCategory' | 'sector' | 'reportingPeriod'
+type SortField = 'company' | 'defaultRate' | 'riskCategory' | 'sector' | 'reportingPeriod' | 'marketCap'
 type SortDirection = 'asc' | 'desc'
 
 export function CompanyAnalysisTable({
@@ -76,18 +77,39 @@ export function CompanyAnalysisTable({
     isFetching,
     annualPagination,
     quarterlyPagination,
-    fetchPage,
     fetchPredictions,
-    fetchBatch, // NEW: For batch loading
     activeDataFilter,
-    setSmartPageSize,
-    setSmartCurrentPage
+    getFilteredPredictions // FIXED: Add filtered predictions function
   } = usePredictionsStore()
 
   const { stats: dashboardStats } = useDashboardStatsStore()
+  const { user, isAdmin } = useAuthStore()
 
   // Get pagination info for current prediction type
   const pagination = type === 'annual' ? annualPagination : quarterlyPagination
+
+  // Format market cap helper function
+  const formatMarketCap = (marketCap: number | undefined | null) => {
+    if (!marketCap || marketCap === 0) return 'N/A'
+
+    // The value is in actual dollars, so convert to appropriate units
+    if (marketCap >= 1000000000000) {
+      // For trillions (1,000,000,000,000+)
+      return `$${(marketCap / 1000000000000).toFixed(1)}T`
+    } else if (marketCap >= 1000000000) {
+      // For billions (1,000,000,000+)
+      return `$${(marketCap / 1000000000).toFixed(1)}B`
+    } else if (marketCap >= 1000000) {
+      // For millions (1,000,000+)
+      return `$${(marketCap / 1000000).toFixed(0)}M`
+    } else if (marketCap >= 1000) {
+      // For thousands (1,000+)
+      return `$${(marketCap / 1000).toFixed(0)}K`
+    } else {
+      // For less than 1000
+      return `$${marketCap.toFixed(0)}`
+    }
+  }
 
   console.log(`📊 TABLE: ${type} pagination info:`, {
     currentPage: pagination.currentPage,
@@ -131,15 +153,16 @@ export function CompanyAnalysisTable({
 
   const totalPredictionsInDB = getTotalPredictionsFromStats(type)
 
-  // Use store data instead of prop data - this is the core fix!
-  const storeData = type === 'annual' ? annualPredictions : quarterlyPredictions
+  // FIXED: Use filtered predictions instead of raw store data
+  const storeData = getFilteredPredictions(type) // Use filtered data instead of raw store data
   const actualData = storeData || data // Fallback to prop data if store is empty
   const totalLoadedPredictions = actualData.length
 
-  console.log(`🔧 CORE FIX - Using store data:`, {
+  console.log(`🔧 FIXED - Using filtered predictions:`, {
     type,
+    activeDataFilter,
     propDataLength: data.length,
-    storeDataLength: storeData.length,
+    filteredDataLength: storeData.length,
     actualDataUsed: actualData.length,
     totalInDB: totalPredictionsInDB
   })
@@ -189,6 +212,10 @@ export function CompanyAnalysisTable({
           aValue = formatPredictionDate(a)
           bValue = formatPredictionDate(b)
           break
+        case 'marketCap':
+          aValue = a.market_cap || 0
+          bValue = b.market_cap || 0
+          break
         default:
           return 0
       }
@@ -206,7 +233,7 @@ export function CompanyAnalysisTable({
     })
 
     return filtered
-  }, [actualData, searchTerm, selectedSector, selectedRiskLevel, sortField, sortDirection, getPredictionProbability, formatPredictionDate])
+  }, [actualData, searchTerm, selectedSector, selectedRiskLevel, sortField, sortDirection, getPredictionProbability, formatPredictionDate, formatMarketCap])
 
   // Get paginated data - only show items for current page
   const paginatedData = useMemo(() => {
@@ -275,10 +302,11 @@ export function CompanyAnalysisTable({
       // Mark this batch as being loaded
       setLoadedBatches(prev => new Set([...prev, currentBatch]))
 
-      fetchBatch(type, 100)
+      // Use fetchPredictions to refresh data
+      fetchPredictions(true)
         .finally(() => setIsLoadingBatch(false))
     }
-  }, [currentPage, type, totalPredictionsInDB, isLoadingBatch, isLoading, isFetching, fetchBatch, loadedBatches])
+  }, [currentPage, type, totalPredictionsInDB, isLoadingBatch, isLoading, isFetching, fetchPredictions, loadedBatches])
 
   const handleSort = (field: SortField) => {
     if (sortField === field) {
@@ -513,6 +541,20 @@ export function CompanyAnalysisTable({
                     )}
                   </TableHead>
                   <TableHead>
+                    {isLoading ? (
+                      <p className="text-sm text-gray-600 font-semibold font-bricolage">Market Cap</p>
+                    ) : (
+                      <Button
+                        variant="ghost"
+                        onClick={() => handleSort('marketCap')}
+                        className="h-auto p-0 font-semibold flex items-center space-x-1 group font-bricolage"
+                      >
+                        <span>Market Cap</span>
+                        {getSortIcon('marketCap')}
+                      </Button>
+                    )}
+                  </TableHead>
+                  <TableHead>
                     <p className="text-sm text-gray-600 font-semibold font-bricolage">Key Ratios</p>
                   </TableHead>
                   <TableHead>
@@ -546,6 +588,9 @@ export function CompanyAnalysisTable({
                         <Skeleton className="h-4 w-16" />
                       </TableCell>
                       <TableCell>
+                        <Skeleton className="h-4 w-20" />
+                      </TableCell>
+                      <TableCell>
                         <div className="space-y-2">
                           <Skeleton className="h-3 w-8" />
                         </div>
@@ -560,36 +605,41 @@ export function CompanyAnalysisTable({
                     <TableRow key={index}>
                       <TableCell className='pl-5'>
                         <div>
-                          <div className="font-semibold text-gray-900 dark:text-white font-bricolage">{item.company_symbol}</div>
-                          <div className="text-sm text-gray-500 font-bricolage">{item.company_name}</div>
+                          <div className="font-semibold text-gray-900 dark:text-white font-bricolage text-sm">{item.company_symbol}</div>
+                          <div className="text-xs text-gray-500 font-bricolage">{item.company_name}</div>
                         </div>
                       </TableCell>
-                      <TableCell className="font-bricolage">{item.sector || 'N/A'}</TableCell>
+                      <TableCell className="font-bricolage text-sm">{item.sector || 'N/A'}</TableCell>
                       <TableCell className='pl-6'>
-                        <Badge className={`${getRiskBadgeColor(item.risk_level || item.risk_category || 'unknown')} font-bricolage`}>
+                        <Badge className={`${getRiskBadgeColor(item.risk_level || item.risk_category || 'unknown')} font-bricolage text-xs`}>
                           {(getPredictionProbability(item) * 100).toFixed(2)}%
                         </Badge>
                       </TableCell>
                       <TableCell className='pl-10'>
-                        <Badge className={`${getRiskBadgeColor(item.risk_level || item.risk_category || 'unknown')} font-bricolage`}>
+                        <Badge className={`${getRiskBadgeColor(item.risk_level || item.risk_category || 'unknown')} font-bricolage text-xs`}>
                           {item.risk_level || item.risk_category || 'Unknown'}
                         </Badge>
                       </TableCell>
                       <TableCell>
-                        <Badge variant="outline" className="text-blue-600 font-bricolage">
+                        <Badge variant="outline" className="text-blue-600 font-bricolage text-xs">
                           {formatPredictionDate(item)}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="font-bricolage text-sm">
+                        <Badge variant="outline" className="text-black-600 border-border-200 font-bricolage text-xs ml-6">
+                          {formatMarketCap(item.market_cap)}
                         </Badge>
                       </TableCell>
                       <TableCell>
                         <div className="text-xs space-y-1 font-bricolage">
                           {item.financial_ratios ? (
                             <>
-                              <div>ROA: {item.financial_ratios.roa || 'N/A'}</div>
-                              <div>LTD/TC: {item.financial_ratios.ltdtc || 'N/A'}</div>
-                              <div>EBIT/Int: {item.financial_ratios.ebitint || 'N/A'}</div>
+                              <div className="text-xs">ROA: {item.financial_ratios.roa || 'N/A'}</div>
+                              <div className="text-xs">LTD/TC: {item.financial_ratios.ltdtc || 'N/A'}</div>
+                              <div className="text-xs">EBIT/Int: {item.financial_ratios.ebitint || 'N/A'}</div>
                             </>
                           ) : (
-                            <div>No ratios available</div>
+                            <div className="text-xs">No ratios available</div>
                           )}
                         </div>
                       </TableCell>
@@ -608,20 +658,25 @@ export function CompanyAnalysisTable({
                               <Eye className="h-4 w-4 mr-2" />
                               View Details
                             </DropdownMenuItem>
-                            <DropdownMenuItem
-                              className="font-bricolage"
-                              onClick={() => handleEdit(item)}
-                            >
-                              <Edit className="h-4 w-4 mr-2" />
-                              Edit
-                            </DropdownMenuItem>
-                            <DropdownMenuItem
-                              className="text-red-600 font-bricolage"
-                              onClick={() => handleDelete(item)}
-                            >
-                              <Trash2 className="h-4 w-4 mr-2" />
-                              Delete
-                            </DropdownMenuItem>
+                            {/* Hide Edit/Delete options for non-super admin users when viewing platform data */}
+                            {(isAdmin() || activeDataFilter !== 'system') && (
+                              <>
+                                <DropdownMenuItem
+                                  className="font-bricolage"
+                                  onClick={() => handleEdit(item)}
+                                >
+                                  <Edit className="h-4 w-4 mr-2" />
+                                  Edit
+                                </DropdownMenuItem>
+                                <DropdownMenuItem
+                                  className="text-red-600 font-bricolage"
+                                  onClick={() => handleDelete(item)}
+                                >
+                                  <Trash2 className="h-4 w-4 mr-2" />
+                                  Delete
+                                </DropdownMenuItem>
+                              </>
+                            )}
                           </DropdownMenuContent>
                         </DropdownMenu>
                       </TableCell>
@@ -671,6 +726,12 @@ export function CompanyAnalysisTable({
                 <span className="text-sm text-gray-600 font-bricolage">per page</span>
               </div>
 
+              <div className="text-center mt-3">
+                <span className="text-xs text-gray-500 font-bricolage">
+                  Page {currentPage} of {totalPages}
+                </span>
+              </div>
+
               {/* Page numbers - show up to 8 + Next */}
               <div className="flex items-center gap-1">
                 {Array.from({ length: Math.min(8, totalPages) }, (_, i) => i + 1).map((page) => (
@@ -705,14 +766,6 @@ export function CompanyAnalysisTable({
               </div>
             </div>
 
-            {/* Status info */}
-            <div className="text-center mt-3">
-              <span className="text-xs text-gray-500 font-bricolage">
-                Page {currentPage} of {totalPages}
-                {isLoadingBatch && ` (loading more ${type} predictions...)`}
-                {!isLoadingBatch && totalLoadedPredictions < totalPredictionsInDB && ` (${totalLoadedPredictions} of ${totalPredictionsInDB} loaded - more will load automatically)`}
-              </span>
-            </div>
           </div>
         )}
       </div>

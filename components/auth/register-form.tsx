@@ -89,7 +89,7 @@ export function RegisterForm() {
           Create your account
         </h1>
         <p className="mt-2 text-gray-600 dark:text-gray-400">
-          Join AccuNode AI and start predicting financial risks
+          Join AccuNode and start predicting financial risks
         </p>
       </div>
 

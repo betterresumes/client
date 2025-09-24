@@ -8,7 +8,6 @@ import {
   type TenantStatsResponse
 } from '../api'
 
-// Query keys for tenants
 export const tenantKeys = {
   all: ['tenants'] as const,
   lists: () => [...tenantKeys.all, 'list'] as const,
@@ -18,7 +17,6 @@ export const tenantKeys = {
   stats: (id: string) => [...tenantKeys.detail(id), 'stats'] as const,
 }
 
-// List tenants with comprehensive details
 export function useTenants(params?: {
   skip?: number
   limit?: number
@@ -34,12 +32,11 @@ export function useTenants(params?: {
       }
       return response.data
     },
-    staleTime: 30 * 1000, // 30 seconds
+    staleTime: 30 * 1000, 
     refetchOnWindowFocus: false,
   })
 }
 
-// Get single tenant details
 export function useTenant(tenantId: string) {
   return useQuery({
     queryKey: tenantKeys.detail(tenantId),
@@ -56,7 +53,6 @@ export function useTenant(tenantId: string) {
   })
 }
 
-// Get tenant statistics
 export function useTenantStats(tenantId: string) {
   return useQuery({
     queryKey: tenantKeys.stats(tenantId),
@@ -68,12 +64,11 @@ export function useTenantStats(tenantId: string) {
       return response.data
     },
     enabled: !!tenantId,
-    staleTime: 60 * 1000, // 1 minute for stats
+    staleTime: 60 * 1000, 
     refetchOnWindowFocus: false,
   })
 }
 
-// Create tenant mutation
 export function useCreateTenant() {
   const queryClient = useQueryClient()
 
@@ -86,13 +81,11 @@ export function useCreateTenant() {
       return response.data
     },
     onSuccess: () => {
-      // Invalidate and refetch tenants list
       queryClient.invalidateQueries({ queryKey: tenantKeys.lists() })
     },
   })
 }
 
-// Update tenant mutation
 export function useUpdateTenant() {
   const queryClient = useQueryClient()
 
@@ -105,14 +98,12 @@ export function useUpdateTenant() {
       return response.data
     },
     onSuccess: (_, variables) => {
-      // Invalidate specific tenant and lists
       queryClient.invalidateQueries({ queryKey: tenantKeys.detail(variables.tenantId) })
       queryClient.invalidateQueries({ queryKey: tenantKeys.lists() })
     },
   })
 }
 
-// Delete tenant mutation
 export function useDeleteTenant() {
   const queryClient = useQueryClient()
 
@@ -125,7 +116,6 @@ export function useDeleteTenant() {
       return response
     },
     onSuccess: (_, variables) => {
-      // Remove from cache and invalidate lists
       queryClient.removeQueries({ queryKey: tenantKeys.detail(variables.tenantId) })
       queryClient.invalidateQueries({ queryKey: tenantKeys.lists() })
     },

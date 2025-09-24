@@ -5,9 +5,6 @@ import type { JobParams } from '../types/job'
 import type { JobStatus } from '../types/common'
 import { useCallback, useEffect, useRef } from 'react'
 
-/**
- * Job query keys for cache management
- */
 export const jobKeys = {
   all: ['jobs'] as const,
   lists: () => [...jobKeys.all, 'list'] as const,
@@ -18,9 +15,6 @@ export const jobKeys = {
   stats: () => [...jobKeys.all, 'stats'] as const,
 } as const
 
-/**
- * Get jobs list with filtering and pagination
- */
 export function useJobs(params?: JobParams) {
   return useQuery({
     queryKey: jobKeys.list(params),
@@ -31,14 +25,11 @@ export function useJobs(params?: JobParams) {
       }
       return response.data
     },
-    staleTime: 30 * 1000, // 30 seconds (jobs change frequently)
-    refetchInterval: 60 * 1000, // Refetch every minute
+    staleTime: 30 * 1000,
+    refetchInterval: 60 * 1000,
   })
 }
 
-/**
- * Get single job status
- */
 export function useJobStatus(jobId: string, enabled: boolean = true) {
   return useQuery({
     queryKey: jobKeys.status(jobId),
@@ -50,21 +41,17 @@ export function useJobStatus(jobId: string, enabled: boolean = true) {
       return response.data
     },
     enabled: enabled && !!jobId,
-    staleTime: 10 * 1000, // 10 seconds
+    staleTime: 10 * 1000,
     refetchInterval: (query) => {
-      // Stop polling if job is complete
       const data = query.state.data
       if (data?.status === 'completed' || data?.status === 'failed') {
         return false
       }
-      return 5 * 1000 // Poll every 5 seconds for running jobs
+      return 5 * 1000
     },
   })
 }
 
-/**
- * Get job details
- */
 export function useJobDetails(jobId: string) {
   return useQuery({
     queryKey: jobKeys.detail(jobId),
@@ -76,13 +63,10 @@ export function useJobDetails(jobId: string) {
       return response.data
     },
     enabled: !!jobId,
-    staleTime: 5 * 60 * 1000, // 5 minutes
+    staleTime: 5 * 60 * 1000,
   })
 }
 
-/**
- * Cancel job mutation
- */
 export function useCancelJob() {
   const queryClient = useQueryClient()
 
@@ -95,7 +79,6 @@ export function useCancelJob() {
       return jobId
     },
     onSuccess: (jobId) => {
-      // Invalidate job status and list
       queryClient.invalidateQueries({ queryKey: jobKeys.status(jobId) })
       queryClient.invalidateQueries({ queryKey: jobKeys.lists() })
       toast.success('Job cancelled successfully')
@@ -106,9 +89,6 @@ export function useCancelJob() {
   })
 }
 
-/**
- * Retry job mutation
- */
 export function useRetryJob() {
   const queryClient = useQueryClient()
 
@@ -121,7 +101,6 @@ export function useRetryJob() {
       return response.data
     },
     onSuccess: (data) => {
-      // Invalidate jobs list and update job details
       queryClient.invalidateQueries({ queryKey: jobKeys.lists() })
       if (data.id) {
         queryClient.setQueryData(jobKeys.detail(data.id), data)
@@ -134,9 +113,6 @@ export function useRetryJob() {
   })
 }
 
-/**
- * Delete job mutation
- */
 export function useDeleteJob() {
   const queryClient = useQueryClient()
 
@@ -149,7 +125,6 @@ export function useDeleteJob() {
       return jobId
     },
     onSuccess: (jobId) => {
-      // Remove from cache and invalidate list
       queryClient.removeQueries({ queryKey: jobKeys.detail(jobId) })
       queryClient.removeQueries({ queryKey: jobKeys.status(jobId) })
       queryClient.invalidateQueries({ queryKey: jobKeys.lists() })
@@ -161,9 +136,6 @@ export function useDeleteJob() {
   })
 }
 
-/**
- * Get job logs
- */
 export function useJobLogs(jobId: string) {
   return useQuery({
     queryKey: [...jobKeys.detail(jobId), 'logs'],
@@ -175,19 +147,15 @@ export function useJobLogs(jobId: string) {
       return response.data
     },
     enabled: !!jobId,
-    staleTime: 30 * 1000, // 30 seconds
+    staleTime: 30 * 1000, 
   })
 }
 
-/**
- * Download job result mutation
- */
 export function useDownloadJobResult() {
   return useMutation({
     mutationFn: async (jobId: string) => {
       const blob = await jobsApi.downloadJobResult(jobId)
 
-      // Create download link
       const url = window.URL.createObjectURL(blob)
       const link = document.createElement('a')
       link.href = url
@@ -208,9 +176,6 @@ export function useDownloadJobResult() {
   })
 }
 
-/**
- * Get job statistics (admin only)
- */
 export function useJobStatistics(params?: {
   start_date?: string
   end_date?: string
@@ -226,13 +191,10 @@ export function useJobStatistics(params?: {
       }
       return response.data
     },
-    staleTime: 5 * 60 * 1000, // 5 minutes
+    staleTime: 5 * 60 * 1000, 
   })
 }
 
-/**
- * Bulk cancel jobs mutation
- */
 export function useBulkCancelJobs() {
   const queryClient = useQueryClient()
 
@@ -245,7 +207,6 @@ export function useBulkCancelJobs() {
       return response.data
     },
     onSuccess: (data) => {
-      // Invalidate jobs list
       queryClient.invalidateQueries({ queryKey: jobKeys.lists() })
       toast.success(`${data.cancelled?.length || 0} jobs cancelled successfully`)
 
@@ -259,9 +220,6 @@ export function useBulkCancelJobs() {
   })
 }
 
-/**
- * Bulk delete jobs mutation (admin only)
- */
 export function useBulkDeleteJobs() {
   const queryClient = useQueryClient()
 
@@ -274,7 +232,6 @@ export function useBulkDeleteJobs() {
       return response.data
     },
     onSuccess: (data) => {
-      // Invalidate jobs list
       queryClient.invalidateQueries({ queryKey: jobKeys.lists() })
       toast.success(`${data.deleted?.length || 0} jobs deleted successfully`)
 
@@ -288,9 +245,6 @@ export function useBulkDeleteJobs() {
   })
 }
 
-/**
- * Real-time job monitoring hook
- */
 export function useJobMonitoring(
   jobId: string,
   onStatusUpdate?: (status: any) => void,
@@ -333,9 +287,6 @@ export function useJobMonitoring(
   return { startMonitoring, stopMonitoring }
 }
 
-/**
- * Job polling hook with automatic start/stop
- */
 export function useJobPolling(jobId: string, enabled: boolean = true) {
   const queryClient = useQueryClient()
 
@@ -344,7 +295,6 @@ export function useJobPolling(jobId: string, enabled: boolean = true) {
       return jobsApi.polling.pollJobStatus(jobId, onProgress)
     },
     onSuccess: (finalStatus) => {
-      // Update cache with final status
       queryClient.setQueryData(jobKeys.status(jobId), finalStatus)
       queryClient.invalidateQueries({ queryKey: jobKeys.lists() })
 

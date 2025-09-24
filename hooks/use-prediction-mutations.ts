@@ -11,41 +11,11 @@ export function useCreatePredictionMutations() {
   const queryClient = useQueryClient()
   const { addPrediction, replacePrediction } = usePredictionsStore()
 
-  // Annual prediction mutation
   const createAnnualPredictionMutation = useMutation({
     mutationFn: async (data: AnnualPredictionRequest) => {
-      // Create optimistic prediction with temporary ID
-      const tempId = `temp-${Date.now()}`
-      const optimisticPrediction = {
-        id: tempId,
-        company_id: data.company_symbol,
-        company_symbol: data.company_symbol,
-        company_name: data.company_name,
-        reporting_year: data.reporting_year,
-        reporting_quarter: data.reporting_quarter,
-        long_term_debt_to_total_capital: data.long_term_debt_to_total_capital,
-        total_debt_to_ebitda: data.total_debt_to_ebitda,
-        net_income_margin: data.net_income_margin,
-        ebit_to_interest_expense: data.ebit_to_interest_expense,
-        return_on_assets: data.return_on_assets,
-        probability: 0.15,
-        default_probability: 0.15,
-        risk_level: 'MEDIUM',
-        risk_category: 'MEDIUM',
-        confidence: 0.85,
-        organization_access: 'personal',
-        created_by: 'current_user',
-        created_at: new Date().toISOString(),
-        sector: data.sector,
-        model_type: 'Annual'
-      }
-
-      // Add optimistic prediction instantly
-      addPrediction(optimisticPrediction as any, 'annual')
-
-      // Make API call and return both response and tempId
       const response = await predictionsApi.annual.createAnnualPrediction(data)
-      return { response, tempId }
+
+      return { response, tempId: `temp-${Date.now()}` }
     },
     onSuccess: ({ response, tempId }) => {
       const prediction = response.data?.prediction || response.data
@@ -62,33 +32,17 @@ export function useCreatePredictionMutations() {
         }
       }
 
-      // Replace optimistic prediction with real data (no duplicate!)
-      replacePrediction(realPrediction as any, 'annual', tempId)
+      addPrediction(realPrediction as any, 'annual')
 
-      // IMMEDIATE: Force store to refresh its cached data
-      const store = usePredictionsStore.getState()
-      store.lastFetched = Date.now()
-
-      // Force trigger any components using filtered predictions
-      console.log('🎯 Annual prediction created - dashboard should update automatically')
-
-      // Invalidate React Query cache as well
       queryClient.invalidateQueries({ queryKey: predictionKeys.annual() })
       queryClient.invalidateQueries({ queryKey: predictionKeys.all })
 
-      // Trigger custom event to notify dashboard IMMEDIATELY
       if (typeof window !== 'undefined') {
         window.dispatchEvent(new CustomEvent('prediction-created', {
           detail: { type: 'annual', prediction: realPrediction }
         }))
-        // Also trigger predictions-updated event for store listeners
         window.dispatchEvent(new CustomEvent('predictions-updated'))
       }
-
-      toast.success('Annual prediction created successfully! 🎉', {
-        description: 'Check the Dashboard tab to view your new prediction.',
-        duration: 4000
-      })
 
       return {
         company: prediction.company_name,
@@ -110,40 +64,11 @@ export function useCreatePredictionMutations() {
     }
   })
 
-  // Quarterly prediction mutation
   const createQuarterlyPredictionMutation = useMutation({
     mutationFn: async (data: QuarterlyPredictionRequest) => {
-      // Create optimistic prediction with temporary ID
-      const tempId = `temp-${Date.now()}`
-      const optimisticPrediction = {
-        id: tempId,
-        company_id: data.company_symbol,
-        company_symbol: data.company_symbol,
-        company_name: data.company_name,
-        reporting_year: data.reporting_year,
-        reporting_quarter: data.reporting_quarter,
-        long_term_debt_to_total_capital: data.long_term_debt_to_total_capital,
-        total_debt_to_ebitda: data.total_debt_to_ebitda,
-        sga_margin: data.sga_margin,
-        return_on_capital: data.return_on_capital,
-        ensemble_probability: 0.15,
-        default_probability: 0.15,
-        risk_level: 'MEDIUM',
-        risk_category: 'MEDIUM',
-        confidence: 0.85,
-        organization_access: 'personal',
-        created_by: 'current_user',
-        created_at: new Date().toISOString(),
-        sector: data.sector,
-        model_type: 'Quarterly'
-      }
-
-      // Add optimistic prediction instantly
-      addPrediction(optimisticPrediction as any, 'quarterly')
-
-      // Make API call and return both response and tempId
       const response = await predictionsApi.quarterly.createQuarterlyPrediction(data)
-      return { response, tempId }
+
+      return { response, tempId: `temp-${Date.now()}` }
     },
     onSuccess: ({ response, tempId }) => {
       const prediction = response.data?.prediction || response.data
@@ -160,33 +85,19 @@ export function useCreatePredictionMutations() {
         }
       }
 
-      // Replace optimistic prediction with real data (no duplicate!)
-      replacePrediction(realPrediction as any, 'quarterly', tempId)
+      addPrediction(realPrediction as any, 'quarterly')
 
-      // IMMEDIATE: Force store to refresh its cached data
-      const store = usePredictionsStore.getState()
-      store.lastFetched = Date.now()
-
-      // Force trigger any components using filtered predictions
-      console.log('🎯 Quarterly prediction created - dashboard should update automatically')
-
-      // Invalidate React Query cache as well
       queryClient.invalidateQueries({ queryKey: predictionKeys.quarterly() })
       queryClient.invalidateQueries({ queryKey: predictionKeys.all })
 
-      // Trigger custom event to notify dashboard IMMEDIATELY
       if (typeof window !== 'undefined') {
         window.dispatchEvent(new CustomEvent('prediction-created', {
           detail: { type: 'quarterly', prediction: realPrediction }
         }))
-        // Also trigger predictions-updated event for store listeners
         window.dispatchEvent(new CustomEvent('predictions-updated'))
       }
 
-      toast.success('Quarterly prediction created successfully! 🎉', {
-        description: 'Check the Dashboard tab to view your new prediction.',
-        duration: 4000
-      })
+      console.log('✅ Quarterly prediction created successfully and added to store')
 
       return {
         company: prediction.company_name,
@@ -200,7 +111,7 @@ export function useCreatePredictionMutations() {
         marketCap: `$${prediction.market_cap || 0}M`
       }
     },
-    onError: (error) => {
+    onError: (error: any) => {
       console.error('Quarterly analysis failed:', error)
       toast.error('Failed to create quarterly prediction', {
         description: error.message || 'Please try again'
@@ -208,7 +119,6 @@ export function useCreatePredictionMutations() {
     }
   })
 
-  // Bulk upload mutation
   const bulkUploadMutation = useMutation({
     mutationFn: async ({ file, type }: { file: File, type: 'annual' | 'quarterly' }) => {
       if (type === 'annual') {

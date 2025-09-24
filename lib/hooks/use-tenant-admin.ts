@@ -6,13 +6,11 @@ import {
   type AssignUserToOrgRequest
 } from '../api'
 
-// Query keys for tenant admin operations
 export const tenantAdminKeys = {
   all: ['tenant-admin'] as const,
   adminInfo: (tenantId: string) => [...tenantAdminKeys.all, 'admin-info', tenantId] as const,
 }
 
-// Get tenant admin information
 export function useTenantAdminInfo(tenantId: string) {
   return useQuery({
     queryKey: tenantAdminKeys.adminInfo(tenantId),
@@ -29,7 +27,6 @@ export function useTenantAdminInfo(tenantId: string) {
   })
 }
 
-// Create tenant with admin in one atomic operation
 export function useCreateTenantWithAdmin() {
   const queryClient = useQueryClient()
 
@@ -42,14 +39,12 @@ export function useCreateTenantWithAdmin() {
       return response.data
     },
     onSuccess: () => {
-      // Invalidate tenants list and admin queries
       queryClient.invalidateQueries({ queryKey: ['tenants'] })
       queryClient.invalidateQueries({ queryKey: tenantAdminKeys.all })
     },
   })
 }
 
-// Assign existing user as tenant admin
 export function useAssignExistingUserAsTenantAdmin() {
   const queryClient = useQueryClient()
 
@@ -62,14 +57,12 @@ export function useAssignExistingUserAsTenantAdmin() {
       return response.data
     },
     onSuccess: (_, variables) => {
-      // Invalidate tenant admin info and tenants list
       queryClient.invalidateQueries({ queryKey: tenantAdminKeys.adminInfo(variables.tenant_id) })
       queryClient.invalidateQueries({ queryKey: ['tenants'] })
     },
   })
 }
 
-// Remove tenant admin role
 export function useRemoveTenantAdmin() {
   const queryClient = useQueryClient()
 
@@ -82,14 +75,12 @@ export function useRemoveTenantAdmin() {
       return response
     },
     onSuccess: () => {
-      // Invalidate all tenant admin related queries
       queryClient.invalidateQueries({ queryKey: tenantAdminKeys.all })
       queryClient.invalidateQueries({ queryKey: ['tenants'] })
     },
   })
 }
 
-// Assign user to organization (Super Admin only)
 export function useAssignUserToOrganization() {
   const queryClient = useQueryClient()
 
@@ -102,7 +93,6 @@ export function useAssignUserToOrganization() {
       return response.data
     },
     onSuccess: (_, variables) => {
-      // Invalidate organization users and related queries
       queryClient.invalidateQueries({ queryKey: ['organizations', variables.organization_id, 'users'] })
       queryClient.invalidateQueries({ queryKey: ['organizations'] })
     },

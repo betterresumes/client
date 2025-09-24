@@ -120,7 +120,7 @@ export function JobStatusDisplay({
   }
 
   return (
-    <Card className="p-3 border border-gray-200 bg-white">
+    <Card className="p-3 border border-gray-200 bg-white hover:shadow-sm dark:border-gray-700 dark:bg-gray-800 w-1/2">
       {/* Compact row layout */}
       <div className="flex items-center justify-between gap-3">
         {/* Left: Icon + File name */}
@@ -222,7 +222,6 @@ export function JobStatusContainer() {
 
   return (
     <div className="space-y-2">
-      <h3 className="text-sm font-medium text-gray-700">Recent Jobs</h3>
       {recentJobs.map((job) => (
         <JobStatusDisplay
           key={job.id}

@@ -1,4 +1,3 @@
-// Tenant Types
 export interface TenantResponse {
   id: string;
   name: string;

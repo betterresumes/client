@@ -10,13 +10,6 @@ import { Card } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
 import { CompanyAnalysisPanel } from './company-analysis-panel'
 import {
   Building2,
@@ -25,18 +18,23 @@ import {
   Calendar,
   Activity,
   Loader2,
-  RefreshCw
+  RefreshCw,
+  Search,
+  X
 } from 'lucide-react'
+import { Input } from '@/components/ui/input'
 
 export function CompanyDetailsView() {
   const { selectedCompany, selectedPredictionType, setSelectedCompany, clearSelection } = useDashboardStore()
   const { isAuthenticated, user } = useAuthStore()
   const { stats: dashboardStats, fetchStats } = useDashboardStatsStore()
-  const [currentPage, setCurrentPage] = useState(1)
   const [activeTab, setActiveTab] = useState<'annual' | 'quarterly'>('annual')
   const [forceRefresh, setForceRefresh] = useState(0)
-  const [pageSize, setPageSize] = useState(5) // Default to 5 per page as requested
-  const itemsPerPage = pageSize
+  const [searchQuery, setSearchQuery] = useState('')
+  const [hasAttemptedLoad, setHasAttemptedLoad] = useState(false)
+
+  // Show any 5 companies by default, but allow search through all
+  const DEFAULT_COMPANIES_TO_SHOW = 5
 
   const {
     annualPredictions,
@@ -46,12 +44,17 @@ export function CompanyDetailsView() {
     isLoading: isPredictionsLoading,
     error: predictionsError,
     fetchPredictions,
+    loadMorePredictions, // Add this method
     getPredictionProbability,
     getRiskBadgeColor,
     formatPredictionDate,
     getFilteredPredictions,
     activeDataFilter,
-    lastFetched
+    lastFetched,
+    annualPagination, // Add pagination states
+    quarterlyPagination,
+    systemAnnualPagination,
+    systemQuarterlyPagination
   } = usePredictionsStore()
 
   // Set active tab based on selectedPredictionType when navigating from table
@@ -61,13 +64,31 @@ export function CompanyDetailsView() {
     }
   }, [selectedPredictionType])
 
-  // Only fetch predictions if we don't have any data and user is authenticated
+  // Aggressively fetch predictions when user is authenticated
   useEffect(() => {
-    if (isAuthenticated && user && annualPredictions.length === 0 && quarterlyPredictions.length === 0 && !isPredictionsLoading) {
-      console.log('🏢 Company details view - fetching predictions as none exist')
-      fetchPredictions()
+    if (isAuthenticated && user) {
+      // If we don't have any data and we're not loading, start loading
+      if (annualPredictions.length === 0 && quarterlyPredictions.length === 0 && !isPredictionsLoading && !hasAttemptedLoad) {
+        console.log('🏢 Company details view - fetching predictions on login')
+        setHasAttemptedLoad(true)
+        // Force loading state by triggering a re-render
+        setTimeout(() => fetchPredictions(), 0)
+      }
+      // Also fetch if we've never attempted a load
+      else if (!hasAttemptedLoad && !isPredictionsLoading) {
+        console.log('🏢 Company details view - fetching predictions as never attempted')
+        setHasAttemptedLoad(true)
+        setTimeout(() => fetchPredictions(), 0)
+      }
     }
-  }, [isAuthenticated, user, annualPredictions.length, quarterlyPredictions.length, isPredictionsLoading, fetchPredictions])
+  }, [isAuthenticated, user, annualPredictions.length, quarterlyPredictions.length, isPredictionsLoading, hasAttemptedLoad, fetchPredictions])
+
+  // Mark as attempted load when we have any data
+  useEffect(() => {
+    if (annualPredictions.length > 0 || quarterlyPredictions.length > 0) {
+      setHasAttemptedLoad(true)
+    }
+  }, [annualPredictions.length, quarterlyPredictions.length])
 
   // Fetch dashboard stats on mount to get total prediction counts
   useEffect(() => {
@@ -177,181 +198,61 @@ export function CompanyDetailsView() {
     }
   }, [selectedCompany, hasAnnualData, hasQuarterlyData, activeTab])
 
-  // Pagination logic - use dashboard total predictions to estimate companies
-  const getTotalPredictionsFromStats = () => {
-    if (!dashboardStats) return 0
+  // Search and filter companies
+  const filteredCompanies = useMemo(() => {
+    let filtered = companies
 
-    // Get the appropriate total based on user scope and data filter
-    if (activeDataFilter === 'system' && dashboardStats.platform_statistics) {
-      return dashboardStats.platform_statistics.total_predictions || 0
-    } else if (activeDataFilter === 'user' && dashboardStats.user_dashboard) {
-      return dashboardStats.user_dashboard.total_predictions || 0
+    // Apply search filter
+    if (searchQuery.trim()) {
+      const query = searchQuery.toLowerCase()
+      filtered = companies.filter((company: any) =>
+        company.name?.toLowerCase().includes(query) ||
+        company.subtitle?.toLowerCase().includes(query) ||
+        company.id?.toLowerCase().includes(query)
+      )
     }
 
-    // Fallback to main dashboard stats
-    return dashboardStats.total_predictions || 0
-  }
-
-  const totalPredictionsInDB = getTotalPredictionsFromStats()
-  const totalLoadedCompanies = companies.length
-
-  // Better estimation of total companies based on database total predictions
-  const estimatedTotalCompanies = (() => {
-    if (totalPredictionsInDB === 0) return totalLoadedCompanies
-    if (totalLoadedCompanies === 0) return 0
-
-    // If we've loaded significant data, we can estimate better
-    const currentPredictionsLoaded = safePredictions.length + safeQuarterlyPredictions.length
-    if (currentPredictionsLoaded >= totalPredictionsInDB) {
-      return totalLoadedCompanies // We have all the data
+    // If no search, show first 5 companies by default
+    if (!searchQuery.trim()) {
+      return filtered.slice(0, DEFAULT_COMPANIES_TO_SHOW)
     }
 
-    // If we haven't loaded much data yet, be more aggressive about estimating
-    if (currentPredictionsLoaded < totalPredictionsInDB * 0.5) {
-      // We've loaded less than 50% of predictions, estimate more conservatively
-      // but ensure we show enough pages to trigger loading
-      const estimatedFromTotal = Math.floor(totalPredictionsInDB / 2.0) // Assume 2 predictions per company average
-      const minEstimate = totalLoadedCompanies + Math.ceil(totalLoadedCompanies * 0.5) // At least 50% more than loaded
-      return Math.max(estimatedFromTotal, minEstimate)
-    }
+    // If searching, show all matching results
+    return filtered
+  }, [companies, searchQuery])
 
-    // If we've loaded a good portion, estimate based on the ratio we've seen
-    const loadedRatio = currentPredictionsLoaded / totalPredictionsInDB
-    const predictionsPerCompany = currentPredictionsLoaded / totalLoadedCompanies
-    const estimatedFromRatio = Math.floor(totalPredictionsInDB / predictionsPerCompany)
-
-    // Use the higher of current loaded or estimated total
-    return Math.max(totalLoadedCompanies, estimatedFromRatio)
-  })()
-
-  const totalPages = Math.ceil(estimatedTotalCompanies / itemsPerPage)
-  const startIndex = (currentPage - 1) * itemsPerPage
-  const endIndex = startIndex + itemsPerPage
-  const paginatedCompanies = companies.slice(startIndex, endIndex)
-
-  console.log('🏢 Company Details Smart Pagination:', {
-    totalLoadedCompanies,
-    totalPredictionsInDB,
-    estimatedTotalCompanies,
-    currentPage,
-    totalPages,
-    pageSize: itemsPerPage,
-    currentPredictionsLoaded: safePredictions.length + safeQuarterlyPredictions.length,
-    loadedRatio: (safePredictions.length + safeQuarterlyPredictions.length) / Math.max(totalPredictionsInDB, 1)
+  console.log('🔍 Company Search Results:', {
+    totalCompanies: companies.length,
+    searchQuery,
+    filteredCount: filteredCompanies.length,
+    annualPredictions: safePredictions.length,
+    quarterlyPredictions: safeQuarterlyPredictions.length
   })
 
-  // Auto-load more data if we have significantly fewer companies than expected
+  // Load more data if needed when we don't have enough companies for search
   useEffect(() => {
-    if (dashboardStats && companies.length > 0 && !isPredictionsLoading) {
-      const totalPredictions = getTotalPredictionsFromStats()
-      const currentPredictionsLoaded = safePredictions.length + safeQuarterlyPredictions.length
+    const hasMoreData = annualPagination.hasMore || quarterlyPagination.hasMore ||
+      systemAnnualPagination.hasMore || systemQuarterlyPagination.hasMore
 
-      // If we have total predictions data but haven't loaded much, and companies seem low
-      if (totalPredictions > 0 && currentPredictionsLoaded < totalPredictions * 0.3) {
-        const expectedMinCompanies = Math.floor(totalPredictions / 3) // Very conservative estimate
-
-        if (companies.length < expectedMinCompanies * 0.5) {
-          console.log('🏢 Auto-loading more predictions - too few companies loaded:', {
-            companiesLoaded: companies.length,
-            expectedMinCompanies,
-            totalPredictions,
-            currentPredictionsLoaded,
-            loadedRatio: currentPredictionsLoaded / totalPredictions
-          })
-          fetchPredictions()
-        }
-      }
-    }
-  }, [dashboardStats, companies.length, safePredictions.length, safeQuarterlyPredictions.length, isPredictionsLoading, fetchPredictions, getTotalPredictionsFromStats])
-
-  const handlePageChange = (page: number) => {
-    if (page < 1 || page > totalPages) return
-
-    // Calculate how many unique companies we need for this page
-    const requiredCompanies = page * itemsPerPage
-    const currentlyLoadedCompanies = companies.length
-    const currentPredictionsLoaded = safePredictions.length + safeQuarterlyPredictions.length
-
-    console.log('🏢 Page change requested:', {
-      page,
-      itemsPerPage,
-      requiredCompanies,
-      currentlyLoadedCompanies,
-      currentPredictionsLoaded,
-      totalPredictionsInDB,
-      needsMoreCompanies: requiredCompanies > currentlyLoadedCompanies,
-      hasMorePredictions: currentPredictionsLoaded < totalPredictionsInDB,
-      estimatedTotalCompanies
-    })
-
-    // Check if we need to load more predictions
-    // Load more if:
-    // 1. We need more companies than currently loaded, OR
-    // 2. We haven't loaded all available predictions and current page is getting close to our limit
-    const shouldLoadMore = (
-      // Case 1: Need more companies than we have
-      (requiredCompanies > currentlyLoadedCompanies) ||
-      // Case 2: Haven't loaded all predictions and we're near the end of what we can estimate
-      (currentPredictionsLoaded < totalPredictionsInDB &&
-        page >= Math.floor(currentlyLoadedCompanies / itemsPerPage))
-    ) && !isPredictionsLoading
-
-    if (shouldLoadMore) {
-      console.log('🏢 Need to load more predictions for page', page, {
-        reason: requiredCompanies > currentlyLoadedCompanies ? 'need_more_companies' : 'approaching_limit',
-        currentlyLoadedCompanies,
-        requiredCompanies,
-        currentPredictionsLoaded,
-        totalPredictionsInDB
+    // If we have very few companies and more data is available, load more
+    if (companies.length < 50 && hasMoreData && !isPredictionsLoading) {
+      console.log('🏢 Loading more companies for better search experience:', {
+        currentCompaniesLoaded: companies.length,
+        hasMoreData
       })
-      fetchPredictions() // This will load more data
-    }
 
-    setCurrentPage(page)
-  }
-
-  // Keyboard navigation for pagination
-  useEffect(() => {
-    const handleKeyPress = (event: KeyboardEvent) => {
-      // Only handle if no input is focused and pagination has multiple pages  
-      if (document.activeElement?.tagName === 'INPUT' || totalPages <= 1) return
-
-      if (event.key === 'ArrowLeft' && currentPage > 1) {
-        event.preventDefault()
-        handlePageChange(currentPage - 1)
-      } else if (event.key === 'ArrowRight' && currentPage < totalPages) {
-        event.preventDefault()
-        handlePageChange(currentPage + 1)
-      } else if (event.key === 'Home') {
-        event.preventDefault()
-        handlePageChange(1)
-      } else if (event.key === 'End') {
-        event.preventDefault()
-        handlePageChange(totalPages)
+      const store = usePredictionsStore.getState()
+      if (store.loadMorePredictions) {
+        store.loadMorePredictions()
+      } else {
+        fetchPredictions()
       }
     }
+  }, [companies.length, annualPagination.hasMore, quarterlyPagination.hasMore, systemAnnualPagination.hasMore, systemQuarterlyPagination.hasMore, isPredictionsLoading, fetchPredictions])
 
-    window.addEventListener('keydown', handleKeyPress)
-    return () => window.removeEventListener('keydown', handleKeyPress)
-  }, [currentPage, totalPages, handlePageChange]) // Added handlePageChange to dependencies
-
-  const getPageNumbers = () => {
-    const pages = []
-    const maxVisiblePages = 8 // Show up to 8 page numbers as requested
-
-    if (totalPages <= maxVisiblePages) {
-      // Show all pages if total is small
-      for (let i = 1; i <= totalPages; i++) {
-        pages.push(i)
-      }
-    } else {
-      // Always show first 8 pages as requested
-      for (let i = 1; i <= Math.min(8, totalPages); i++) {
-        pages.push(i)
-      }
-    }
-
-    return pages
+  // Handle clearing search
+  const handleClearSearch = () => {
+    setSearchQuery('')
   }
 
   const getRiskColor = (riskCategory: string) => {
@@ -424,8 +325,8 @@ export function CompanyDetailsView() {
 
       {/* Company selection and browsing */}
 
-      {/* Show "No Data Available" if no companies exist */}
-      {!isPredictionsLoading && companies.length === 0 && (
+      {/* Show "No Data Available" only if we've attempted to load and finished, and still have no data */}
+      {!isPredictionsLoading && hasAttemptedLoad && companies.length === 0 && (
         <Card className="border border-gray-200 dark:border-gray-700 shadow-sm">
           <div className="text-center py-16 px-6">
             <div className="mx-auto flex items-center justify-center h-16 w-16 rounded-full bg-gray-100 dark:bg-gray-800 mb-6">
@@ -437,6 +338,17 @@ export function CompanyDetailsView() {
             <p className="text-gray-600 dark:text-gray-400 mb-6 max-w-md mx-auto">
               No prediction data is available for your current data source selection. Please check your permissions or try refreshing.
             </p>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setHasAttemptedLoad(true)
+                fetchPredictions()
+              }}
+              className="font-bricolage"
+            >
+              <RefreshCw className="h-4 w-4 mr-2" />
+              Retry Loading
+            </Button>
           </div>
         </Card>
       )}
@@ -464,8 +376,8 @@ export function CompanyDetailsView() {
         </div>
       )}
 
-      {/* Main content area - only show if loading or have companies */}
-      {(isPredictionsLoading || companies.length > 0) && (
+      {/* Main content area - show if loading OR have companies OR if we're authenticated and haven't attempted load yet */}
+      {(isPredictionsLoading || companies.length > 0 || (isAuthenticated && !hasAttemptedLoad)) && (
         isPredictionsLoading && companies.length === 0 ? (
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 font-bricolage">
             {/* Left Panel Skeleton */}
@@ -593,16 +505,67 @@ export function CompanyDetailsView() {
           </div>
         ) : (
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 font-bricolage">
-            {/* Left Panel - Company Selection with Pagination */}
+            {/* Left Panel - Company Search and Selection */}
             <div className="h-[600px]">
               <Card className="p-4 h-full flex flex-col">
-                <div className="flex items-center justify-between mb-4">
-                  <h3 className="text-lg font-semibold text-gray-900 dark:text-white font-bricolage">
-                    S&P 500 Companies
-                  </h3>
-                  {isPredictionsLoading && (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  )}
+                <div className="mb-4">
+                  <div className="flex items-center justify-between mb-3">
+                    <h3 className="text-lg font-semibold text-gray-900 dark:text-white font-bricolage">
+                      S&P 500 Companies
+                    </h3>
+                    <div className="flex items-center gap-2">
+                      {annualPagination.hasMore || quarterlyPagination.hasMore || systemAnnualPagination.hasMore || systemQuarterlyPagination.hasMore ? (
+                        !isPredictionsLoading && (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => {
+                              const store = usePredictionsStore.getState()
+                              if (store.loadMorePredictions) {
+                                store.loadMorePredictions()
+                              } else {
+                                fetchPredictions()
+                              }
+                            }}
+                            className="h-6 px-2 text-xs font-bricolage"
+                          >
+                            Load More
+                          </Button>
+                        )
+                      ) : null}
+                      {isPredictionsLoading && (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Search Input */}
+                  <div className="relative">
+                    <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
+                    <Input
+                      placeholder="Search companies..."
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      className="pl-10 pr-10 h-9 text-sm font-bricolage"
+                    />
+                    {searchQuery && (
+                      <button
+                        onClick={handleClearSearch}
+                        className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                      >
+                        <X className="h-4 w-4" />
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Search Results Info */}
+                  <div className="mt-2 text-xs text-gray-500 font-bricolage">
+                    {searchQuery.trim() ? (
+                      `Found ${filteredCompanies.length} companies matching "${searchQuery}"`
+                    ) : (
+                      `Showing all companies`
+                    )}
+                  </div>
                 </div>
 
                 {isPredictionsLoading ? (
@@ -629,7 +592,7 @@ export function CompanyDetailsView() {
                   <>
                     {/* Company List */}
                     <div className="space-y-2 flex-1 overflow-y-auto">
-                      {paginatedCompanies.map((company: any) => (
+                      {filteredCompanies.map((company: any) => (
                         <div
                           key={company.id}
                           className={`p-3 rounded-lg cursor-pointer transition-all duration-300 ease-in-out border font-bricolage ${selectedCompany === company.id
@@ -660,75 +623,24 @@ export function CompanyDetailsView() {
                           </div>
                         </div>
                       ))}
+
+                      {/* No search results */}
+                      {filteredCompanies.length === 0 && searchQuery.trim() && (
+                        <div className="text-center py-8">
+                          <Search className="h-8 w-8 text-gray-400 mx-auto mb-3" />
+                          <p className="text-sm text-gray-500 font-bricolage">
+                            No companies found matching "{searchQuery}"
+                          </p>
+                          <button
+                            onClick={handleClearSearch}
+                            className="text-xs text-blue-600 hover:text-blue-700 mt-2 font-bricolage"
+                          >
+                            Clear search
+                          </button>
+                        </div>
+                      )}
                     </div>
 
-                    {/* Simple Pagination - Prev/Next with page info */}
-                    {totalPages > 1 && (
-                      <div className="mt-auto pt-4 border-t border-gray-200 flex-shrink-0">
-                        <div className="flex items-center justify-between">
-                          {/* Show X per page */}
-                          <div className="flex items-center gap-2">
-                            <span className="text-xs text-gray-600 font-bricolage">Show</span>
-                            <Select value={pageSize.toString()} onValueChange={(value) => {
-                              setPageSize(Number(value))
-                              setCurrentPage(1) // Reset to first page when changing page size
-                            }}>
-                              <SelectTrigger className="w-14 h-7">
-                                <SelectValue />
-                              </SelectTrigger>
-                              <SelectContent>
-                                <SelectItem value="5">5</SelectItem>
-                                <SelectItem value="10">10</SelectItem>
-                                <SelectItem value="15">15</SelectItem>
-                                <SelectItem value="20">20</SelectItem>
-                              </SelectContent>
-                            </Select>
-                            <span className="text-xs text-gray-600 font-bricolage">per page</span>
-                          </div>
-
-                          {/* Page info and navigation */}
-                          <div className="flex items-center gap-3">
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() => handlePageChange(currentPage - 1)}
-                              disabled={currentPage <= 1}
-                              className="h-7 px-2 text-xs font-bricolage"
-                            >
-                              Prev
-                            </Button>
-
-                            <span className="text-xs text-gray-600 font-bricolage">
-                              Page {currentPage} of {totalPages}
-                            </span>
-
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() => handlePageChange(currentPage + 1)}
-                              disabled={currentPage >= totalPages || (isPredictionsLoading && currentPage * itemsPerPage > totalLoadedCompanies)}
-                              className="h-7 px-2 text-xs font-bricolage"
-                            >
-                              {isPredictionsLoading && currentPage * itemsPerPage > totalLoadedCompanies ? (
-                                <Loader2 className="h-3 w-3 animate-spin" />
-                              ) : (
-                                'Next'
-                              )}
-                            </Button>
-                          </div>
-                        </div>
-
-                        {/* Status info */}
-                        <div className="text-center mt-2">
-                          <span className="text-xs text-gray-500 font-bricolage">
-                            {totalLoadedCompanies < estimatedTotalCompanies
-                              ? `Showing ${totalLoadedCompanies} companies loaded (estimated ${estimatedTotalCompanies} total)`
-                              : `Showing ${totalLoadedCompanies} companies`
-                            }
-                          </span>
-                        </div>
-                      </div>
-                    )}
                   </>
                 )}
               </Card>

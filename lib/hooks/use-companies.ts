@@ -3,9 +3,6 @@ import { toast } from 'sonner'
 import { companiesApi } from '../api/companies'
 import type { CompanyCreate } from '../types/company'
 
-/**
- * Company query keys for cache management
- */
 export const companyKeys = {
   all: ['companies'] as const,
   lists: () => [...companyKeys.all, 'list'] as const,
@@ -15,9 +12,6 @@ export const companyKeys = {
   search: (symbol: string) => [...companyKeys.all, 'search', symbol] as const,
 } as const
 
-/**
- * Get companies list with filtering and pagination
- */
 export function useCompanies(params?: {
   page?: number
   limit?: number
@@ -35,13 +29,10 @@ export function useCompanies(params?: {
       }
       return response.data
     },
-    staleTime: 5 * 60 * 1000, // 5 minutes
+    staleTime: 5 * 60 * 1000, 
   })
 }
 
-/**
- * Get single company by ID
- */
 export function useCompany(companyId: string) {
   return useQuery({
     queryKey: companyKeys.detail(companyId),
@@ -53,13 +44,10 @@ export function useCompany(companyId: string) {
       return response.data
     },
     enabled: !!companyId,
-    staleTime: 10 * 60 * 1000, // 10 minutes
+    staleTime: 10 * 60 * 1000, 
   })
 }
 
-/**
- * Search company by symbol
- */
 export function useCompanyBySymbol(symbol: string) {
   return useQuery({
     queryKey: companyKeys.search(symbol),
@@ -71,9 +59,8 @@ export function useCompanyBySymbol(symbol: string) {
       return response.data
     },
     enabled: !!symbol && symbol.length > 0,
-    staleTime: 10 * 60 * 1000, // 10 minutes
+    staleTime: 10 * 60 * 1000, 
     retry: (failureCount, error: any) => {
-      // Don't retry on 404 errors (company not found)
       if (error?.response?.status === 404) {
         return false
       }
@@ -82,9 +69,6 @@ export function useCompanyBySymbol(symbol: string) {
   })
 }
 
-/**
- * Create new company mutation
- */
 export function useCreateCompany() {
   const queryClient = useQueryClient()
 
@@ -97,9 +81,7 @@ export function useCreateCompany() {
       return response.data
     },
     onSuccess: (data) => {
-      // Invalidate companies list
       queryClient.invalidateQueries({ queryKey: companyKeys.lists() })
-      // Add to cache
       queryClient.setQueryData(companyKeys.detail(data.id), data)
       toast.success('Company created successfully')
     },
@@ -109,9 +91,6 @@ export function useCreateCompany() {
   })
 }
 
-/**
- * Validate company data mutation
- */
 export function useValidateCompany() {
   return useMutation({
     mutationFn: async (data: Partial<CompanyCreate>) => {
@@ -127,9 +106,6 @@ export function useValidateCompany() {
   })
 }
 
-/**
- * Hook for company symbol search with debouncing
- */
 export function useCompanySearch(searchTerm: string, enabled: boolean = true) {
   return useQuery({
     queryKey: ['companies', 'search', searchTerm],
@@ -150,7 +126,7 @@ export function useCompanySearch(searchTerm: string, enabled: boolean = true) {
       return response.data
     },
     enabled: enabled && searchTerm.length >= 2,
-    staleTime: 30 * 1000, // 30 seconds
-    retry: false, // Don't retry search queries
+    staleTime: 30 * 1000, 
+    retry: false, 
   })
 }
