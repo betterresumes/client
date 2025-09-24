@@ -540,7 +540,7 @@ export function CompanyAnalysisTable({
                       </Button>
                     )}
                   </TableHead>
-                  <TableHead>
+                  {/* <TableHead>
                     {isLoading ? (
                       <p className="text-sm text-gray-600 font-semibold font-bricolage">Market Cap</p>
                     ) : (
@@ -553,7 +553,7 @@ export function CompanyAnalysisTable({
                         {getSortIcon('marketCap')}
                       </Button>
                     )}
-                  </TableHead>
+                  </TableHead> */}
                   <TableHead>
                     <p className="text-sm text-gray-600 font-semibold font-bricolage">Key Ratios</p>
                   </TableHead>
@@ -591,11 +591,6 @@ export function CompanyAnalysisTable({
                         <Skeleton className="h-4 w-20" />
                       </TableCell>
                       <TableCell>
-                        <div className="space-y-2">
-                          <Skeleton className="h-3 w-8" />
-                        </div>
-                      </TableCell>
-                      <TableCell>
                         <Skeleton className="h-8 w-8 rounded" />
                       </TableCell>
                     </TableRow>
@@ -625,11 +620,11 @@ export function CompanyAnalysisTable({
                           {formatPredictionDate(item)}
                         </Badge>
                       </TableCell>
-                      <TableCell className="font-bricolage text-sm">
+                      {/* <TableCell className="font-bricolage text-sm">
                         <Badge variant="outline" className="text-black-600 border-border-200 font-bricolage text-xs ml-6">
                           {formatMarketCap(item.market_cap)}
                         </Badge>
-                      </TableCell>
+                      </TableCell> */}
                       <TableCell>
                         <div className="text-xs space-y-1 font-bricolage">
                           {item.financial_ratios ? (

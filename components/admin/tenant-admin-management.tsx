@@ -49,6 +49,9 @@ import {
 
 import { tenantsApi } from '@/lib/api/tenants'
 import { organizationsApi } from '@/lib/api/organizations'
+import { CreateOrganizationDialog } from './create-organization-dialog'
+import { EditOrganizationDialog } from './edit-organization-dialog'
+import { AssignOrgAdminDialog } from './assign-org-admin-dialog'
 import { useAuthStore } from '@/lib/stores/auth-store'
 
 interface TenantAdminManagementProps {
@@ -63,6 +66,12 @@ export function TenantAdminManagement({ tenantId }: TenantAdminManagementProps) 
   const [loading, setLoading] = useState(true)
   const [actionLoading, setActionLoading] = useState<string | null>(null)
   const [searchTerm, setSearchTerm] = useState('')
+
+  // Dialog states
+  const [createDialogOpen, setCreateDialogOpen] = useState(false)
+  const [editDialogOpen, setEditDialogOpen] = useState(false)
+  const [assignAdminDialogOpen, setAssignAdminDialogOpen] = useState(false)
+  const [selectedOrganization, setSelectedOrganization] = useState<any>(null)
 
   // Cache management
   const [dataCache, setDataCache] = useState<{
@@ -305,6 +314,13 @@ export function TenantAdminManagement({ tenantId }: TenantAdminManagementProps) 
             </p>
           </div>
           <div className="flex items-center space-x-2">
+            <Button
+              onClick={() => setCreateDialogOpen(true)}
+              className="flex items-center gap-2"
+            >
+              <Plus className="h-4 w-4" />
+              Create Organization
+            </Button>
             <div className="relative">
               <Search className="absolute left-3 top-2.5 h-4 w-4 text-gray-400" />
               <Input
@@ -372,6 +388,11 @@ export function TenantAdminManagement({ tenantId }: TenantAdminManagementProps) 
                           variant="outline"
                           size="sm"
                           className="h-8 px-2"
+                          onClick={() => {
+                            setSelectedOrganization(org)
+                            setEditDialogOpen(true)
+                          }}
+                          title="Edit Organization"
                         >
                           <Edit className="h-3 w-3" />
                         </Button>
@@ -379,6 +400,19 @@ export function TenantAdminManagement({ tenantId }: TenantAdminManagementProps) 
                           variant="outline"
                           size="sm"
                           className="h-8 px-2"
+                          onClick={() => {
+                            setSelectedOrganization(org)
+                            setAssignAdminDialogOpen(true)
+                          }}
+                          title="Assign Org Admin"
+                        >
+                          <UserPlus className="h-3 w-3" />
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="h-8 px-2"
+                          title="View Members"
                         >
                           <Users className="h-3 w-3" />
                         </Button>
@@ -404,6 +438,45 @@ export function TenantAdminManagement({ tenantId }: TenantAdminManagementProps) 
           )}
         </CardContent>
       </Card>
+
+      {/* Create Organization Dialog */}
+      <CreateOrganizationDialog
+        open={createDialogOpen}
+        onOpenChange={setCreateDialogOpen}
+        onOrganizationCreated={() => {
+          loadAllData()
+          toast.success('Organization created successfully!')
+        }}
+        tenantId={tenantId}
+      />
+
+      {/* Edit Organization Dialog */}
+      {selectedOrganization && (
+        <EditOrganizationDialog
+          open={editDialogOpen}
+          onOpenChange={setEditDialogOpen}
+          organization={selectedOrganization}
+          onSuccess={() => {
+            loadAllData()
+            setSelectedOrganization(null)
+            toast.success('Organization updated successfully!')
+          }}
+        />
+      )}
+
+      {/* Assign Org Admin Dialog */}
+      {selectedOrganization && (
+        <AssignOrgAdminDialog
+          open={assignAdminDialogOpen}
+          onOpenChange={setAssignAdminDialogOpen}
+          organization={selectedOrganization}
+          onSuccess={() => {
+            loadAllData()
+            setSelectedOrganization(null)
+            toast.success('Org admin assigned successfully!')
+          }}
+        />
+      )}
     </div>
   )
 }

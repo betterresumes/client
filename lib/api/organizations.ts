@@ -24,7 +24,7 @@ export const organizationsApi = {
     limit?: number;
     search?: string;
     is_active?: boolean;
-    tenant_id?: string; 
+    tenant_id?: string;
   }): Promise<ApiResponse<EnhancedOrganizationListResponse>> => {
     const searchParams = new URLSearchParams();
     if (params?.page !== undefined) searchParams.append('page', params.page.toString());
@@ -72,6 +72,29 @@ export const organizationsApi = {
     if (params?.role) searchParams.append('role', params.role);
 
     return apiClient.get<UserListResponse>(`/organizations/${orgId}/users?${searchParams.toString()}`);
+  },
+
+  assignOrgAdmin: async (orgId: string, userId: string): Promise<ApiResponse<any>> => {
+    return apiClient.post<any>(`/organizations/${orgId}/assign-admin/${userId}`);
+  },
+
+  removeOrgAdmin: async (orgId: string, userId: string): Promise<ApiResponse<any>> => {
+    return apiClient.delete<any>(`/organizations/${orgId}/remove-admin/${userId}`);
+  },
+
+  addUserToOrg: async (orgId: string, data: {
+    user_id: string;
+    role?: 'org_admin' | 'org_member'
+  }): Promise<ApiResponse<any>> => {
+    return apiClient.post<any>(`/organizations/${orgId}/add-user`, data);
+  },
+
+  removeUserFromOrg: async (orgId: string, userId: string): Promise<ApiResponse<any>> => {
+    return apiClient.delete<any>(`/organizations/${orgId}/remove-user/${userId}`);
+  },
+
+  updateUserRole: async (orgId: string, userId: string, role: 'org_admin' | 'org_member'): Promise<ApiResponse<any>> => {
+    return apiClient.patch<any>(`/organizations/${orgId}/users/${userId}/role`, { role });
   },
 
   getGlobalDataAccess: async (orgId: string): Promise<ApiResponse<any>> => {

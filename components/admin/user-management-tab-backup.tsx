@@ -111,7 +111,7 @@ export function UserManagementTab({ onStatsUpdate }: UserManagementTabProps) {
   const handleUserAction = async (userId: string, action: 'activate' | 'deactivate' | 'delete') => {
     try {
       setActionLoading(userId)
-
+      
       switch (action) {
         case 'activate':
           await adminApi.activateUser(userId)
@@ -126,7 +126,7 @@ export function UserManagementTab({ onStatsUpdate }: UserManagementTabProps) {
           toast.success('User deleted successfully')
           break
       }
-
+      
       loadUsers()
     } catch (error: any) {
       console.error(`Error performing ${action} on user:`, error)
@@ -139,7 +139,7 @@ export function UserManagementTab({ onStatsUpdate }: UserManagementTabProps) {
   const handleUpdateUserRole = async (userId: string, newRole: string) => {
     try {
       setActionLoading(userId)
-
+      
       await adminApi.updateUserRole(userId, newRole)
       toast.success('User role updated successfully')
       loadUsers()
@@ -150,8 +150,31 @@ export function UserManagementTab({ onStatsUpdate }: UserManagementTabProps) {
       setActionLoading(null)
     }
   }
+    try {
+      setActionLoading(userId)
 
-  const filteredUsers = users.filter((user: UserResponse) => {
+      switch (action) {
+        case 'activate':
+          // This would be a custom API endpoint to activate user
+          break
+        case 'deactivate':
+          // This would be a custom API endpoint to deactivate user
+          break
+        case 'delete':
+          const response = await authApi.deleteUser(userId)
+          if (response.success) {
+            await loadUsers() // Reload the list
+          }
+          break
+      }
+    } catch (error) {
+      console.error(`Error ${action} user:`, error)
+    } finally {
+      setActionLoading(null)
+    }
+  }
+
+  const filteredUsers = users.filter(user => {
     const matchesSearch = user.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
       (user.full_name?.toLowerCase().includes(searchTerm.toLowerCase()) || false)
 
@@ -175,105 +198,86 @@ export function UserManagementTab({ onStatsUpdate }: UserManagementTabProps) {
   const getRoleColor = (role: AuthUserRole) => {
     switch (role) {
       case 'super_admin':
-        return 'bg-purple-100 text-purple-800'
+        return 'bg-red-100 text-red-800 border-red-200'
       case 'tenant_admin':
-        return 'bg-blue-100 text-blue-800'
       case 'org_admin':
-        return 'bg-green-100 text-green-800'
-      case 'org_member':
-        return 'bg-gray-100 text-gray-800'
+        return 'bg-blue-100 text-blue-800 border-blue-200'
       default:
-        return 'bg-gray-100 text-gray-800'
+        return 'bg-gray-100 text-gray-800 border-gray-200'
     }
   }
 
-  const formatRole = (role: AuthUserRole) => {
+  const getRoleIcon = (role: AuthUserRole) => {
     switch (role) {
       case 'super_admin':
-        return 'Super Admin'
       case 'tenant_admin':
-        return 'Tenant Admin'
       case 'org_admin':
-        return 'Org Admin'
-      case 'org_member':
-        return 'Member'
+        return <Shield className="h-3 w-3" />
       default:
-        return role
+        return <User className="h-3 w-3" />
     }
-  }
-
-  if (loading) {
-    return (
-      <div className="space-y-6 animate-pulse">
-        <div className="h-40 bg-gray-200 rounded-lg"></div>
-        <div className="h-32 bg-gray-200 rounded-lg"></div>
-        <div className="h-64 bg-gray-200 rounded-lg"></div>
-      </div>
-    )
   }
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <Card>
-        <CardHeader className="flex flex-row items-center justify-between">
-          <div className="flex items-center space-x-3">
-            <div className="h-12 w-12 bg-gradient-to-br from-blue-600 to-indigo-600 rounded-lg flex items-center justify-center">
-              <Users className="h-6 w-6 text-white" />
-            </div>
-            <div>
-              <CardTitle className="text-lg">User Management</CardTitle>
-              <p className="text-sm text-muted-foreground">
-                Manage users across the platform
-              </p>
-            </div>
-          </div>
-          <div className="flex items-center space-x-2">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={loadUsers}
-              disabled={loading}
-            >
-              <RefreshCw className={`h-4 w-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
-              Refresh
-            </Button>
-            <Button onClick={() => setShowCreateDialog(true)}>
-              <UserPlus className="h-4 w-4 mr-2" />
-              Add User
-            </Button>
-          </div>
-        </CardHeader>
-      </Card>
+      {/* Header and Actions */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h3 className="text-lg font-medium">User Management</h3>
+          <p className="text-sm text-gray-500">
+            Manage platform users and their permissions
+          </p>
+        </div>
+        <div className="flex items-center space-x-3">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={loadUsers}
+            disabled={loading}
+          >
+            <RefreshCw className={`h-4 w-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
+            Refresh
+          </Button>
+          <Button onClick={() => setShowCreateDialog(true)}>
+            <UserPlus className="h-4 w-4 mr-2" />
+            Add User
+          </Button>
+        </div>
+      </div>
 
       {/* Filters */}
       <Card>
-        <CardContent className="p-4">
+        <CardContent className="p-6">
           <div className="flex items-center space-x-4">
-            <div className="flex-1 relative">
-              <Search className="absolute left-3 top-2.5 h-4 w-4 text-gray-400" />
-              <Input
-                placeholder="Search users by email or name..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="pl-10"
-              />
+            <div className="flex-1">
+              <div className="relative">
+                <Search className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
+                <Input
+                  placeholder="Search users by email or name..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="pl-10"
+                />
+              </div>
             </div>
+
             <Select value={roleFilter} onValueChange={setRoleFilter}>
-              <SelectTrigger className="w-[150px]">
-                <SelectValue placeholder="Filter by role" />
+              <SelectTrigger className="w-40">
+                <SelectValue placeholder="Role" />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All Roles</SelectItem>
                 <SelectItem value="super_admin">Super Admin</SelectItem>
                 <SelectItem value="tenant_admin">Tenant Admin</SelectItem>
                 <SelectItem value="org_admin">Org Admin</SelectItem>
-                <SelectItem value="org_member">Member</SelectItem>
+                <SelectItem value="org_member">Org Member</SelectItem>
+                <SelectItem value="user">User</SelectItem>
               </SelectContent>
             </Select>
+
             <Select value={statusFilter} onValueChange={setStatusFilter}>
-              <SelectTrigger className="w-[150px]">
-                <SelectValue placeholder="Filter by status" />
+              <SelectTrigger className="w-40">
+                <SelectValue placeholder="Status" />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All Status</SelectItem>
@@ -287,17 +291,34 @@ export function UserManagementTab({ onStatsUpdate }: UserManagementTabProps) {
 
       {/* Users Table */}
       <Card>
-        <CardContent className="p-0">
-          {filteredUsers.length > 0 ? (
+        <CardHeader>
+          <CardTitle className="flex items-center justify-between">
+            <span>Users ({filteredUsers.length})</span>
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          {loading ? (
+            <div className="space-y-3">
+              {[...Array(5)].map((_, i) => (
+                <div key={i} className="animate-pulse flex items-center space-x-4">
+                  <div className="h-10 w-10 bg-gray-200 rounded-full"></div>
+                  <div className="space-y-2 flex-1">
+                    <div className="h-4 bg-gray-200 rounded w-1/4"></div>
+                    <div className="h-3 bg-gray-200 rounded w-1/6"></div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
             <Table>
               <TableHeader>
                 <TableRow>
                   <TableHead>User</TableHead>
                   <TableHead>Role</TableHead>
                   <TableHead>Status</TableHead>
-                  <TableHead>Organization</TableHead>
+                  <TableHead>Created</TableHead>
                   <TableHead>Last Login</TableHead>
-                  <TableHead>Actions</TableHead>
+                  <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -306,23 +327,23 @@ export function UserManagementTab({ onStatsUpdate }: UserManagementTabProps) {
                     <TableCell>
                       <div className="flex items-center space-x-3">
                         <Avatar className="h-8 w-8">
-                          <AvatarFallback className="bg-gray-100">
+                          <AvatarImage src={`https://api.dicebear.com/7.x/initials/svg?seed=${user.full_name}`} />
+                          <AvatarFallback className="bg-blue-600 text-white text-xs">
                             {getInitials(user.full_name || user.email)}
                           </AvatarFallback>
                         </Avatar>
-                        <div className="min-w-0 flex-1">
-                          <div className="font-medium text-sm">{user.full_name || 'N/A'}</div>
-                          <div className="text-xs text-muted-foreground">{user.email}</div>
-                          {user.username && (
-                            <div className="text-xs text-blue-600">@{user.username}</div>
-                          )}
+                        <div>
+                          <div className="font-medium">{user.full_name || user.email}</div>
+                          <div className="text-sm text-gray-500">{user.email}</div>
                         </div>
                       </div>
                     </TableCell>
                     <TableCell>
-                      <Badge variant="outline" className={getRoleColor(user.role as AuthUserRole)}>
-                        <Shield className="h-3 w-3 mr-1" />
-                        {formatRole(user.role as AuthUserRole)}
+                      <Badge variant="outline" className={getRoleColor(user.role)}>
+                        {getRoleIcon(user.role)}
+                        <span className="ml-1 capitalize">
+                          {user.role.replace('_', ' ')}
+                        </span>
                       </Badge>
                     </TableCell>
                     <TableCell>
@@ -340,54 +361,63 @@ export function UserManagementTab({ onStatsUpdate }: UserManagementTabProps) {
                     </TableCell>
                     <TableCell>
                       <div className="text-sm">
-                        {user.organization_id ? `Org: ${user.organization_id.substring(0, 8)}...` : 'No Organization'}
+                        {format(new Date(user.created_at), 'MMM dd, yyyy')}
                       </div>
                     </TableCell>
-                    <TableCell className="text-xs">
-                      {user.last_login ? format(new Date(user.last_login), 'MMM dd, yyyy') : 'Never'}
-                    </TableCell>
                     <TableCell>
+                      <div className="text-sm">
+                        {user.last_login
+                          ? format(new Date(user.last_login), 'MMM dd, yyyy HH:mm')
+                          : 'Never'
+                        }
+                      </div>
+                    </TableCell>
+                    <TableCell className="text-right">
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
                           <Button
                             variant="ghost"
                             size="sm"
-                            className="h-8 w-8 p-0"
                             disabled={actionLoading === user.id}
                           >
-                            <MoreVertical className="h-4 w-4" />
+                            {actionLoading === user.id ? (
+                              <RefreshCw className="h-4 w-4 animate-spin" />
+                            ) : (
+                              <MoreVertical className="h-4 w-4" />
+                            )}
                           </Button>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end">
                           <DropdownMenuItem onClick={() => setSelectedUser(user)}>
-                            <Edit className="h-4 w-4 mr-2" />
-                            Edit
+                            <Edit className="mr-2 h-4 w-4" />
+                            Edit User
+                          </DropdownMenuItem>
+                          <DropdownMenuItem
+                            onClick={() => handleUserAction(user.id, user.is_active ? 'deactivate' : 'activate')}
+                          >
+                            {user.is_active ? (
+                              <>
+                                <XCircle className="mr-2 h-4 w-4" />
+                                Deactivate
+                              </>
+                            ) : (
+                              <>
+                                <CheckCircle className="mr-2 h-4 w-4" />
+                                Activate
+                              </>
+                            )}
                           </DropdownMenuItem>
                           <DropdownMenuSeparator />
-                          {user.is_active ? (
-                            <DropdownMenuItem
-                              onClick={() => handleUserAction(user.id, 'deactivate')}
-                              className="text-orange-600"
-                            >
-                              <XCircle className="h-4 w-4 mr-2" />
-                              Deactivate
-                            </DropdownMenuItem>
-                          ) : (
-                            <DropdownMenuItem
-                              onClick={() => handleUserAction(user.id, 'activate')}
-                              className="text-green-600"
-                            >
-                              <CheckCircle className="h-4 w-4 mr-2" />
-                              Activate
-                            </DropdownMenuItem>
-                          )}
-                          <DropdownMenuSeparator />
                           <DropdownMenuItem
-                            onClick={() => handleUserAction(user.id, 'delete')}
                             className="text-red-600"
+                            onClick={() => {
+                              if (confirm('Are you sure you want to delete this user?')) {
+                                handleUserAction(user.id, 'delete')
+                              }
+                            }}
                           >
-                            <Trash2 className="h-4 w-4 mr-2" />
-                            Delete
+                            <Trash2 className="mr-2 h-4 w-4" />
+                            Delete User
                           </DropdownMenuItem>
                         </DropdownMenuContent>
                       </DropdownMenu>
@@ -396,37 +426,33 @@ export function UserManagementTab({ onStatsUpdate }: UserManagementTabProps) {
                 ))}
               </TableBody>
             </Table>
-          ) : (
-            <div className="text-center py-8">
+          )}
+
+          {!loading && filteredUsers.length === 0 && (
+            <div className="text-center py-12">
               <Users className="h-12 w-12 text-gray-400 mx-auto mb-4" />
               <h3 className="text-lg font-medium text-gray-900 mb-2">
-                {searchTerm || roleFilter !== 'all' || statusFilter !== 'all'
-                  ? 'No users found'
-                  : 'No Users Yet'
-                }
+                No users found
               </h3>
-              <p className="text-gray-500 mb-4">
+              <p className="text-gray-500">
                 {searchTerm || roleFilter !== 'all' || statusFilter !== 'all'
-                  ? 'Try adjusting your search or filter criteria'
-                  : 'Start by creating your first user'
+                  ? 'No users match your current filters.'
+                  : 'Get started by adding your first user.'
                 }
               </p>
-              {!searchTerm && roleFilter === 'all' && statusFilter === 'all' && (
-                <Button onClick={() => setShowCreateDialog(true)}>
-                  <UserPlus className="h-4 w-4 mr-2" />
-                  Create User
-                </Button>
-              )}
             </div>
           )}
         </CardContent>
       </Card>
 
+      {/* Create User Dialog */}
       <CreateUserDialog
         open={showCreateDialog}
         onOpenChange={setShowCreateDialog}
         onUserCreated={loadUsers}
       />
+
+      {/* Edit User Dialog would go here */}
     </div>
   )
 }

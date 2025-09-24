@@ -51,6 +51,7 @@ import {
 import { tenantsApi } from '@/lib/api/tenants'
 import { organizationsApi } from '@/lib/api/organizations'
 import { useAuthStore } from '@/lib/stores/auth-store'
+import { CreateTenantDialog } from './create-tenant-dialog'
 
 export function SuperAdminManagement() {
   const { user } = useAuthStore()
@@ -59,6 +60,7 @@ export function SuperAdminManagement() {
   const [loading, setLoading] = useState(true)
   const [actionLoading, setActionLoading] = useState<string | null>(null)
   const [searchTerm, setSearchTerm] = useState('')
+  const [showCreateTenantDialog, setShowCreateTenantDialog] = useState(false)
 
   // Cache management
   const [dataCache, setDataCache] = useState<{
@@ -125,6 +127,44 @@ export function SuperAdminManagement() {
       toast.error('Failed to load platform data')
     } finally {
       setLoading(false)
+    }
+  }
+
+  const handleEditTenant = async (tenantId: string) => {
+    // TODO: Implement tenant edit dialog
+    console.log('Edit tenant:', tenantId)
+    toast.info('Tenant edit functionality coming soon')
+  }
+
+  const handleTenantSettings = async (tenantId: string) => {
+    // TODO: Implement tenant settings dialog
+    console.log('Tenant settings:', tenantId)
+    toast.info('Tenant settings functionality coming soon')
+  }
+
+  const handleTenantUsers = async (tenantId: string) => {
+    // TODO: Implement tenant users dialog
+    console.log('Tenant users:', tenantId)
+    toast.info('Tenant users management coming soon')
+  }
+
+  const handleToggleTenantStatus = async (tenantId: string, currentStatus: boolean) => {
+    try {
+      setActionLoading(tenantId)
+
+      const response = await tenantsApi.update(tenantId, { is_active: !currentStatus })
+
+      if (response.success) {
+        toast.success(`Tenant ${!currentStatus ? 'activated' : 'deactivated'} successfully`)
+        refreshData()
+      } else {
+        toast.error(response.error?.message || 'Failed to update tenant status')
+      }
+    } catch (error: any) {
+      console.error('Error updating tenant status:', error)
+      toast.error(error.message || 'Failed to update tenant status')
+    } finally {
+      setActionLoading(null)
     }
   }
 
@@ -300,7 +340,9 @@ export function SuperAdminManagement() {
                 className="pl-10 w-64"
               />
             </div>
-            <Button>
+            <Button
+              onClick={() => setShowCreateTenantDialog(true)}
+            >
               <Plus className="h-4 w-4 mr-2" />
               Add Tenant
             </Button>
@@ -370,6 +412,8 @@ export function SuperAdminManagement() {
                           variant="outline"
                           size="sm"
                           className="h-8 px-2"
+                          onClick={() => handleEditTenant(tenant.id)}
+                          disabled={actionLoading === tenant.id}
                         >
                           <Edit className="h-3 w-3" />
                         </Button>
@@ -377,6 +421,8 @@ export function SuperAdminManagement() {
                           variant="outline"
                           size="sm"
                           className="h-8 px-2"
+                          onClick={() => handleTenantSettings(tenant.id)}
+                          disabled={actionLoading === tenant.id}
                         >
                           <Settings className="h-3 w-3" />
                         </Button>
@@ -384,8 +430,19 @@ export function SuperAdminManagement() {
                           variant="outline"
                           size="sm"
                           className="h-8 px-2"
+                          onClick={() => handleTenantUsers(tenant.id)}
+                          disabled={actionLoading === tenant.id}
                         >
                           <Users className="h-3 w-3" />
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="h-8 px-2"
+                          onClick={() => handleToggleTenantStatus(tenant.id, tenant.is_active)}
+                          disabled={actionLoading === tenant.id}
+                        >
+                          {tenant.is_active ? <XCircle className="h-3 w-3" /> : <CheckCircle className="h-3 w-3" />}
                         </Button>
                       </div>
                     </TableCell>
@@ -409,6 +466,12 @@ export function SuperAdminManagement() {
           )}
         </CardContent>
       </Card>
+
+      <CreateTenantDialog
+        open={showCreateTenantDialog}
+        onOpenChange={setShowCreateTenantDialog}
+        onSuccess={refreshData}
+      />
     </div>
   )
 }

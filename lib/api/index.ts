@@ -3,6 +3,8 @@ export { apiClient } from './client'
 export { authApi } from './auth'
 export type * from './auth'
 
+export { adminApi } from './admin'
+
 export { companiesApi } from './companies'
 export type * from './companies'
 

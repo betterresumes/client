@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { Building, Loader2 } from 'lucide-react'
+import { Loader2, Building, Edit } from 'lucide-react'
 import { toast } from 'sonner'
 
 import {
@@ -11,56 +11,59 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
-import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
+import { Switch } from '@/components/ui/switch'
 
 import { organizationsApi } from '@/lib/api/organizations'
 
-interface CreateOrganizationDialogProps {
+interface EditOrganizationDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
-  onOrganizationCreated?: () => void
-  tenantId?: string
+  organization: any
+  onSuccess: () => void
 }
 
-export function CreateOrganizationDialog({
+export function EditOrganizationDialog({
   open,
   onOpenChange,
-  onOrganizationCreated,
-  tenantId
-}: CreateOrganizationDialogProps) {
+  organization,
+  onSuccess
+}: EditOrganizationDialogProps) {
   const [loading, setLoading] = useState(false)
   const [formData, setFormData] = useState({
-    name: '',
-    description: '',
-    domain: '',
-    max_users: 500,
-    default_role: 'org_member',
+    name: organization?.name || '',
+    description: organization?.description || '',
+    domain: organization?.domain || '',
+    is_active: organization?.is_active || true,
+    max_users: organization?.max_users || 500,
+    join_enabled: organization?.join_enabled || true,
+    default_role: organization?.default_role || 'org_member',
+    allow_global_data_access: organization?.allow_global_data_access || false,
   })
 
-  const handleInputChange = (field: string, value: string | number) => {
+  const handleInputChange = (field: string, value: string | boolean | number) => {
     setFormData(prev => ({ ...prev, [field]: value }))
   }
 
   const resetForm = () => {
     setFormData({
-      name: '',
-      description: '',
-      domain: '',
-      max_users: 500,
-      default_role: 'org_member',
+      name: organization?.name || '',
+      description: organization?.description || '',
+      domain: organization?.domain || '',
+      is_active: organization?.is_active || true,
+      max_users: organization?.max_users || 500,
+      join_enabled: organization?.join_enabled || true,
+      default_role: organization?.default_role || 'org_member',
+      allow_global_data_access: organization?.allow_global_data_access || false,
     })
   }
 
   const validateForm = () => {
     if (!formData.name.trim()) {
       toast.error('Organization name is required')
-      return false
-    }
-    if (formData.name.length < 2) {
-      toast.error('Organization name must be at least 2 characters')
       return false
     }
     if (formData.max_users < 1 || formData.max_users > 10000) {
@@ -78,33 +81,29 @@ export function CreateOrganizationDialog({
     try {
       setLoading(true)
 
-      const orgData = {
+      const updateData = {
         name: formData.name,
         description: formData.description || undefined,
         domain: formData.domain || undefined,
+        is_active: formData.is_active,
         max_users: formData.max_users,
+        join_enabled: formData.join_enabled,
         default_role: formData.default_role,
-        tenant_id: tenantId,
+        allow_global_data_access: formData.allow_global_data_access,
       }
 
-      console.log('Creating organization with data:', orgData)
-      const response = await organizationsApi.create(orgData)
+      const response = await organizationsApi.update(organization.id, updateData)
 
       if (response.success) {
-        toast.success(`Organization "${formData.name}" created successfully! 🏢`)
-        resetForm()
+        toast.success(`Organization "${formData.name}" updated successfully`)
         onOpenChange(false)
-        if (onOrganizationCreated) {
-          onOrganizationCreated()
-        }
+        onSuccess()
       } else {
-        console.error('Organization creation failed:', response.error)
-        const errorMessage = response.error?.message || 'Failed to create organization'
-        toast.error(`Failed to create organization: ${errorMessage}`)
+        toast.error(response.error?.message || 'Failed to update organization')
       }
     } catch (error: any) {
-      console.error('Error creating organization:', error)
-      toast.error(error.message || 'Failed to create organization. Please check your inputs and try again.')
+      console.error('Error updating organization:', error)
+      toast.error(error.message || 'Failed to update organization')
     } finally {
       setLoading(false)
     }
@@ -112,19 +111,22 @@ export function CreateOrganizationDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-2xl">
+      <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <Building className="h-5 w-5" />
-            Create New Organization
+            <Edit className="h-5 w-5" />
+            Edit Organization
           </DialogTitle>
           <DialogDescription>
-            Create a new organization within your tenant. This will allow you to manage users and access.
+            Update organization settings and configuration.
           </DialogDescription>
         </DialogHeader>
 
         <form onSubmit={onSubmit} className="space-y-4">
+          {/* Basic Information */}
           <div className="space-y-4">
+            <h3 className="text-lg font-medium">Basic Information</h3>
+
             <div className="space-y-2">
               <Label htmlFor="name">Organization Name *</Label>
               <Input
@@ -148,7 +150,7 @@ export function CreateOrganizationDialog({
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="domain">Domain (optional)</Label>
+              <Label htmlFor="domain">Domain</Label>
               <Input
                 id="domain"
                 placeholder="acme.com"
@@ -156,6 +158,11 @@ export function CreateOrganizationDialog({
                 onChange={(e) => handleInputChange('domain', e.target.value)}
               />
             </div>
+          </div>
+
+          {/* Organization Settings */}
+          <div className="space-y-4">
+            <h3 className="text-lg font-medium">Organization Settings</h3>
 
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
@@ -166,7 +173,7 @@ export function CreateOrganizationDialog({
                   min="1"
                   max="10000"
                   value={formData.max_users}
-                  onChange={(e) => handleInputChange('max_users', parseInt(e.target.value) || 500)}
+                  onChange={(e) => handleInputChange('max_users', parseInt(e.target.value))}
                 />
               </div>
 
@@ -183,6 +190,48 @@ export function CreateOrganizationDialog({
                 </select>
               </div>
             </div>
+
+            {/* Toggles */}
+            <div className="space-y-4">
+              <div className="flex flex-row items-center justify-between rounded-lg border p-4">
+                <div className="space-y-0.5">
+                  <Label className="text-base">Active Status</Label>
+                  <div className="text-sm text-muted-foreground">
+                    Allow users to access this organization
+                  </div>
+                </div>
+                <Switch
+                  checked={formData.is_active}
+                  onCheckedChange={(checked) => handleInputChange('is_active', checked)}
+                />
+              </div>
+
+              <div className="flex flex-row items-center justify-between rounded-lg border p-4">
+                <div className="space-y-0.5">
+                  <Label className="text-base">Enable Join Token</Label>
+                  <div className="text-sm text-muted-foreground">
+                    Allow users to join using the organization's join token
+                  </div>
+                </div>
+                <Switch
+                  checked={formData.join_enabled}
+                  onCheckedChange={(checked) => handleInputChange('join_enabled', checked)}
+                />
+              </div>
+
+              <div className="flex flex-row items-center justify-between rounded-lg border p-4">
+                <div className="space-y-0.5">
+                  <Label className="text-base">Global Data Access</Label>
+                  <div className="text-sm text-muted-foreground">
+                    Allow organization to access platform-wide data
+                  </div>
+                </div>
+                <Switch
+                  checked={formData.allow_global_data_access}
+                  onCheckedChange={(checked) => handleInputChange('allow_global_data_access', checked)}
+                />
+              </div>
+            </div>
           </div>
 
           <div className="flex justify-end space-x-2 pt-4">
@@ -196,7 +245,7 @@ export function CreateOrganizationDialog({
             </Button>
             <Button type="submit" disabled={loading}>
               {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              Create Organization
+              Update Organization
             </Button>
           </div>
         </form>
