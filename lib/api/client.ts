@@ -108,17 +108,29 @@ class ApiClient {
 
   private formatError(error: any): ApiResponse<never> {
     if (error.response) {
+      // Log detailed error for debugging
+      console.error('API Error Response:', {
+        status: error.response.status,
+        statusText: error.response.statusText,
+        data: error.response.data,
+        url: error.config?.url,
+        method: error.config?.method
+      })
+
       return {
         success: false,
         error: {
           code: error.response.status,
-          message: error.response.data?.message || error.response.statusText,
-          details: error.response.data?.details,
+          message: error.response.data?.detail ||
+            error.response.data?.message ||
+            error.response.statusText,
+          details: error.response.data?.details || error.response.data,
         },
       }
     }
 
     if (error.request) {
+      console.error('Network Error:', error.request)
       return {
         success: false,
         error: {
@@ -128,6 +140,7 @@ class ApiClient {
       }
     }
 
+    console.error('Unexpected Error:', error)
     return {
       success: false,
       error: {

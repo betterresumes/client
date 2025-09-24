@@ -9,6 +9,7 @@ import {
   Edit,
   Trash2,
   Users,
+  UserPlus,
   Calendar,
   Globe,
   CheckCircle,
@@ -16,6 +17,7 @@ import {
   RefreshCw
 } from 'lucide-react'
 import { format } from 'date-fns'
+import { toast } from 'sonner'
 
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -47,6 +49,8 @@ import {
 import { organizationsApi } from '@/lib/api/organizations'
 import { EnhancedOrganizationResponse } from '@/lib/types/tenant'
 import { CreateOrganizationDialog } from '@/components/admin/create-organization-dialog'
+import { InviteUserDialog } from '@/components/admin/invite-user-dialog'
+import { useAuthStore } from '@/lib/stores/auth-store'
 
 interface OrganizationManagementTabProps {
   onStatsUpdate?: (stats: any) => void
@@ -58,7 +62,11 @@ export function OrganizationManagementTab({ onStatsUpdate }: OrganizationManagem
   const [searchTerm, setSearchTerm] = useState('')
   const [statusFilter, setStatusFilter] = useState<string>('all')
   const [showCreateDialog, setShowCreateDialog] = useState(false)
+  const [showInviteDialog, setShowInviteDialog] = useState(false)
+  const [selectedOrg, setSelectedOrg] = useState<EnhancedOrganizationResponse | null>(null)
   const [actionLoading, setActionLoading] = useState<string | null>(null)
+
+  const { user, isOrgAdmin, canManageOrganizations } = useAuthStore()
 
   useEffect(() => {
     loadOrganizations()
@@ -98,18 +106,29 @@ export function OrganizationManagementTab({ onStatsUpdate }: OrganizationManagem
         case 'activate':
           const activateResponse = await organizationsApi.update(orgId, { is_active: true })
           if (activateResponse.success) {
+            toast.success('Organization activated successfully')
             await loadOrganizations()
+          } else {
+            toast.error('Failed to activate organization')
           }
           break
         case 'deactivate':
           const deactivateResponse = await organizationsApi.update(orgId, { is_active: false })
           if (deactivateResponse.success) {
+            toast.success('Organization deactivated successfully')
             await loadOrganizations()
+          } else {
+            toast.error('Failed to deactivate organization')
           }
           break
         case 'delete':
-          // This would typically be a soft delete or require confirmation
-          console.log('Delete organization:', orgId)
+          const deleteResponse = await organizationsApi.delete(orgId)
+          if (deleteResponse.success) {
+            toast.success('Organization deleted successfully')
+            await loadOrganizations()
+          } else {
+            toast.error('Failed to delete organization')
+          }
           break
       }
     } catch (error) {
@@ -150,10 +169,12 @@ export function OrganizationManagementTab({ onStatsUpdate }: OrganizationManagem
             <RefreshCw className={`h-4 w-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
             Refresh
           </Button>
-          <Button onClick={() => setShowCreateDialog(true)}>
-            <Plus className="h-4 w-4 mr-2" />
-            Add Organization
-          </Button>
+          {canManageOrganizations() && (
+            <Button onClick={() => setShowCreateDialog(true)}>
+              <Plus className="h-4 w-4 mr-2" />
+              Add Organization
+            </Button>
+          )}
         </div>
       </div>
 
@@ -208,135 +229,156 @@ export function OrganizationManagementTab({ onStatsUpdate }: OrganizationManagem
               ))}
             </div>
           ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Organization</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Members</TableHead>
-                  <TableHead>Created</TableHead>
-                  <TableHead>Website</TableHead>
-                  <TableHead className="text-right">Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {filteredOrganizations.map((org) => (
-                  <TableRow key={org.id}>
-                    <TableCell>
-                      <div className="flex items-center space-x-3">
-                        <div className="flex-shrink-0">
-                          <div className="h-10 w-10 bg-blue-600 rounded flex items-center justify-center">
-                            <Building className="h-5 w-5 text-white" />
-                          </div>
-                        </div>
-                        <div>
-                          <div className="font-medium">{org.name}</div>
-                          <div className="text-sm text-muted-foreground">
-                            {org.description || 'No description'}
-                          </div>
-                        </div>
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      {org.is_active ? (
-                        <Badge variant="outline" className="bg-green-100 text-green-800 border-green-200">
-                          <CheckCircle className="h-3 w-3 mr-1" />
-                          Active
-                        </Badge>
-                      ) : (
-                        <Badge variant="outline" className="bg-red-100 text-red-800 border-red-200">
-                          <XCircle className="h-3 w-3 mr-1" />
-                          Inactive
-                        </Badge>
-                      )}
-                    </TableCell>
-                    <TableCell>
-                      <div className="flex items-center text-sm">
-                        <Users className="h-4 w-4 mr-1 text-gray-400" />
-                        {org.total_members || 0}
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      <div className="text-sm">
-                        {format(new Date(org.created_at), 'MMM dd, yyyy')}
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      {org.domain ? (
-                        <a
-                          href={`https://${org.domain}`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-sm text-blue-600 hover:text-blue-800 flex items-center"
-                        >
-                          <Globe className="h-4 w-4 mr-1" />
-                          Visit
-                        </a>
-                      ) : (
-                        <span className="text-sm text-gray-400">-</span>
-                      )}
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            disabled={actionLoading === org.id}
-                          >
-                            {actionLoading === org.id ? (
-                              <RefreshCw className="h-4 w-4 animate-spin" />
-                            ) : (
-                              <MoreVertical className="h-4 w-4" />
-                            )}
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
-                          <DropdownMenuItem>
-                            <Edit className="mr-2 h-4 w-4" />
-                            Edit Organization
-                          </DropdownMenuItem>
-                          <DropdownMenuItem>
-                            <Users className="mr-2 h-4 w-4" />
-                            View Members
-                          </DropdownMenuItem>
-                          <DropdownMenuItem
-                            onClick={() => handleOrganizationAction(
-                              org.id,
-                              org.is_active ? 'deactivate' : 'activate'
-                            )}
-                          >
-                            {org.is_active ? (
-                              <>
-                                <XCircle className="mr-2 h-4 w-4" />
-                                Deactivate
-                              </>
-                            ) : (
-                              <>
-                                <CheckCircle className="mr-2 h-4 w-4" />
-                                Activate
-                              </>
-                            )}
-                          </DropdownMenuItem>
-                          <DropdownMenuSeparator />
-                          <DropdownMenuItem
-                            className="text-red-600"
-                            onClick={() => {
-                              if (confirm('Are you sure you want to delete this organization?')) {
-                                handleOrganizationAction(org.id, 'delete')
-                              }
-                            }}
-                          >
-                            <Trash2 className="mr-2 h-4 w-4" />
-                            Delete Organization
-                          </DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                    </TableCell>
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="min-w-[200px]">Organization</TableHead>
+                    <TableHead className="min-w-[100px]">Status</TableHead>
+                    <TableHead className="min-w-[80px]">Members</TableHead>
+                    <TableHead className="min-w-[100px]">Created</TableHead>
+                    <TableHead className="min-w-[120px]">Website</TableHead>
+                    <TableHead className="text-right min-w-[80px]">Actions</TableHead>
                   </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+                </TableHeader>
+                <TableBody>
+                  {filteredOrganizations.map((org) => (
+                    <TableRow key={org.id}>
+                      <TableCell>
+                        <div className="flex items-center space-x-3">
+                          <div className="flex-shrink-0">
+                            <div className="h-10 w-10 bg-blue-600 rounded flex items-center justify-center">
+                              <Building className="h-5 w-5 text-white" />
+                            </div>
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <div className="font-medium truncate" title={org.name}>{org.name}</div>
+                            <div className="text-sm text-muted-foreground truncate" title={org.description || 'No description'}>
+                              {org.description || 'No description'}
+                            </div>
+                          </div>
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        {org.is_active ? (
+                          <Badge variant="outline" className="bg-green-100 text-green-800 border-green-200">
+                            <CheckCircle className="h-3 w-3 mr-1" />
+                            Active
+                          </Badge>
+                        ) : (
+                          <Badge variant="outline" className="bg-red-100 text-red-800 border-red-200">
+                            <XCircle className="h-3 w-3 mr-1" />
+                            Inactive
+                          </Badge>
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex items-center text-sm">
+                          <Users className="h-4 w-4 mr-1 text-gray-400" />
+                          {org.total_members || 0}
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <div className="text-sm">
+                          {format(new Date(org.created_at), 'MMM dd, yyyy')}
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        {org.domain ? (
+                          <a
+                            href={`https://${org.domain}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-sm text-blue-600 hover:text-blue-800 flex items-center truncate max-w-[120px]"
+                            title={org.domain}
+                          >
+                            <Globe className="h-4 w-4 mr-1 flex-shrink-0" />
+                            <span className="truncate">{org.domain}</span>
+                          </a>
+                        ) : (
+                          <span className="text-sm text-gray-400">-</span>
+                        )}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              disabled={actionLoading === org.id}
+                            >
+                              {actionLoading === org.id ? (
+                                <RefreshCw className="h-4 w-4 animate-spin" />
+                              ) : (
+                                <MoreVertical className="h-4 w-4" />
+                              )}
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            {(canManageOrganizations() ||
+                              (isOrgAdmin() && user?.organization_id === org.id)) && (
+                                <>
+                                  <DropdownMenuItem>
+                                    <Edit className="mr-2 h-4 w-4" />
+                                    Edit Organization
+                                  </DropdownMenuItem>
+                                  <DropdownMenuItem
+                                    onClick={() => {
+                                      setSelectedOrg(org)
+                                      setShowInviteDialog(true)
+                                    }}
+                                  >
+                                    <UserPlus className="mr-2 h-4 w-4" />
+                                    Invite Users
+                                  </DropdownMenuItem>
+                                </>
+                              )}
+                            <DropdownMenuItem>
+                              <Users className="mr-2 h-4 w-4" />
+                              View Members
+                            </DropdownMenuItem>
+                            {canManageOrganizations() && (
+                              <DropdownMenuItem
+                                onClick={() => handleOrganizationAction(
+                                  org.id,
+                                  org.is_active ? 'deactivate' : 'activate'
+                                )}
+                              >
+                                {org.is_active ? (
+                                  <>
+                                    <XCircle className="mr-2 h-4 w-4" />
+                                    Deactivate
+                                  </>
+                                ) : (
+                                  <>
+                                    <CheckCircle className="mr-2 h-4 w-4" />
+                                    Activate
+                                  </>
+                                )}
+                              </DropdownMenuItem>
+                            )}
+                            <DropdownMenuSeparator />
+                            {canManageOrganizations() && (
+                              <DropdownMenuItem
+                                className="text-red-600"
+                                onClick={() => {
+                                  if (confirm('Are you sure you want to delete this organization?')) {
+                                    handleOrganizationAction(org.id, 'delete')
+                                  }
+                                }}
+                              >
+                                <Trash2 className="mr-2 h-4 w-4" />
+                                Delete Organization
+                              </DropdownMenuItem>
+                            )}
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
           )}
 
           {!loading && filteredOrganizations.length === 0 && (
@@ -362,6 +404,17 @@ export function OrganizationManagementTab({ onStatsUpdate }: OrganizationManagem
         onOpenChange={setShowCreateDialog}
         onOrganizationCreated={loadOrganizations}
       />
+
+      {/* Invite User Dialog */}
+      {selectedOrg && (
+        <InviteUserDialog
+          open={showInviteDialog}
+          onOpenChange={setShowInviteDialog}
+          organizationId={selectedOrg.id}
+          organizationName={selectedOrg.name}
+          onUsersInvited={loadOrganizations}
+        />
+      )}
     </div>
   )
 }

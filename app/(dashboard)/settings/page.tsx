@@ -47,7 +47,11 @@ import {
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { toast } from 'sonner'
 
-import { useAuth } from '@/lib/stores/auth'
+import { useAuthStore } from '@/lib/stores/auth-store'
+import { OrgAdminManagement } from '@/components/admin/org-admin-management'
+import { JoinOrganization } from '@/components/admin/join-organization'
+import { TenantAdminManagement } from '@/components/admin/tenant-admin-management'
+import { SuperAdminManagement } from '@/components/admin/super-admin-management'
 import { authApi } from '@/lib/api/auth'
 import { organizationsApi } from '@/lib/api/organizations'
 import { tenantsApi } from '@/lib/api/tenants'
@@ -129,7 +133,7 @@ type TenantDetail = ComprehensiveTenantResponse
 
 export default function SettingsPage() {
   const router = useRouter()
-  const { user, setUser } = useAuth()
+  const { user, updateUser } = useAuthStore()
   const [profile, setProfile] = useState<UserProfile | null>(null)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -308,7 +312,7 @@ export default function SettingsPage() {
         }
         setProfile(profile)
         if (user) {
-          setUser({
+          updateUser({
             ...userData,
             full_name: userData.full_name || '',
           })
@@ -617,9 +621,10 @@ export default function SettingsPage() {
       </div>
 
       <Tabs defaultValue="user-details" className="space-y-6">
-        <TabsList className={`grid ${profile.role === UserRole.SUPER_ADMIN ? 'grid-cols-3' :
+        <TabsList className={`ml-[3em]  w-grid ${profile.role === UserRole.SUPER_ADMIN ? 'grid-cols-3' :
           profile.role === UserRole.TENANT_ADMIN ? 'grid-cols-3' :
-            'grid-cols-2'
+            profile.role === 'org_admin' ? 'grid-cols-3' :
+              'grid-cols-3'
           }`}>
           <TabsTrigger value="user-details">
             <User className="h-4 w-4 mr-2" />
@@ -644,6 +649,22 @@ export default function SettingsPage() {
               Organization Management
             </TabsTrigger>
           )}
+
+          {profile.role === UserRole.ORG_ADMIN && profile.organization_id && (
+            <TabsTrigger value="org-admin-management">
+              <Settings className="h-4 w-4 mr-2" />
+              My Organization
+            </TabsTrigger>
+          )}
+
+          {/* Join Organization tab for regular users who are not already in an organization */}
+          {![UserRole.SUPER_ADMIN, UserRole.TENANT_ADMIN, UserRole.ORG_ADMIN].includes(profile.role as UserRole) &&
+            !profile.organization_id && (
+              <TabsTrigger value="join-organization">
+                <Building className="h-4 w-4 mr-2" />
+                Join Organization
+              </TabsTrigger>
+            )}
         </TabsList>
 
         {/* User Details Tab */}
@@ -866,447 +887,36 @@ export default function SettingsPage() {
         {/* Tenant Management Tab (Super Admin only) */}
         {profile.role === UserRole.SUPER_ADMIN && (
           <TabsContent value="tenant-management">
-            <div className="space-y-6">
-              {/* Header */}
-              <div className="flex items-center justify-between">
-                <div>
-                  <h2 className="text-2xl font-bold text-gray-900">Tenant Management</h2>
-                  <p className="text-gray-500">Create and manage tenants</p>
-                </div>
-
-                <Dialog open={showCreateTenantDialog} onOpenChange={setShowCreateTenantDialog}>
-                  <DialogTrigger asChild>
-                    <Button size="lg" className="bg-black hover:bg-gray-800">
-                      <Plus className="h-5 w-5 mr-2" />
-                      Create Tenant
-                    </Button>
-                  </DialogTrigger>
-                  <DialogContent className="max-w-2xl">
-                    <DialogHeader>
-                      <DialogTitle>Create New Tenant</DialogTitle>
-                      <DialogDescription>
-                        Create a new tenant and assign an admin user
-                      </DialogDescription>
-                    </DialogHeader>
-                    <form onSubmit={createTenantForm.handleSubmit(onCreateTenantSubmit)} className="space-y-4">
-                      <div className="grid gap-4 md:grid-cols-2">
-                        <div>
-                          <Label htmlFor="tenant_name">Tenant Name</Label>
-                          <Input
-                            id="tenant_name"
-                            {...createTenantForm.register('name')}
-                            placeholder="Enter tenant name"
-                          />
-                          {createTenantForm.formState.errors.name && (
-                            <p className="text-sm text-red-600 mt-1">
-                              {createTenantForm.formState.errors.name.message}
-                            </p>
-                          )}
-                        </div>
-                        <div>
-                          <Label htmlFor="admin_email">Admin Email</Label>
-                          <Input
-                            id="admin_email"
-                            type="email"
-                            {...createTenantForm.register('admin_email')}
-                            placeholder="admin@example.com"
-                          />
-                          {createTenantForm.formState.errors.admin_email && (
-                            <p className="text-sm text-red-600 mt-1">
-                              {createTenantForm.formState.errors.admin_email.message}
-                            </p>
-                          )}
-                        </div>
-                      </div>
-
-                      <div>
-                        <Label htmlFor="tenant_description">Description (Optional)</Label>
-                        <Input
-                          id="tenant_description"
-                          {...createTenantForm.register('description')}
-                          placeholder="Enter tenant description"
-                        />
-                      </div>
-
-                      <div className="grid gap-4 md:grid-cols-3">
-                        <div>
-                          <Label htmlFor="admin_first_name">Admin First Name</Label>
-                          <Input
-                            id="admin_first_name"
-                            {...createTenantForm.register('admin_first_name')}
-                            placeholder="John"
-                          />
-                          {createTenantForm.formState.errors.admin_first_name && (
-                            <p className="text-sm text-red-600 mt-1">
-                              {createTenantForm.formState.errors.admin_first_name.message}
-                            </p>
-                          )}
-                        </div>
-                        <div>
-                          <Label htmlFor="admin_last_name">Admin Last Name</Label>
-                          <Input
-                            id="admin_last_name"
-                            {...createTenantForm.register('admin_last_name')}
-                            placeholder="Doe"
-                          />
-                          {createTenantForm.formState.errors.admin_last_name && (
-                            <p className="text-sm text-red-600 mt-1">
-                              {createTenantForm.formState.errors.admin_last_name.message}
-                            </p>
-                          )}
-                        </div>
-                        <div>
-                          <Label htmlFor="admin_password">Admin Password</Label>
-                          <Input
-                            id="admin_password"
-                            type="password"
-                            {...createTenantForm.register('admin_password')}
-                            placeholder="Password"
-                          />
-                          {createTenantForm.formState.errors.admin_password && (
-                            <p className="text-sm text-red-600 mt-1">
-                              {createTenantForm.formState.errors.admin_password.message}
-                            </p>
-                          )}
-                        </div>
-                      </div>
-
-                      <DialogFooter>
-                        <Button type="button" variant="outline" onClick={() => setShowCreateTenantDialog(false)}>
-                          Cancel
-                        </Button>
-                        <Button type="submit" disabled={saving}>
-                          {saving ? 'Creating...' : 'Create Tenant'}
-                        </Button>
-                      </DialogFooter>
-                    </form>
-                  </DialogContent>
-                </Dialog>
-              </div>
-
-              {/* Tenants Grid */}
-              {tenants.length === 0 ? (
-                <div className="text-center py-16">
-                  <div className="w-20 h-20 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-6">
-                    <Building className="h-10 w-10 text-gray-400" />
-                  </div>
-                  <h3 className="text-xl font-semibold text-gray-900 mb-3">No Tenants Found</h3>
-                  <p className="text-gray-500 mb-8 max-w-md mx-auto">
-                    Get started by creating your first tenant. Tenants help organize your organizations and users.
-                  </p>
-                  <Button
-                    onClick={() => setShowCreateTenantDialog(true)}
-                    size="lg"
-                    className="inline-flex items-center gap-2"
-                  >
-                    <Plus className="h-5 w-5" />
-                    Create Your First Tenant
-                  </Button>
-                </div>
-              ) : (
-                <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-                  {tenants.map((tenant) => (
-                    <Card
-                      key={tenant.id}
-                      className="border cursor-pointer"
-                      onClick={() => loadTenantDetails(tenant.id)}
-                    >
-                      <CardHeader className="pb-4">
-                        <div className="flex items-start justify-between">
-                          <div className="flex items-start gap-4 flex-1">
-                            <div className="w-12 h-12 rounded-xl flex items-center justify-center ">
-                              <Building className="h-6 w-6 text-gray-600" />
-                            </div>
-                            <div className="flex-1 min-w-0">
-                              <CardTitle className="text-xl font-bold truncate text-gray-900 group-hover:text-gray-700 transition-colors">
-                                {tenant.name}
-                              </CardTitle>
-                              {tenant.description ? (
-                                <p className="text-sm text-gray-600 mt-2 line-clamp-2 leading-relaxed">
-                                  {tenant.description}
-                                </p>
-                              ) : (
-                                <p className="text-sm text-gray-400 mt-2 italic">No description</p>
-                              )}
-                            </div>
-                          </div>
-                        </div>
-                      </CardHeader>
-                      <CardContent className="pt-0">
-                        <div className="space-y-4">
-                          <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                            <div className="flex items-center gap-3 text-gray-700">
-                              <Building2 className="h-5 w-5" />
-                              <div>
-                                <span className="text-lg font-bold">{tenant.total_organizations || 0}</span>
-                                <span className="text-sm text-gray-500 ml-2">
-                                  {(tenant.total_organizations || 0) === 1 ? 'Organization' : 'Organizations'}
-                                </span>
-                              </div>
-                            </div>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              className="h-8 w-8 p-0 opacity-0 group-hover:opacity-100 transition-opacity"
-                              onClick={(e) => {
-                                e.stopPropagation()
-                                // Add edit functionality here
-                              }}
-                            >
-                              <Edit className="h-4 w-4" />
-                            </Button>
-                          </div>
-                          <div className="flex items-center justify-between text-xs text-gray-400 pt-2 border-t">
-                            <span className="font-medium">Click to view details</span>
-                            <span className="text-gray-300">•••</span>
-                          </div>
-                        </div>
-                      </CardContent>
-                    </Card>
-                  ))}
-                </div>
-              )}
-            </div>
+            <SuperAdminManagement />
           </TabsContent>
         )}
 
         {/* Organization Management Tab (Tenant Admin only) */}
-        {profile.role === UserRole.TENANT_ADMIN && (
+        {profile.role === UserRole.TENANT_ADMIN && profile.tenant_id && (
           <TabsContent value="organization-management">
-            <div className="space-y-6">
-              {/* Header */}
-              <div className="flex items-center justify-between">
-                <div>
-                  <h2 className="text-2xl font-bold text-gray-900">Organization Management</h2>
-                  <p className="text-gray-500">Create and manage organizations</p>
-                </div>
-
-                <Dialog open={showCreateOrganizationDialog} onOpenChange={setShowCreateOrganizationDialog}>
-                  <DialogTrigger asChild>
-                    <Button size="lg" className="bg-blue-600 hover:bg-blue-700">
-                      <Plus className="h-5 w-5 mr-2" />
-                      Create Organization
-                    </Button>
-                  </DialogTrigger>
-                  <DialogContent className="max-w-2xl">
-                    <DialogHeader>
-                      <DialogTitle>Create New Organization</DialogTitle>
-                      <DialogDescription>
-                        Create a new organization and assign an admin user
-                      </DialogDescription>
-                    </DialogHeader>
-                    <form onSubmit={createOrganizationForm.handleSubmit(onCreateOrganizationSubmit)} className="space-y-4">
-                      <div className="grid gap-4 md:grid-cols-2">
-                        <div>
-                          <Label htmlFor="org_name">Organization Name</Label>
-                          <Input
-                            id="org_name"
-                            {...createOrganizationForm.register('name')}
-                            placeholder="Enter organization name"
-                          />
-                          {createOrganizationForm.formState.errors.name && (
-                            <p className="text-sm text-red-600 mt-1">
-                              {createOrganizationForm.formState.errors.name.message}
-                            </p>
-                          )}
-                        </div>
-                        <div>
-                          <Label htmlFor="org_domain">Domain (Optional)</Label>
-                          <Input
-                            id="org_domain"
-                            {...createOrganizationForm.register('domain')}
-                            placeholder="company.com"
-                          />
-                        </div>
-                      </div>
-
-                      <div>
-                        <Label htmlFor="org_description">Description (Optional)</Label>
-                        <Input
-                          id="org_description"
-                          {...createOrganizationForm.register('description')}
-                          placeholder="Enter organization description"
-                        />
-                      </div>
-
-                      <div>
-                        <Label htmlFor="max_users">Max Users (Optional)</Label>
-                        <Input
-                          id="max_users"
-                          type="number"
-                          min="1"
-                          {...createOrganizationForm.register('max_users', { valueAsNumber: true })}
-                          placeholder="500"
-                        />
-                      </div>
-
-                      <Separator />
-                      <h4 className="font-medium">Organization Admin Details</h4>
-
-                      <div className="grid gap-4 md:grid-cols-2">
-                        <div>
-                          <Label htmlFor="org_admin_email">Admin Email</Label>
-                          <Input
-                            id="org_admin_email"
-                            type="email"
-                            {...createOrganizationForm.register('admin_email')}
-                            placeholder="admin@example.com"
-                          />
-                          {createOrganizationForm.formState.errors.admin_email && (
-                            <p className="text-sm text-red-600 mt-1">
-                              {createOrganizationForm.formState.errors.admin_email.message}
-                            </p>
-                          )}
-                        </div>
-                        <div>
-                          <Label htmlFor="org_admin_password">Admin Password</Label>
-                          <Input
-                            id="org_admin_password"
-                            type="password"
-                            {...createOrganizationForm.register('admin_password')}
-                            placeholder="Password"
-                          />
-                          {createOrganizationForm.formState.errors.admin_password && (
-                            <p className="text-sm text-red-600 mt-1">
-                              {createOrganizationForm.formState.errors.admin_password.message}
-                            </p>
-                          )}
-                        </div>
-                      </div>
-
-                      <div className="grid gap-4 md:grid-cols-2">
-                        <div>
-                          <Label htmlFor="org_admin_first_name">Admin First Name</Label>
-                          <Input
-                            id="org_admin_first_name"
-                            {...createOrganizationForm.register('admin_first_name')}
-                            placeholder="John"
-                          />
-                          {createOrganizationForm.formState.errors.admin_first_name && (
-                            <p className="text-sm text-red-600 mt-1">
-                              {createOrganizationForm.formState.errors.admin_first_name.message}
-                            </p>
-                          )}
-                        </div>
-                        <div>
-                          <Label htmlFor="org_admin_last_name">Admin Last Name</Label>
-                          <Input
-                            id="org_admin_last_name"
-                            {...createOrganizationForm.register('admin_last_name')}
-                            placeholder="Doe"
-                          />
-                          {createOrganizationForm.formState.errors.admin_last_name && (
-                            <p className="text-sm text-red-600 mt-1">
-                              {createOrganizationForm.formState.errors.admin_last_name.message}
-                            </p>
-                          )}
-                        </div>
-                      </div>
-
-                      <DialogFooter>
-                        <Button type="button" variant="outline" onClick={() => setShowCreateOrganizationDialog(false)}>
-                          Cancel
-                        </Button>
-                        <Button type="submit" disabled={saving}>
-                          {saving ? 'Creating...' : 'Create Organization'}
-                        </Button>
-                      </DialogFooter>
-                    </form>
-                  </DialogContent>
-                </Dialog>
-              </div>
-
-              {/* Organizations Grid */}
-              {organizations.length === 0 ? (
-                <div className="text-center py-16">
-                  <div className="w-20 h-20 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-6">
-                    <Building2 className="h-10 w-10 text-gray-400" />
-                  </div>
-                  <h3 className="text-xl font-semibold text-gray-900 mb-3">No Organizations Found</h3>
-                  <p className="text-gray-500 mb-8 max-w-md mx-auto">
-                    Get started by creating your first organization. Organizations help manage teams and projects.
-                  </p>
-                  <Button
-                    onClick={() => setShowCreateOrganizationDialog(true)}
-                    size="lg"
-                    className="inline-flex items-center gap-2"
-                  >
-                    <Plus className="h-5 w-5" />
-                    Create Your First Organization
-                  </Button>
-                </div>
-              ) : (
-                <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-                  {organizations.map((org) => (
-                    <Card
-                      key={org.id}
-                      className="border cursor-pointer hover:shadow-lg transition-shadow"
-                      onClick={() => loadOrganizationDetails(org.id)}
-                    >
-                      <CardHeader className="pb-4">
-                        <div className="flex items-start justify-between">
-                          <div className="flex items-start gap-4 flex-1">
-                            <div className="w-12 h-12 rounded-xl flex items-center justify-center bg-blue-50">
-                              <Building2 className="h-6 w-6 text-blue-600" />
-                            </div>
-                            <div className="flex-1 min-w-0">
-                              <CardTitle className="text-xl font-bold truncate text-gray-900">
-                                {org.name}
-                              </CardTitle>
-                              {org.description ? (
-                                <p className="text-sm text-gray-600 mt-2 line-clamp-2 leading-relaxed">
-                                  {org.description}
-                                </p>
-                              ) : (
-                                <p className="text-sm text-gray-400 mt-2 italic">No description</p>
-                              )}
-                            </div>
-                          </div>
-                          <Badge
-                            variant={org.is_active ? 'default' : 'secondary'}
-                            className="shrink-0 ml-3"
-                          >
-                            {org.is_active ? 'Active' : 'Inactive'}
-                          </Badge>
-                        </div>
-                      </CardHeader>
-                      <CardContent className="pt-0">
-                        <div className="space-y-4">
-                          <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                            <div className="flex items-center gap-3 text-gray-700">
-                              <Users className="h-5 w-5" />
-                              <div>
-                                <span className="text-lg font-bold">{org.total_users || 0}</span>
-                                <span className="text-sm text-gray-500 ml-2">
-                                  {(org.total_users || 0) === 1 ? 'Member' : 'Members'}
-                                </span>
-                              </div>
-                            </div>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              className="h-8 w-8 p-0 opacity-0 group-hover:opacity-100 transition-opacity"
-                              onClick={(e) => {
-                                e.stopPropagation()
-                                // Add edit functionality here
-                              }}
-                            >
-                              <Edit className="h-4 w-4" />
-                            </Button>
-                          </div>
-                          <div className="flex items-center justify-between text-xs text-gray-400 pt-2 border-t">
-                            <span className="font-medium">Click to manage members</span>
-                            <span className="text-gray-300">•••</span>
-                          </div>
-                        </div>
-                      </CardContent>
-                    </Card>
-                  ))}
-                </div>
-              )}
-            </div>
+            <TenantAdminManagement tenantId={profile.tenant_id} />
           </TabsContent>
         )}
+
+        {/* Organization Admin Management Tab */}
+        {profile.role === UserRole.ORG_ADMIN && profile.organization_id && (
+          <TabsContent value="org-admin-management">
+            <OrgAdminManagement organizationId={profile.organization_id} />
+          </TabsContent>
+        )}
+        {/* Join Organization Tab for Regular Users */}
+        {![UserRole.SUPER_ADMIN, UserRole.TENANT_ADMIN, UserRole.ORG_ADMIN].includes(profile.role as UserRole) &&
+          !profile.organization_id && (
+            <TabsContent value="join-organization">
+              <JoinOrganization
+                onJoinSuccess={() => {
+                  // Refresh the profile to get updated organization info
+                  loadProfile()
+                  toast.success('Welcome to your new organization!')
+                }}
+              />
+            </TabsContent>
+          )}
       </Tabs>
 
       {/* Tenant Detail Dialog */}

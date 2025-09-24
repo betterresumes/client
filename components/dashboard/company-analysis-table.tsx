@@ -561,23 +561,23 @@ export function CompanyAnalysisTable({
                     <TableRow key={index}>
                       <TableCell className='pl-5'>
                         <div>
-                          <div className="font-semibold text-gray-900 dark:text-white font-bricolage">{item.company_symbol}</div>
-                          <div className="text-sm text-gray-500 font-bricolage">{item.company_name}</div>
+                          <div className="font-semibold text-gray-900 dark:text-white font-bricolage text-sm">{item.company_symbol}</div>
+                          <div className="text-xs text-gray-500 font-bricolage">{item.company_name}</div>
                         </div>
                       </TableCell>
-                      <TableCell className="font-bricolage">{item.sector || 'N/A'}</TableCell>
+                      <TableCell className="font-bricolage text-sm">{item.sector || 'N/A'}</TableCell>
                       <TableCell className='pl-6'>
-                        <Badge className={`${getRiskBadgeColor(item.risk_level || item.risk_category || 'unknown')} font-bricolage`}>
+                        <Badge className={`${getRiskBadgeColor(item.risk_level || item.risk_category || 'unknown')} font-bricolage text-xs`}>
                           {(getPredictionProbability(item) * 100).toFixed(2)}%
                         </Badge>
                       </TableCell>
                       <TableCell className='pl-10'>
-                        <Badge className={`${getRiskBadgeColor(item.risk_level || item.risk_category || 'unknown')} font-bricolage`}>
+                        <Badge className={`${getRiskBadgeColor(item.risk_level || item.risk_category || 'unknown')} font-bricolage text-xs`}>
                           {item.risk_level || item.risk_category || 'Unknown'}
                         </Badge>
                       </TableCell>
                       <TableCell>
-                        <Badge variant="outline" className="text-blue-600 font-bricolage">
+                        <Badge variant="outline" className="text-blue-600 font-bricolage text-xs">
                           {formatPredictionDate(item)}
                         </Badge>
                       </TableCell>
@@ -585,12 +585,12 @@ export function CompanyAnalysisTable({
                         <div className="text-xs space-y-1 font-bricolage">
                           {item.financial_ratios ? (
                             <>
-                              <div>ROA: {item.financial_ratios.roa || 'N/A'}</div>
-                              <div>LTD/TC: {item.financial_ratios.ltdtc || 'N/A'}</div>
-                              <div>EBIT/Int: {item.financial_ratios.ebitint || 'N/A'}</div>
+                              <div className="text-xs">ROA: {item.financial_ratios.roa || 'N/A'}</div>
+                              <div className="text-xs">LTD/TC: {item.financial_ratios.ltdtc || 'N/A'}</div>
+                              <div className="text-xs">EBIT/Int: {item.financial_ratios.ebitint || 'N/A'}</div>
                             </>
                           ) : (
-                            <div>No ratios available</div>
+                            <div className="text-xs">No ratios available</div>
                           )}
                         </div>
                       </TableCell>

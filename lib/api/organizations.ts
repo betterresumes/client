@@ -116,5 +116,11 @@ export const organizationsApi = {
     remove: async (orgId: string, email: string): Promise<ApiResponse<void>> => {
       return apiClient.delete<void>(`/organizations/${orgId}/whitelist/${email}`);
     }
+  },
+
+  // Join an organization using join token
+  join: async (data: { email: string; join_token: string }): Promise<ApiResponse<any>> => {
+    // Use the auth/join endpoint
+    return await apiClient.post<any>('/auth/join', data);
   }
 };
