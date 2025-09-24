@@ -12,9 +12,6 @@ import type {
   UserResponse
 } from '../types/auth'
 
-/**
- * Auth query keys for cache management
- */
 export const authKeys = {
   all: ['auth'] as const,
   profile: () => [...authKeys.all, 'profile'] as const,
@@ -22,9 +19,7 @@ export const authKeys = {
   user: (id: string) => [...authKeys.users(), id] as const,
 } as const
 
-/**
- * Login mutation hook
- */
+
 export function useLogin() {
   const { setAuth } = useAuthStore()
 
@@ -37,11 +32,9 @@ export function useLogin() {
       return response.data
     },
     onSuccess: (data) => {
-      // Extract user from response or get from separate call
       if (data.user) {
         setAuth(data.access_token, data.refresh_token || '', data.user)
       } else {
-        // If user not included, we'll need to fetch it separately
         setAuth(data.access_token, data.refresh_token || '', null as any)
       }
       toast.success('Login successful')
@@ -52,9 +45,6 @@ export function useLogin() {
   })
 }
 
-/**
- * Register mutation hook
- */
 export function useRegister() {
   return useMutation({
     mutationFn: async (data: RegisterRequest) => {
@@ -73,9 +63,6 @@ export function useRegister() {
   })
 }
 
-/**
- * Logout mutation hook
- */
 export function useLogout() {
   const queryClient = useQueryClient()
   const { clearAuth } = useAuthStore()
@@ -89,13 +76,11 @@ export function useLogout() {
       return response.data
     },
     onSuccess: () => {
-      // Clear auth state and all cached data
       clearAuth()
       queryClient.clear()
       toast.success('Logged out successfully')
     },
     onError: (error: Error) => {
-      // Even if logout fails on server, clear local state
       clearAuth()
       queryClient.clear()
       toast.error(error.message || 'Logout failed')
@@ -103,9 +88,6 @@ export function useLogout() {
   })
 }
 
-/**
- * Current user profile query
- */
 export function useProfile() {
   const { isAuthenticated } = useAuthStore()
 
@@ -119,9 +101,8 @@ export function useProfile() {
       return response.data
     },
     enabled: isAuthenticated,
-    staleTime: 5 * 60 * 1000, // 5 minutes
+    staleTime: 5 * 60 * 1000, 
     retry: (failureCount, error: any) => {
-      // Don't retry on auth errors
       if (error?.response?.status === 401) {
         return false
       }
@@ -130,9 +111,6 @@ export function useProfile() {
   })
 }
 
-/**
- * Update profile mutation
- */
 export function useUpdateProfile() {
   const queryClient = useQueryClient()
 
@@ -145,7 +123,6 @@ export function useUpdateProfile() {
       return response.data
     },
     onSuccess: (data) => {
-      // Update cached profile data
       queryClient.setQueryData(authKeys.profile(), data)
       toast.success('Profile updated successfully')
     },
@@ -155,9 +132,6 @@ export function useUpdateProfile() {
   })
 }
 
-/**
- * Change password mutation
- */
 export function useChangePassword() {
   return useMutation({
     mutationFn: async (data: ChangePasswordRequest) => {
@@ -176,9 +150,6 @@ export function useChangePassword() {
   })
 }
 
-/**
- * Users list query (admin only)
- */
 export function useUsers(params?: {
   page?: number
   size?: number
@@ -196,13 +167,10 @@ export function useUsers(params?: {
       }
       return response.data
     },
-    staleTime: 2 * 60 * 1000, // 2 minutes
+    staleTime: 2 * 60 * 1000, 
   })
 }
 
-/**
- * Single user query (admin only)
- */
 export function useUser(userId: string) {
   return useQuery({
     queryKey: authKeys.user(userId),
@@ -214,13 +182,10 @@ export function useUser(userId: string) {
       return response.data
     },
     enabled: !!userId,
-    staleTime: 5 * 60 * 1000, // 5 minutes
+    staleTime: 5 * 60 * 1000, 
   })
 }
 
-/**
- * Update user mutation (admin only)
- */
 export function useUpdateUser() {
   const queryClient = useQueryClient()
 
@@ -233,9 +198,7 @@ export function useUpdateUser() {
       return { userId, data: response.data }
     },
     onSuccess: ({ userId, data }) => {
-      // Update cached user data
       queryClient.setQueryData(authKeys.user(userId), data)
-      // Invalidate users list
       queryClient.invalidateQueries({ queryKey: authKeys.users() })
       toast.success('User updated successfully')
     },
@@ -245,9 +208,6 @@ export function useUpdateUser() {
   })
 }
 
-/**
- * Delete user mutation (admin only)
- */
 export function useDeleteUser() {
   const queryClient = useQueryClient()
 
@@ -260,7 +220,6 @@ export function useDeleteUser() {
       return userId
     },
     onSuccess: (userId) => {
-      // Remove from cache and invalidate users list
       queryClient.removeQueries({ queryKey: authKeys.user(userId) })
       queryClient.invalidateQueries({ queryKey: authKeys.users() })
       toast.success('User deleted successfully')
@@ -271,9 +230,6 @@ export function useDeleteUser() {
   })
 }
 
-/**
- * Admin create user mutation (Super Admin only)
- */
 export function useAdminCreateUser() {
   const queryClient = useQueryClient()
 
@@ -295,9 +251,6 @@ export function useAdminCreateUser() {
   })
 }
 
-/**
- * Admin impersonate user mutation (Super Admin only)
- */
 export function useAdminImpersonateUser() {
   const authStore = useAuthStore()
 
@@ -310,8 +263,6 @@ export function useAdminImpersonateUser() {
       return response.data
     },
     onSuccess: (tokenData) => {
-      // Update auth store with impersonated user token
-      // Note: This would typically require refreshing user data after impersonation
       authStore.setAuth(tokenData.access_token, tokenData.refresh_token || '', {} as UserResponse)
       toast.success('User impersonation activated')
     },
@@ -321,9 +272,6 @@ export function useAdminImpersonateUser() {
   })
 }
 
-/**
- * Admin force password reset mutation (Super Admin only)
- */
 export function useAdminForcePasswordReset() {
   return useMutation({
     mutationFn: async (params: { userId: string; newPassword: string }) => {
@@ -342,9 +290,6 @@ export function useAdminForcePasswordReset() {
   })
 }
 
-/**
- * Get user login history query (Super Admin only)
- */
 export function useUserLoginHistory(userId: string) {
   return useQuery({
     queryKey: [...authKeys.user(userId), 'login-history'],
@@ -356,14 +301,11 @@ export function useUserLoginHistory(userId: string) {
       return response.data
     },
     enabled: !!userId,
-    staleTime: 30 * 1000, // 30 seconds
+    staleTime: 30 * 1000, 
     refetchOnWindowFocus: false,
   })
 }
 
-/**
- * Admin bulk activate users mutation (Super Admin only)
- */
 export function useAdminBulkActivateUsers() {
   const queryClient = useQueryClient()
 
@@ -376,7 +318,6 @@ export function useAdminBulkActivateUsers() {
       return response.data
     },
     onSuccess: () => {
-      // Invalidate users list to refresh activation status
       queryClient.invalidateQueries({ queryKey: authKeys.users() })
       toast.success('Users activated successfully')
     },

@@ -38,7 +38,6 @@ interface AuthState {
 export const useAuthStore = create<AuthState>()(
   persist(
     (set, get) => ({
-      // Initial state
       isAuthenticated: false,
       accessToken: null,
       refreshToken: null,
@@ -48,14 +47,12 @@ export const useAuthStore = create<AuthState>()(
       isLoadingProfile: false,
       profileCacheTime: null,
 
-      // Actions
       setAuth: (accessToken, refreshToken, user, expiresIn = 3600) => {
         console.log('🔐 Setting auth state:', { accessToken: !!accessToken, user: user?.email })
 
-        // Set tokens in API client
         apiClient.setAuthToken(accessToken, refreshToken)
 
-        const expiresAt = Date.now() + (expiresIn * 1000) // Convert seconds to milliseconds
+        const expiresAt = Date.now() + (expiresIn * 1000) 
 
         set({
           isAuthenticated: true,
@@ -64,13 +61,11 @@ export const useAuthStore = create<AuthState>()(
           user,
           tokenExpiresAt: expiresAt,
           isRefreshing: false,
-          profileCacheTime: Date.now(), // Set cache time on login
+          profileCacheTime: Date.now(), 
         })
 
-        // Clear and refresh prediction data after successful login
         if (typeof window !== 'undefined') {
           setTimeout(() => {
-            console.log('🔄 Auth set - refreshing prediction data')
             window.dispatchEvent(new CustomEvent('auth-login-success'))
           }, 100)
         }
@@ -80,7 +75,6 @@ export const useAuthStore = create<AuthState>()(
         const state = get()
 
         if (state.isRefreshing) {
-          // If already refreshing, wait for it to complete
           return new Promise((resolve) => {
             const checkRefresh = () => {
               const currentState = get()
@@ -102,7 +96,6 @@ export const useAuthStore = create<AuthState>()(
         set({ isRefreshing: true })
 
         try {
-          // Use the actual /auth/refresh endpoint
           const response = await axios.post(`${API_CONFIG.BASE_URL}/auth/refresh`, {}, {
             headers: {
               'Authorization': `Bearer ${state.refreshToken}`
@@ -112,7 +105,6 @@ export const useAuthStore = create<AuthState>()(
           const { access_token, expires_in = 3600 } = response.data
           const expiresAt = Date.now() + (expires_in * 1000)
 
-          // Update tokens
           apiClient.setAuthToken(access_token, state.refreshToken)
 
           set({
@@ -121,10 +113,8 @@ export const useAuthStore = create<AuthState>()(
             isRefreshing: false,
           })
 
-          // Notify that token was refreshed
           if (typeof window !== 'undefined') {
             setTimeout(() => {
-              console.log('🔄 Token refreshed - notifying listeners')
               window.dispatchEvent(new CustomEvent('auth-token-refreshed'))
             }, 50)
           }
@@ -138,9 +128,6 @@ export const useAuthStore = create<AuthState>()(
       },
 
       clearAuth: () => {
-        console.log('🧹 Clearing auth state')
-
-        // Clear tokens from API client
         apiClient.clearAuth()
 
         set({
@@ -154,10 +141,8 @@ export const useAuthStore = create<AuthState>()(
           profileCacheTime: null,
         })
 
-        // Clear prediction data when logging out
         if (typeof window !== 'undefined') {
           setTimeout(() => {
-            console.log('🧹 Auth cleared - clearing prediction data')
             window.dispatchEvent(new CustomEvent('auth-logout'))
           }, 50)
         }
@@ -203,7 +188,6 @@ export const useAuthStore = create<AuthState>()(
         }
       },
 
-      // Computed helpers
       isAdmin: () => {
         const user = get().user
         return user?.role === 'super_admin'

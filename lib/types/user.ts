@@ -1,7 +1,3 @@
-/**
- * User-related types matching FastAPI backend exactly
- */
-
 export interface User {
   id: string
   email: string

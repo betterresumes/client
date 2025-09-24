@@ -19,7 +19,6 @@ import { ProcessingSteps } from './processing-steps'
 import { EmptyAnalysisState } from './empty-analysis-state'
 import { SAMPLE_DATA } from '@/lib/config/sectors'
 import { BulkUploadSection } from './analysis/bulk-upload-section-new'
-import { BulkUploadDebugger } from '@/components/debug/bulk-upload-debugger-v2'
 import { JobStatusContainer } from './job-status-display'
 import { Loader2, Download, Trash2, X, FileSpreadsheet, ChevronDown, ChevronUp } from 'lucide-react'
 

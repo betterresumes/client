@@ -10,7 +10,6 @@ import type {
 import type { ApiResponse } from '../types/common';
 
 export const tenantsApi = {
-  // List tenants with comprehensive details
   list: async (params?: {
     skip?: number;
     limit?: number;
@@ -26,28 +25,23 @@ export const tenantsApi = {
     return apiClient.get<ComprehensiveTenantListResponse>(`/tenants?${searchParams.toString()}`);
   },
 
-  // Create a new tenant (Super Admin only)
   create: async (data: TenantCreate): Promise<ApiResponse<TenantResponse>> => {
     return apiClient.post<TenantResponse>('/tenants', data);
   },
 
-  // Get comprehensive tenant details  
   get: async (tenantId: string): Promise<ApiResponse<ComprehensiveTenantResponse>> => {
     return apiClient.get<ComprehensiveTenantResponse>(`/tenants/${tenantId}`);
   },
 
-  // Update tenant information
   update: async (tenantId: string, data: TenantUpdate): Promise<ApiResponse<TenantResponse>> => {
     return apiClient.put<TenantResponse>(`/tenants/${tenantId}`, data);
   },
 
-  // Delete a tenant (Super Admin only)
   delete: async (tenantId: string, force = false): Promise<ApiResponse<void>> => {
     const params = force ? '?force=true' : '';
     return apiClient.delete<void>(`/tenants/${tenantId}${params}`);
   },
 
-  // Get tenant statistics
   getStats: async (tenantId: string): Promise<ApiResponse<TenantStatsResponse>> => {
     return apiClient.get<TenantStatsResponse>(`/tenants/${tenantId}/stats`);
   }

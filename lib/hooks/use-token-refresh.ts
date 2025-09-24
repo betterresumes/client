@@ -3,10 +3,6 @@
 import { useEffect, useRef } from 'react'
 import { useAuthStore } from '@/lib/stores/auth-store'
 
-/**
- * Hook to automatically refresh access tokens before they expire
- * Intelligently schedules refresh checks based on token expiration time
- */
 export function useTokenRefresh() {
   const {
     isAuthenticated,
@@ -28,24 +24,21 @@ export function useTokenRefresh() {
     }
 
     const scheduleTokenRefresh = () => {
-      // Clear any existing timeout
       if (timeoutRef.current) {
         clearTimeout(timeoutRef.current)
         timeoutRef.current = null
       }
 
       const now = Date.now()
-      const bufferTime = 2 * 60 * 1000 // 2 minutes before expiration
+      const bufferTime = 2 * 60 * 1000 
       const refreshTime = tokenExpiresAt - bufferTime
       const timeUntilRefresh = refreshTime - now
 
-      // If token is already expired or should be refreshed now
       if (timeUntilRefresh <= 0) {
         performTokenRefresh()
         return
       }
 
-      // Schedule refresh for the appropriate time
       console.log(`Token refresh scheduled in ${Math.round(timeUntilRefresh / 1000)} seconds`)
       timeoutRef.current = setTimeout(() => {
         performTokenRefresh()
@@ -53,7 +46,6 @@ export function useTokenRefresh() {
     }
 
     const performTokenRefresh = async () => {
-      // Prevent multiple simultaneous refresh attempts
       if (isRefreshingRef.current || isRefreshing) {
         return
       }
@@ -65,7 +57,6 @@ export function useTokenRefresh() {
         const success = await refreshAccessToken()
         if (success) {
           console.log('Token refreshed successfully')
-          // Schedule the next refresh after successful refresh
           scheduleTokenRefresh()
         } else {
           console.warn('Token refresh failed')
@@ -77,7 +68,6 @@ export function useTokenRefresh() {
       }
     }
 
-    // Initial scheduling
     scheduleTokenRefresh()
 
     return () => {
@@ -88,7 +78,6 @@ export function useTokenRefresh() {
     }
   }, [isAuthenticated, tokenExpiresAt, refreshAccessToken, isRefreshing])
 
-  // Cleanup on unmount
   useEffect(() => {
     return () => {
       if (timeoutRef.current) {
@@ -98,9 +87,6 @@ export function useTokenRefresh() {
   }, [])
 }
 
-/**
- * Hook to handle manual token refresh with loading state
- */
 export function useManualTokenRefresh() {
   const { refreshAccessToken, isRefreshing } = useAuthStore()
 

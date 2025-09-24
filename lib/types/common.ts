@@ -1,9 +1,7 @@
-// Common types used across the application based on OpenAPI spec
-
 export interface BaseEntity {
   id: string
-  created_at: string  // format: date-time
-  updated_at?: string  // format: date-time
+  created_at: string  
+  updated_at?: string 
 }
 
 export interface ApiResponse<T> {
@@ -17,7 +15,6 @@ export interface ApiResponse<T> {
   message?: string
 }
 
-// Pagination types from OpenAPI
 export interface PaginatedResponse<T = any> {
   items: T[]
   total: number
@@ -26,22 +23,16 @@ export interface PaginatedResponse<T = any> {
   pages: number
 }
 
-// User roles from OpenAPI UserRole enum
 export type UserRole = 'super_admin' | 'tenant_admin' | 'org_admin' | 'org_member' | 'user'
 
-// Job status types
 export type JobStatus = 'pending' | 'processing' | 'completed' | 'failed'
 
-// Loading states
 export type LoadingState = 'idle' | 'loading' | 'success' | 'error'
 
-// Risk categories (inferred from system)
 export type RiskCategory = 'low' | 'medium' | 'high' | 'critical'
 
-// Model types from prediction endpoints
 export type ModelType = 'annual' | 'quarterly'
 
-// HTTP validation error from OpenAPI
 export interface ValidationError {
   loc: (string | number)[]
   msg: string

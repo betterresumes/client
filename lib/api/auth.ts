@@ -6,18 +6,13 @@ import {
   UserResponse,
   JoinOrganizationRequest,
   JoinOrganizationResponse,
-  UserUpdate,
   ChangePasswordRequest,
   UpdateProfileRequest
 } from '../types/auth'
 import { ApiResponse, PaginatedResponse } from '../types/common'
 
-/**
- * Authentication API service functions based on OpenAPI spec
- * Base path: /api/v1/auth
- */
+
 export const authApi = {
-  // User authentication endpoints
   async login(credentials: UserLogin): Promise<ApiResponse<Token>> {
     return apiClient.post<Token>('/auth/login', credentials)
   },
@@ -36,12 +31,10 @@ export const authApi = {
     return apiClient.post<Token>('/auth/refresh')
   },
 
-  // Organization joining
   async joinOrganization(data: JoinOrganizationRequest): Promise<ApiResponse<JoinOrganizationResponse>> {
     return apiClient.post<JoinOrganizationResponse>('/auth/join', data)
   },
 
-  // Profile management endpoints
   async getProfile(): Promise<ApiResponse<UserResponse>> {
     return apiClient.get<UserResponse>('/users/me')
   },
@@ -54,22 +47,18 @@ export const authApi = {
     return apiClient.get<UserResponse>('/users/me')
   },
 
-  // Change password
   async changePassword(data: ChangePasswordRequest): Promise<ApiResponse<{ message: string }>> {
     return apiClient.post<{ message: string }>('/auth/change-password', data)
   },
 
-  // Forgot password
   async forgotPassword(email: string): Promise<ApiResponse<{ message: string }>> {
     return apiClient.post<{ message: string }>('/auth/forgot-password', { email })
   },
 
-  // Reset password
   async resetPassword(data: { token: string; new_password: string }): Promise<ApiResponse<{ message: string }>> {
     return apiClient.post<{ message: string }>('/auth/reset-password', data)
   },
 
-  // Get users list (admin endpoints)
   async getUsers(params?: {
     page?: number
     size?: number
@@ -94,27 +83,22 @@ export const authApi = {
     return apiClient.get<PaginatedResponse<UserResponse>>(url)
   },
 
-  // Get user by ID
   async getUserById(userId: string): Promise<ApiResponse<UserResponse>> {
     return apiClient.get<UserResponse>(`/users/${userId}`)
   },
 
-  // Update user (admin)
   async updateUser(userId: string, data: UpdateProfileRequest): Promise<ApiResponse<UserResponse>> {
     return apiClient.put<UserResponse>(`/users/${userId}`, data)
   },
 
-  // Delete user (admin)
   async deleteUser(userId: string): Promise<ApiResponse<{ message: string }>> {
     return apiClient.delete<{ message: string }>(`/users/${userId}`)
   },
 
-  // Check if token is valid without making a request
   isAuthenticated(): boolean {
     return apiClient.isAuthenticated()
   },
 
-  // Admin endpoints (for super admin only)
   admin: {
     async createUser(userData: UserCreate): Promise<ApiResponse<UserResponse>> {
       return apiClient.post<UserResponse>('/auth/admin/create-user', userData)

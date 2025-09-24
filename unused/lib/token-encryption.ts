@@ -1,20 +1,11 @@
-/**
- * Simple encryption utilities for localStorage token storage
- * Uses browser's Web Crypto API for AES-GCM encryption
- */
-
 const ENCRYPTION_KEY_STORAGE = 'encryption_key'
 
 class TokenEncryption {
   private key: CryptoKey | null = null
 
-  /**
-   * Initialize or retrieve the encryption key
-   */
   private async initializeKey(): Promise<CryptoKey> {
     if (this.key) return this.key
 
-    // Try to get existing key from sessionStorage (not persisted)
     const existingKeyData = sessionStorage.getItem(ENCRYPTION_KEY_STORAGE)
 
     if (existingKeyData) {
@@ -33,23 +24,18 @@ class TokenEncryption {
       }
     }
 
-    // Generate new key
     this.key = await crypto.subtle.generateKey(
       { name: 'AES-GCM', length: 256 },
       true,
       ['encrypt', 'decrypt']
     )
 
-    // Store key in sessionStorage (cleared on tab close)
     const exportedKey = await crypto.subtle.exportKey('raw', this.key)
     sessionStorage.setItem(ENCRYPTION_KEY_STORAGE, JSON.stringify(Array.from(new Uint8Array(exportedKey))))
 
     return this.key
   }
 
-  /**
-   * Encrypt data using AES-GCM
-   */
   async encrypt(data: string): Promise<string> {
     try {
       const key = await this.initializeKey()
@@ -62,7 +48,6 @@ class TokenEncryption {
         encodedData
       )
 
-      // Combine IV and encrypted data
       const combined = new Uint8Array(iv.length + encryptedData.byteLength)
       combined.set(iv)
       combined.set(new Uint8Array(encryptedData), iv.length)

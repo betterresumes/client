@@ -14,7 +14,6 @@ export const SECTORS = [
 
 export type Sector = typeof SECTORS[number]
 
-// Sample data for form testing
 export const SAMPLE_DATA = {
   annual: {
     stockSymbol: 'AAPL',

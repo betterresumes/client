@@ -1,18 +1,11 @@
-// Main library exports for the Financial Default Risk Prediction System frontend
-
-// API layer
 export * from './api'
 
-// React hooks for server state management
 export * from './hooks'
 
-// Zustand stores for client state
 export * from './stores/auth-store'
 
-// Configuration
 export * from './config/constants'
 
-// Type definitions (explicit exports to avoid conflicts)
 export type {
   ApiResponse,
   PaginatedResponse,
