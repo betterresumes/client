@@ -18,7 +18,7 @@ export function AuthGuard({
 }: AuthGuardProps) {
   const router = useRouter()
   const pathname = usePathname()
-  const { isAuthenticated, user, isAdmin, isTenantAdmin, isOrgAdmin } = useAuthStore()
+  const { isAuthenticated, user, isAdmin, isTenantAdmin, isOrgAdmin, accessToken, shouldRefreshToken, refreshAccessToken } = useAuthStore()
   const [isLoading, setIsLoading] = useState(true)
   const [isClient, setIsClient] = useState(false)
 
@@ -31,7 +31,24 @@ export function AuthGuard({
     if (!isClient) return
 
     const checkAuth = async () => {
+      console.log('🔐 AuthGuard checking auth:', { isAuthenticated, hasUser: !!user, requireAuth })
+
+      // If we have a stored token but need to refresh, do it
+      if (accessToken && shouldRefreshToken()) {
+        console.log('🔄 Token needs refresh, refreshing...')
+        const refreshed = await refreshAccessToken()
+        if (!refreshed && requireAuth) {
+          console.log('❌ Token refresh failed, redirecting to login')
+          if (pathname !== '/login') {
+            sessionStorage.setItem('redirectAfterLogin', pathname)
+          }
+          router.replace('/login')
+          return
+        }
+      }
+
       if (requireAuth && !isAuthenticated) {
+        console.log('❌ Auth required but not authenticated, redirecting to login')
         // Store the intended destination in sessionStorage for redirect after login
         if (pathname !== '/login') {
           sessionStorage.setItem('redirectAfterLogin', pathname)
@@ -57,20 +74,26 @@ export function AuthGuard({
         })
 
         if (!hasPermission) {
+          console.log('❌ User lacks required permissions, redirecting to dashboard')
           router.replace('/dashboard')
           return
         }
       }
 
+      console.log('✅ Auth check passed')
       setIsLoading(false)
     }
 
     checkAuth()
-  }, [isAuthenticated, user, requireAuth, allowedRoles, router, pathname, isAdmin, isTenantAdmin, isOrgAdmin, isClient])
+  }, [isAuthenticated, user, requireAuth, allowedRoles, router, pathname, isAdmin, isTenantAdmin, isOrgAdmin, isClient, accessToken, shouldRefreshToken, refreshAccessToken])
 
-  // Don't render any content until client is ready and auth is checked
+  // Show loading spinner while checking auth to prevent flash
   if (!isClient || isLoading) {
-    return null
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
+      </div>
+    )
   }
 
   return <>{children}</>

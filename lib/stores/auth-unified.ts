@@ -18,7 +18,7 @@ export const useAuth = () => {
     isAuthenticated: auth.isAuthenticated,
     isLoading: auth.isLoadingProfile,
     error: null, // The new store doesn't have a persistent error state
-    
+
     // Computed auth helper methods
     isAdmin: auth.isAdmin(),
     isSuperAdmin: auth.user?.role === 'super_admin',
@@ -40,13 +40,13 @@ export const useAuth = () => {
       if (!auth.isAuthenticated || !auth.accessToken) {
         return false
       }
-      
+
       // Refresh profile if needed
       if (auth.shouldRefreshProfile()) {
         const userData = await auth.refreshUserProfile()
         return !!userData
       }
-      
+
       return true
     },
     setUser: (userData: UserResponse) => {

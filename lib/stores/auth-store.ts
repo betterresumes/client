@@ -50,6 +50,8 @@ export const useAuthStore = create<AuthState>()(
 
       // Actions
       setAuth: (accessToken, refreshToken, user, expiresIn = 3600) => {
+        console.log('🔐 Setting auth state:', { accessToken: !!accessToken, user: user?.email })
+
         // Set tokens in API client
         apiClient.setAuthToken(accessToken, refreshToken)
 
@@ -62,6 +64,7 @@ export const useAuthStore = create<AuthState>()(
           user,
           tokenExpiresAt: expiresAt,
           isRefreshing: false,
+          profileCacheTime: Date.now(), // Set cache time on login
         })
 
         // Clear and refresh prediction data after successful login
@@ -135,6 +138,8 @@ export const useAuthStore = create<AuthState>()(
       },
 
       clearAuth: () => {
+        console.log('🧹 Clearing auth state')
+
         // Clear tokens from API client
         apiClient.clearAuth()
 
@@ -145,6 +150,8 @@ export const useAuthStore = create<AuthState>()(
           user: null,
           tokenExpiresAt: null,
           isRefreshing: false,
+          isLoadingProfile: false,
+          profileCacheTime: null,
         })
 
         // Clear prediction data when logging out
@@ -176,7 +183,7 @@ export const useAuthStore = create<AuthState>()(
         try {
           const { authApi } = await import('../api/auth')
           const response = await authApi.getMe()
-          
+
           if (response.success && response.data) {
             set({
               user: response.data,

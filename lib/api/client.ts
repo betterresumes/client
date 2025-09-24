@@ -64,23 +64,28 @@ class ApiClient {
 
   private async refreshTokenViaStore(): Promise<boolean> {
     try {
+      console.log('🔄 Attempting token refresh via store...')
       // Import auth store dynamically to avoid circular dependencies
       const { useAuthStore } = await import('../stores/auth-store')
       const store = useAuthStore.getState()
 
       const refreshed = await store.refreshAccessToken()
       if (refreshed) {
+        console.log('✅ Token refreshed successfully')
         this.accessToken = store.accessToken
         return true
+      } else {
+        console.log('❌ Token refresh failed')
+        return false
       }
-      return false
     } catch (error) {
-      console.error('Token refresh via store failed:', error)
+      console.error('❌ Token refresh via store failed:', error)
       return false
     }
   }
 
   private handleAuthError(): void {
+    console.log('🚫 Handling auth error - clearing auth and redirecting to login')
     this.clearAuth()
 
     // Import and clear auth store

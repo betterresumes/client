@@ -15,20 +15,27 @@ import { usePredictionsStore } from '@/lib/stores/predictions-store'
 export default function DashboardPage() {
   const { activeTab, setActiveTab } = useDashboardStore()
   const { user, isAdmin, isTenantAdmin, isAuthenticated } = useAuthStore()
-  const { fetchPredictions, annualPredictions, quarterlyPredictions, isLoading } = usePredictionsStore()
+  const { fetchPredictions, annualPredictions, quarterlyPredictions, isLoading, isInitialized } = usePredictionsStore()
   const [hasInitializedData, setHasInitializedData] = useState(false)
 
   // Single source of data loading - fetch predictions once when user is authenticated
   useEffect(() => {
-    if (isAuthenticated && user && !hasInitializedData && !isLoading) {
-      console.log('🚀 Dashboard page - initializing data for authenticated user')
+    if (isAuthenticated && user && !hasInitializedData) {
+      console.log('🚀 Dashboard page - initializing data for authenticated user:', user.email)
       setHasInitializedData(true)
-      // Only fetch if we don't have any data
-      if (annualPredictions.length === 0 && quarterlyPredictions.length === 0) {
-        fetchPredictions()
-      }
+
+      // Always fetch data when dashboard loads to ensure fresh data
+      // But don't show loading if we already have cached data
+      fetchPredictions(false) // Don't force refresh, use cache if available
     }
-  }, [isAuthenticated, user, hasInitializedData, isLoading, annualPredictions.length, quarterlyPredictions.length, fetchPredictions])
+  }, [isAuthenticated, user, hasInitializedData, fetchPredictions])
+
+  // Reset initialization flag when user changes (for logout/login scenarios)
+  useEffect(() => {
+    if (!isAuthenticated || !user) {
+      setHasInitializedData(false)
+    }
+  }, [isAuthenticated, user])
 
   return (
     <div className="space-y-6">
