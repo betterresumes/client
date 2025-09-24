@@ -338,17 +338,6 @@ export function CompanyDetailsView() {
             <p className="text-gray-600 dark:text-gray-400 mb-6 max-w-md mx-auto">
               No prediction data is available for your current data source selection. Please check your permissions or try refreshing.
             </p>
-            <Button
-              variant="outline"
-              onClick={() => {
-                setHasAttemptedLoad(true)
-                fetchPredictions()
-              }}
-              className="font-bricolage"
-            >
-              <RefreshCw className="h-4 w-4 mr-2" />
-              Retry Loading
-            </Button>
           </div>
         </Card>
       )}

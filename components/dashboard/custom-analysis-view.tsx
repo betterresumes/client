@@ -29,8 +29,7 @@ function SimpleJobsDisplaySection({
   hasActiveJobs,
   onDeleteBulkJob,
   onCancelBulkJob,
-  canDeleteJob,
-  onUploadClick
+  canDeleteJob
 }: {
   jobs: any[]
   bulkJobs: any[]
@@ -38,7 +37,6 @@ function SimpleJobsDisplaySection({
   onDeleteBulkJob: (jobId: string, filename: string) => void
   onCancelBulkJob: (jobId: string, filename: string) => void
   canDeleteJob: (job: any) => boolean
-  onUploadClick?: () => void
 }) {
   const [showAllJobs, setShowAllJobs] = useState(false)
 
@@ -73,17 +71,6 @@ function SimpleJobsDisplaySection({
         </div>
 
         <div className="flex items-center gap-3">
-          {/* Upload Button */}
-          {onUploadClick && (
-            <Button
-              onClick={onUploadClick}
-              className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg shadow-sm flex items-center gap-2"
-            >
-              <Download className="h-4 w-4" />
-              Upload
-            </Button>
-          )}
-
           {hasMoreJobs && (
             <Button
               variant="outline"
@@ -1268,10 +1255,19 @@ export function CustomAnalysisView() {
                 <Download className="h-4 w-4" />
                 Download Template
               </Button>
+
+              {/* Upload Button */}
+              <Button
+                onClick={() => setShowUploadModal(true)}
+                className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg shadow-sm flex items-center gap-2"
+              >
+                <Download className="h-4 w-4" />
+                Upload
+              </Button>
             </div>
           </div>
 
-          {/* Jobs Section with Upload Button */}
+          {/* Jobs Section */}
           <div className="">
             {(jobs.length > 0 || bulkJobs.length > 0) ? (
               <SimpleJobsDisplaySection
@@ -1281,13 +1277,12 @@ export function CustomAnalysisView() {
                 onDeleteBulkJob={handleDeleteBulkJob}
                 onCancelBulkJob={handleCancelBulkJob}
                 canDeleteJob={canDeleteJob}
-                onUploadClick={() => setShowUploadModal(true)}
               />
             ) : (
               <div className="space-y-6">
-                {/* Header with Upload Button - Empty State */}
+                {/* Header - Empty State */}
                 <div className="flex items-center justify-between">
-                  <div className="text-center flex-1">
+                  <div className="">
                     <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
                       Analysis Jobs
                     </h3>
@@ -1295,15 +1290,6 @@ export function CustomAnalysisView() {
                       Track progress and view results (0 total)
                     </p>
                   </div>
-
-                  {/* Upload Button - Square shape */}
-                  <Button
-                    onClick={() => setShowUploadModal(true)}
-                    className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg shadow-sm flex items-center gap-2"
-                  >
-                    <Download className="h-4 w-4" />
-                    Upload
-                  </Button>
                 </div>
 
                 <div className="flex flex-col items-center justify-center py-16 border-2 border-dashed border-gray-200 dark:border-gray-700 rounded-xl bg-gray-50/50 dark:bg-gray-800/50">
@@ -1316,7 +1302,7 @@ export function CustomAnalysisView() {
                         No Analysis Jobs Yet
                       </h4>
                       <p className="text-sm text-gray-500 dark:text-gray-400 max-w-sm">
-                        Click "Upload" button above to start batch analysis
+                        Upload files above to start batch analysis
                       </p>
                     </div>
                   </div>

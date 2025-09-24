@@ -120,7 +120,7 @@ export function JobStatusDisplay({
   }
 
   return (
-    <Card className="p-3 border border-gray-200 bg-white hover:shadow-sm dark:border-gray-700 dark:bg-gray-800 w-1/2">
+    <Card className="p-3 border border-gray-200 bg-white hover:shadow-sm dark:border-gray-700 dark:bg-gray-800 w-1/3">
       {/* Compact row layout */}
       <div className="flex items-center justify-between gap-3">
         {/* Left: Icon + File name */}
