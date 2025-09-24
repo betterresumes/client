@@ -1,0 +1,26 @@
+
+> new-client@0.1.0 build
+> next build --turbopack
+
+   ▲ Next.js 15.5.3 (Turbopack)
+   - Environments: .env.local, .env
+
+   Creating an optimized production build ...
+ ✓ Finished writing to disk in 198ms
+ ✓ Compiled successfully in 8.8s
+   Skipping linting
+   Checking validity of types ...
+Failed to compile.
+
+./lib/stores/predictions-store-backup.ts:188:10
+Type error: This expression is not callable.
+  Type '{ annualPredictions: never[]; quarterlyPredictions: never[]; systemAnnualPredictions: never[]; systemQuarterlyPredictions: never[]; isLoading: boolean; error: null; lastFetched: null; isInitialized: boolean; ... 8 more ...; processAllPredictionsData: (userAnnualResponse: any, userQuarterlyResponse: any, processAllPr...' has no call signatures.
+
+[0m [90m 186 |[39m   }
+ [90m 187 |[39m
+[31m[1m>[22m[39m[90m 188 |[39m   [36mreturn[39m {
+ [90m     |[39m          [31m[1m^[22m[39m
+ [90m 189 |[39m     annualPredictions[33m:[39m [][33m,[39m
+ [90m 190 |[39m     quarterlyPredictions[33m:[39m [][33m,[39m
+ [90m 191 |[39m     systemAnnualPredictions[33m:[39m [][33m,[39m[0m
+Next.js build worker exited with code: 1 and signal: null

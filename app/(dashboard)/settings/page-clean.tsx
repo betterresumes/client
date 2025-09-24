@@ -122,7 +122,7 @@ export default function SettingsPage() {
   }, [])
 
   useEffect(() => {
-    if (shouldRefreshProfile) {
+    if (shouldRefreshProfile()) {
       refreshUserProfile()
       loadProfile()
     }
@@ -250,7 +250,10 @@ export default function SettingsPage() {
     try {
       setSaving(true)
 
-      const response = await organizationsApi.joinOrganization(data.join_token)
+      const response = await organizationsApi.join({
+        email: profile?.email || '',
+        join_token: data.join_token
+      })
 
       if (response.success) {
         toast.success('Successfully joined organization!')

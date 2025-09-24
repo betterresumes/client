@@ -2,7 +2,7 @@ import { Metadata } from 'next'
 
 export const metadata: Metadata = {
   title: 'Authentication | AccuNode AI',
-  description: 'Secure login and registration for AccuNode AI platform',
+  description: 'Secure login and registration for AccuNode platform',
 }
 
 export default function AuthLayout({
@@ -19,7 +19,7 @@ export default function AuthLayout({
           <div className="relative z-10 flex flex-col justify-center p-12 text-white">
             <div className="mb-8">
               <h1 className="text-4xl font-bricolage font-bold mb-4">
-                AccuNode AI
+                AccuNode
               </h1>
               <p className="text-xl text-blue-100 mb-8">
                 Enterprise-grade financial default risk prediction powered by advanced machine learning

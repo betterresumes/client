@@ -36,6 +36,7 @@ import { toast } from 'sonner'
 
 import { useAuth } from '@/lib/stores/auth'
 import { tenantsApi } from '@/lib/api/tenants'
+import { ComprehensiveTenantResponse } from '@/lib/types/tenant'
 
 const createTenantSchema = z.object({
   name: z.string().min(1, 'Tenant name is required'),
@@ -102,8 +103,8 @@ export default function TenantManagementPage() {
   const { user } = useAuth()
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
-  const [tenants, setTenants] = useState<Tenant[]>([])
-  const [selectedTenant, setSelectedTenant] = useState<TenantDetail | null>(null)
+  const [tenants, setTenants] = useState<ComprehensiveTenantResponse[]>([])
+  const [selectedTenant, setSelectedTenant] = useState<ComprehensiveTenantResponse | null>(null)
   const [showTenantDetail, setShowTenantDetail] = useState(false)
   const [showCreateTenantDialog, setShowCreateTenantDialog] = useState(false)
 
@@ -125,9 +126,9 @@ export default function TenantManagementPage() {
   const loadTenants = async () => {
     try {
       setLoading(true)
-      const response = await tenantsApi.getAllTenants()
+      const response = await tenantsApi.list()
       if (response.success && response.data) {
-        setTenants(response.data)
+        setTenants(response.data.tenants)
       }
     } catch (error) {
       console.error('Error loading tenants:', error)
@@ -139,7 +140,7 @@ export default function TenantManagementPage() {
 
   const loadTenantDetails = async (tenantId: string) => {
     try {
-      const response = await tenantsApi.getTenantDetails(tenantId)
+      const response = await tenantsApi.get(tenantId)
       if (response.success && response.data) {
         setSelectedTenant(response.data)
         setShowTenantDetail(true)
@@ -153,8 +154,8 @@ export default function TenantManagementPage() {
   const onCreateTenantSubmit = async (data: CreateTenantFormData) => {
     try {
       setSaving(true)
-      const response = await tenantsApi.createTenant(data)
-      
+      const response = await tenantsApi.create(data)
+
       if (response.success) {
         toast.success('Tenant created successfully')
         createTenantForm.reset()
@@ -213,7 +214,7 @@ export default function TenantManagementPage() {
             <p className="text-gray-500">Create and manage tenants</p>
           </div>
         </div>
-        
+
         <Dialog open={showCreateTenantDialog} onOpenChange={setShowCreateTenantDialog}>
           <DialogTrigger asChild>
             <Button size="lg" className="bg-black hover:bg-gray-800">
@@ -384,9 +385,9 @@ export default function TenantManagementPage() {
                     <div className="flex items-center gap-3 text-gray-700">
                       <Building2 className="h-5 w-5" />
                       <div>
-                        <span className="text-lg font-bold">{tenant.organization_count || 0}</span>
+                        <span className="text-lg font-bold">{tenant.total_organizations || 0}</span>
                         <span className="text-sm text-gray-500 ml-2">
-                          {(tenant.organization_count || 0) === 1 ? 'Organization' : 'Organizations'}
+                          {(tenant.total_organizations || 0) === 1 ? 'Organization' : 'Organizations'}
                         </span>
                       </div>
                     </div>
@@ -639,7 +640,7 @@ export default function TenantManagementPage() {
                                 <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
                                   <div className="bg-gray-50 p-3 rounded-lg">
                                     <div className="text-xs uppercase tracking-wide text-gray-500 font-semibold">Users</div>
-                                    <div className="text-lg font-bold text-gray-900 mt-1">{org.member_count}</div>
+                                    <div className="text-lg font-bold text-gray-900 mt-1">{org.total_users}</div>
                                   </div>
                                   <div className="bg-gray-50 p-3 rounded-lg">
                                     <div className="text-xs uppercase tracking-wide text-gray-500 font-semibold">Max Users</div>

@@ -55,7 +55,7 @@ interface CompanyAnalysisTableProps {
   onRefetch: () => void
 }
 
-type SortField = 'company' | 'defaultRate' | 'riskCategory' | 'sector' | 'reportingPeriod'
+type SortField = 'company' | 'defaultRate' | 'riskCategory' | 'sector' | 'reportingPeriod' | 'marketCap'
 type SortDirection = 'asc' | 'desc'
 
 export function CompanyAnalysisTable({
@@ -87,6 +87,29 @@ export function CompanyAnalysisTable({
 
   // Get pagination info for current prediction type
   const pagination = type === 'annual' ? annualPagination : quarterlyPagination
+
+  // Format market cap helper function
+  const formatMarketCap = (marketCap: number | undefined | null) => {
+    if (!marketCap || marketCap === 0) return 'N/A'
+
+    // The value is in actual dollars, so convert to appropriate units
+    if (marketCap >= 1000000000000) {
+      // For trillions (1,000,000,000,000+)
+      return `$${(marketCap / 1000000000000).toFixed(1)}T`
+    } else if (marketCap >= 1000000000) {
+      // For billions (1,000,000,000+)
+      return `$${(marketCap / 1000000000).toFixed(1)}B`
+    } else if (marketCap >= 1000000) {
+      // For millions (1,000,000+)
+      return `$${(marketCap / 1000000).toFixed(0)}M`
+    } else if (marketCap >= 1000) {
+      // For thousands (1,000+)
+      return `$${(marketCap / 1000).toFixed(0)}K`
+    } else {
+      // For less than 1000
+      return `$${marketCap.toFixed(0)}`
+    }
+  }
 
   console.log(`📊 TABLE: ${type} pagination info:`, {
     currentPage: pagination.currentPage,
@@ -189,6 +212,10 @@ export function CompanyAnalysisTable({
           aValue = formatPredictionDate(a)
           bValue = formatPredictionDate(b)
           break
+        case 'marketCap':
+          aValue = a.market_cap || 0
+          bValue = b.market_cap || 0
+          break
         default:
           return 0
       }
@@ -206,7 +233,7 @@ export function CompanyAnalysisTable({
     })
 
     return filtered
-  }, [actualData, searchTerm, selectedSector, selectedRiskLevel, sortField, sortDirection, getPredictionProbability, formatPredictionDate])
+  }, [actualData, searchTerm, selectedSector, selectedRiskLevel, sortField, sortDirection, getPredictionProbability, formatPredictionDate, formatMarketCap])
 
   // Get paginated data - only show items for current page
   const paginatedData = useMemo(() => {
@@ -514,6 +541,20 @@ export function CompanyAnalysisTable({
                     )}
                   </TableHead>
                   <TableHead>
+                    {isLoading ? (
+                      <p className="text-sm text-gray-600 font-semibold font-bricolage">Market Cap</p>
+                    ) : (
+                      <Button
+                        variant="ghost"
+                        onClick={() => handleSort('marketCap')}
+                        className="h-auto p-0 font-semibold flex items-center space-x-1 group font-bricolage"
+                      >
+                        <span>Market Cap</span>
+                        {getSortIcon('marketCap')}
+                      </Button>
+                    )}
+                  </TableHead>
+                  <TableHead>
                     <p className="text-sm text-gray-600 font-semibold font-bricolage">Key Ratios</p>
                   </TableHead>
                   <TableHead>
@@ -545,6 +586,9 @@ export function CompanyAnalysisTable({
                       </TableCell>
                       <TableCell>
                         <Skeleton className="h-4 w-16" />
+                      </TableCell>
+                      <TableCell>
+                        <Skeleton className="h-4 w-20" />
                       </TableCell>
                       <TableCell>
                         <div className="space-y-2">
@@ -579,6 +623,11 @@ export function CompanyAnalysisTable({
                       <TableCell>
                         <Badge variant="outline" className="text-blue-600 font-bricolage text-xs">
                           {formatPredictionDate(item)}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="font-bricolage text-sm">
+                        <Badge variant="outline" className="text-black-600 border-border-200 font-bricolage text-xs ml-6">
+                          {formatMarketCap(item.market_cap)}
                         </Badge>
                       </TableCell>
                       <TableCell>
@@ -677,6 +726,12 @@ export function CompanyAnalysisTable({
                 <span className="text-sm text-gray-600 font-bricolage">per page</span>
               </div>
 
+              <div className="text-center mt-3">
+                <span className="text-xs text-gray-500 font-bricolage">
+                  Page {currentPage} of {totalPages}
+                </span>
+              </div>
+
               {/* Page numbers - show up to 8 + Next */}
               <div className="flex items-center gap-1">
                 {Array.from({ length: Math.min(8, totalPages) }, (_, i) => i + 1).map((page) => (
@@ -711,14 +766,6 @@ export function CompanyAnalysisTable({
               </div>
             </div>
 
-            {/* Status info */}
-            <div className="text-center mt-3">
-              <span className="text-xs text-gray-500 font-bricolage">
-                Page {currentPage} of {totalPages}
-                {isLoadingBatch && ` (loading more ${type} predictions...)`}
-                {!isLoadingBatch && totalLoadedPredictions < totalPredictionsInDB && ` (${totalLoadedPredictions} of ${totalPredictionsInDB} loaded - more will load automatically)`}
-              </span>
-            </div>
           </div>
         )}
       </div>

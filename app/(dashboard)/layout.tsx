@@ -5,7 +5,7 @@ import { DashboardProvider } from '@/components/providers/dashboard-provider'
 import { DataSyncProvider } from '@/components/providers/data-sync-provider'
 
 export const metadata: Metadata = {
-  title: 'Dashboard | AccuNode AI',
+  title: 'Dashboard | AccuNode',
   description: 'Financial risk prediction dashboard',
 }
 

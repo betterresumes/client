@@ -119,7 +119,7 @@ export function LoginForm() {
           Welcome back
         </h1>
         <p className="mt-2 text-gray-600 dark:text-gray-400">
-          Sign in to your AccuNode AI account
+          Sign in to your AccuNode account
         </p>
       </div>
 

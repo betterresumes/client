@@ -51,6 +51,7 @@ import { authApi } from '@/lib/api/auth'
 import { organizationsApi } from '@/lib/api/organizations'
 import { tenantsApi } from '@/lib/api/tenants'
 import { UserRole } from '@/lib/types/user'
+import { ComprehensiveTenantResponse } from '@/lib/types/tenant'
 
 const profileSchema = z.object({
   full_name: z.string().min(1, 'Full name is required'),
@@ -160,8 +161,8 @@ export default function SettingsPage() {
   const [saving, setSaving] = useState(false)
 
   // Tenant management states (for super admin)
-  const [tenants, setTenants] = useState<Tenant[]>([])
-  const [selectedTenant, setSelectedTenant] = useState<TenantDetail | null>(null)
+  const [tenants, setTenants] = useState<ComprehensiveTenantResponse[]>([])
+  const [selectedTenant, setSelectedTenant] = useState<ComprehensiveTenantResponse | null>(null)
   const [showTenantDetail, setShowTenantDetail] = useState(false)
   const [showCreateTenantDialog, setShowCreateTenantDialog] = useState(false)
 
@@ -230,9 +231,9 @@ export default function SettingsPage() {
 
   const loadTenants = async () => {
     try {
-      const response = await tenantsApi.getAllTenants()
+      const response = await tenantsApi.list()
       if (response.success && response.data) {
-        setTenants(response.data)
+        setTenants(response.data.tenants)
       }
     } catch (error) {
       console.error('Error loading tenants:', error)
@@ -242,7 +243,7 @@ export default function SettingsPage() {
 
   const loadTenantDetails = async (tenantId: string) => {
     try {
-      const response = await tenantsApi.getTenantDetails(tenantId)
+      const response = await tenantsApi.get(tenantId)
       if (response.success && response.data) {
         setSelectedTenant(response.data)
         setShowTenantDetail(true)
@@ -344,8 +345,8 @@ export default function SettingsPage() {
   const onCreateTenantSubmit = async (data: CreateTenantFormData) => {
     try {
       setSaving(true)
-      const response = await tenantsApi.createTenant(data)
-      
+      const response = await tenantsApi.create(data)
+
       if (response.success) {
         toast.success('Tenant created successfully')
         createTenantForm.reset()
@@ -371,8 +372,12 @@ export default function SettingsPage() {
     switch (role) {
       case UserRole.SUPER_ADMIN:
         return 'border-red-500 text-red-700 bg-red-50'
-      case UserRole.ADMIN:
+      case UserRole.TENANT_ADMIN:
         return 'border-blue-500 text-blue-700 bg-blue-50'
+      case UserRole.ORG_ADMIN:
+        return 'border-purple-500 text-purple-700 bg-purple-50'
+      case UserRole.ORG_MEMBER:
+        return 'border-green-500 text-green-700 bg-green-50'
       case UserRole.USER:
         return 'border-gray-500 text-gray-700 bg-gray-50'
       default:
@@ -384,7 +389,7 @@ export default function SettingsPage() {
     switch (role) {
       case UserRole.SUPER_ADMIN:
         return <Shield className="h-3 w-3" />
-      case UserRole.ADMIN:
+      case UserRole.SUPER_ADMIN:
         return <Building className="h-3 w-3" />
       case UserRole.USER:
         return <User className="h-3 w-3" />
@@ -397,7 +402,7 @@ export default function SettingsPage() {
     switch (role) {
       case UserRole.SUPER_ADMIN:
         return 'Super Administrator'
-      case UserRole.ADMIN:
+      case UserRole.SUPER_ADMIN:
         return 'Administrator'
       case UserRole.USER:
         return 'User'
@@ -459,11 +464,9 @@ export default function SettingsPage() {
       </div>
 
       <Tabs defaultValue="user-details" className="space-y-6">
-        <TabsList className={`grid ${
-          profile.role === UserRole.SUPER_ADMIN ? 'grid-cols-3' : 
-          profile.role === UserRole.ADMIN ? 'grid-cols-3' : 
-          'grid-cols-2'
-        }`}>
+        <TabsList className={`grid ${(profile.role as string) === 'super_admin' ? 'grid-cols-3' :
+            'grid-cols-2'
+          }`}>
           <TabsTrigger value="user-details">
             <User className="h-4 w-4 mr-2" />
             User Details
@@ -472,16 +475,16 @@ export default function SettingsPage() {
             <Lock className="h-4 w-4 mr-2" />
             Security
           </TabsTrigger>
-          
+
           {/* Role-specific management tabs */}
-          {profile.role === UserRole.SUPER_ADMIN && (
+          {(profile.role as string) === 'super_admin' && (
             <TabsTrigger value="tenant-management">
               <Building className="h-4 w-4 mr-2" />
               Tenant Management
             </TabsTrigger>
           )}
-          
-          {profile.role === UserRole.ADMIN && (
+
+          {(profile.role as string) === 'super_admin' && (
             <TabsTrigger value="organization-management">
               <Building2 className="h-4 w-4 mr-2" />
               Organization Management
@@ -707,7 +710,7 @@ export default function SettingsPage() {
         </TabsContent>
 
         {/* Tenant Management Tab (Super Admin only) */}
-        {profile.role === UserRole.SUPER_ADMIN && (
+        {(profile.role as string) === 'super_admin' && (
           <TabsContent value="tenant-management">
             <div className="space-y-6">
               {/* Header */}
@@ -716,7 +719,7 @@ export default function SettingsPage() {
                   <h2 className="text-2xl font-bold text-gray-900">Tenant Management</h2>
                   <p className="text-gray-500">Create and manage tenants</p>
                 </div>
-                
+
                 <Dialog open={showCreateTenantDialog} onOpenChange={setShowCreateTenantDialog}>
                   <DialogTrigger asChild>
                     <Button size="lg" className="bg-black hover:bg-gray-800">
@@ -887,9 +890,9 @@ export default function SettingsPage() {
                             <div className="flex items-center gap-3 text-gray-700">
                               <Building2 className="h-5 w-5" />
                               <div>
-                                <span className="text-lg font-bold">{tenant.organization_count || 0}</span>
+                                <span className="text-lg font-bold">{tenant.total_organizations || 0}</span>
                                 <span className="text-sm text-gray-500 ml-2">
-                                  {(tenant.organization_count || 0) === 1 ? 'Organization' : 'Organizations'}
+                                  {(tenant.total_organizations || 0) === 1 ? 'Organization' : 'Organizations'}
                                 </span>
                               </div>
                             </div>
@@ -920,7 +923,7 @@ export default function SettingsPage() {
         )}
 
         {/* Organization Management Tab (Admin only) */}
-        {profile.role === UserRole.ADMIN && (
+        {(profile.role as string) === 'super_admin' && (
           <TabsContent value="organization-management">
             <div className="space-y-6">
               <div className="text-center py-16">
@@ -942,7 +945,7 @@ export default function SettingsPage() {
       </Tabs>
 
       {/* Tenant Detail Dialog */}
-      {profile.role === UserRole.SUPER_ADMIN && (
+      {(profile.role as string) === 'super_admin' && (
         <Dialog open={showTenantDetail} onOpenChange={setShowTenantDetail}>
           <DialogContent className="max-w-none w-[98vw] max-h-[95vh] overflow-hidden">
             <DialogHeader className="pb-4 border-b">
@@ -1168,7 +1171,7 @@ export default function SettingsPage() {
                                   <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
                                     <div className="bg-gray-50 p-3 rounded-lg">
                                       <div className="text-xs uppercase tracking-wide text-gray-500 font-semibold">Users</div>
-                                      <div className="text-lg font-bold text-gray-900 mt-1">{org.member_count}</div>
+                                      <div className="text-lg font-bold text-gray-900 mt-1">{org.total_users}</div>
                                     </div>
                                     <div className="bg-gray-50 p-3 rounded-lg">
                                       <div className="text-xs uppercase tracking-wide text-gray-500 font-semibold">Max Users</div>

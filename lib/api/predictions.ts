@@ -199,6 +199,16 @@ export const predictionsApi = {
 
       return apiClient.get<any>(url)
     },
+
+    // Cancel a running job
+    async cancelJob(jobId: string): Promise<ApiResponse<any>> {
+      return apiClient.post<any>(`/predictions/jobs/${jobId}/cancel`, {})
+    },
+
+    // Delete a job (only if not processing)
+    async deleteJob(jobId: string): Promise<ApiResponse<any>> {
+      return apiClient.delete<any>(`/predictions/jobs/${jobId}`)
+    },
   },
 
   // Unified methods for easier use

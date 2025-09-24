@@ -6,6 +6,8 @@ import { Badge } from '@/components/ui/badge'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Download, FileSpreadsheet, CheckCircle, Loader2, AlertCircle, Activity } from 'lucide-react'
 import { toast } from 'sonner'
+import { useBulkUploadStore } from '@/lib/stores/bulk-upload-store'
+import { useEffect, useRef } from 'react'
 
 interface BulkUploadSectionProps {
   predictionType: 'annual' | 'quarterly'
@@ -65,6 +67,31 @@ export function BulkUploadSection({
   showModelTabs = true,
   showTemplateButton = true
 }: BulkUploadSectionProps) {
+  const {
+    jobs,
+    isUploading: storeIsUploading,
+    uploadFile,
+    fetchAllJobs
+  } = useBulkUploadStore()
+
+  // Create refs for file inputs
+  const fileInputRef = useRef<HTMLInputElement>(null)
+  const newFileInputRef = useRef<HTMLInputElement>(null)
+
+  // Auto-refresh jobs when component mounts
+  useEffect(() => {
+    fetchAllJobs()
+  }, [fetchAllJobs])
+
+  // Use store state if available, fall back to props
+  const currentIsUploading = storeIsUploading || isUploading
+  const currentUploadProgress = uploadProgress
+
+  // Check for active jobs
+  const activeJobs = jobs.filter(job =>
+    job.status === 'processing' || job.status === 'pending'
+  )
+  const hasActiveJobs = activeJobs.length > 0
   const downloadTemplate = (type: 'annual' | 'quarterly') => {
     const data = type === 'annual' ? ANNUAL_TEMPLATE_DATA : QUARTERLY_TEMPLATE_DATA
     const headers = Object.keys(data[0])
@@ -133,8 +160,8 @@ export function BulkUploadSection({
       return
     }
 
-    if (file.size > 10 * 1024 * 1024) {
-      toast.error('File size must be less than 10MB')
+    if (file.size > 50 * 1024 * 1024) { // Updated to 50MB as per API specs
+      toast.error('File size must be less than 50MB')
       return
     }
 
@@ -147,8 +174,13 @@ export function BulkUploadSection({
           return
         }
 
+        if (validation.rowCount && validation.rowCount > 10000) {
+          toast.error('File contains too many rows. Maximum allowed is 10,000 rows.')
+          return
+        }
+
         if (validation.rowCount && validation.rowCount > 0) {
-          toast.success(`Template validated! Found ${validation.rowCount} rows ready for analysis.`)
+          toast.success(`${predictionType === 'annual' ? 'Annual' : 'Quarterly'} template validated! Found ${validation.rowCount} rows ready for analysis.`)
         }
       } catch (error) {
         toast.error('Failed to validate template structure')
@@ -156,12 +188,29 @@ export function BulkUploadSection({
       }
     }
 
-    // Set the file and mark as ready for analysis
-    setUploadedFile(file)
-    onFileUpload(file)
+    try {
+      // Use the store's upload functionality with async endpoint
+      console.log(`📤 Starting upload for ${predictionType} file:`, file.name)
+      const jobId = await uploadFile(file, predictionType)
 
-    // Toast success message
-    toast.success(`File "${file.name}" uploaded successfully! Click "Start Analysis" to begin.`)
+      if (jobId) {
+        console.log(`✅ Upload successful, job ID: ${jobId}`)
+        toast.success(`File "${file.name}" uploaded successfully! Analysis job started with ID: ${jobId}`)
+
+        // Call the original onFileUpload if provided for compatibility
+        if (onFileUpload) {
+          onFileUpload(file)
+        }
+        setUploadedFile(file)
+      } else {
+        console.error('❌ Upload failed: No job ID returned')
+        toast.error('Failed to start analysis job')
+      }
+    } catch (error) {
+      console.error('❌ Upload error:', error)
+      const errorMessage = error instanceof Error ? error.message : 'Failed to upload file and start analysis'
+      toast.error(`Upload failed: ${errorMessage}`)
+    }
   }
 
   const handleDragOver = (e: React.DragEvent) => e.preventDefault()
@@ -198,23 +247,45 @@ export function BulkUploadSection({
 
       <Card className="p-6">
         <div
-          className={`border-2 border-dashed rounded-lg p-12 text-center transition-colors ${isUploading || bulkUploadPending ? 'border-blue-400 bg-blue-50 dark:bg-blue-900/20' :
-            uploadedFile && !isUploading ? 'border-green-400 bg-green-50 dark:bg-green-900/20' :
+          className={`border-2 border-dashed rounded-lg p-12 text-center transition-colors ${currentIsUploading || bulkUploadPending || hasActiveJobs ? 'border-blue-400 bg-blue-50 dark:bg-blue-900/20' :
+            uploadedFile && !currentIsUploading ? 'border-green-400 bg-green-50 dark:bg-green-900/20' :
               'border-gray-300 dark:border-gray-600 hover:border-blue-400'
             }`}
           onDragOver={handleDragOver}
           onDrop={handleDrop}
         >
-          {isUploading || bulkUploadPending ? (
+          {currentIsUploading || bulkUploadPending || hasActiveJobs ? (
             <div className="space-y-4">
               <Loader2 className="h-16 w-16 text-blue-500 mx-auto animate-spin" />
               <div>
                 <h4 className="text-xl font-medium text-blue-900 dark:text-blue-100 mb-2">
-                  {isUploading ? 'Processing File...' : 'Running Analysis...'}
+                  {currentIsUploading ? 'Uploading File...' : hasActiveJobs ? 'Analysis in Progress...' : 'Processing File...'}
                 </h4>
                 <p className="text-blue-700 dark:text-blue-200">
-                  {isUploading ? `${uploadProgress}% complete` : 'Running ML predictions on your data'}
+                  {currentIsUploading ? `${currentUploadProgress}% uploaded` :
+                    hasActiveJobs ? `${activeJobs.length} job(s) running` :
+                      'Running ML predictions on your data'}
                 </p>
+                {hasActiveJobs && (
+                  <div className="mt-4 space-y-2">
+                    {activeJobs.slice(0, 2).map((job) => (
+                      <div key={job.id} className="text-sm text-blue-600 dark:text-blue-300">
+                        <div className="flex items-center justify-center gap-2">
+                          <Activity className="h-4 w-4" />
+                          <span>{job.original_filename}</span>
+                          <Badge variant="outline" className="text-xs">
+                            {job.progress_percentage}% complete
+                          </Badge>
+                        </div>
+                      </div>
+                    ))}
+                    {activeJobs.length > 2 && (
+                      <p className="text-xs text-blue-500">
+                        +{activeJobs.length - 2} more jobs running...
+                      </p>
+                    )}
+                  </div>
+                )}
                 {uploadedFile && (
                   <p className="text-sm text-blue-600 dark:text-blue-300 mt-2">
                     File: {uploadedFile.name}
@@ -222,41 +293,84 @@ export function BulkUploadSection({
                 )}
               </div>
             </div>
-          ) : uploadedFile && !isUploading && !bulkUploadPending ? (
+          ) : uploadedFile && !currentIsUploading && !bulkUploadPending && !hasActiveJobs ? (
             <div className="space-y-4">
               <CheckCircle className="h-16 w-16 text-green-500 mx-auto" />
               <div>
-                <h4 className="text-xl font-medium text-gray-900 dark:text-white mb-2">File Ready for Analysis</h4>
+                <h4 className="text-xl font-medium text-gray-900 dark:text-white mb-2">
+                  File Ready for {predictionType === 'annual' ? 'Annual' : 'Quarterly'} Analysis
+                </h4>
                 <p className="text-gray-700 dark:text-gray-200 mb-2">File: {uploadedFile.name}</p>
                 <p className="text-sm text-gray-600 dark:text-gray-300 mb-4">
-                  File uploaded successfully. Click the button below to start analysis.
+                  File uploaded successfully. Analysis will start automatically using async processing.
                 </p>
                 <div className="flex gap-2 justify-center">
                   <Button
-                    onClick={() => onBulkUpload(uploadedFile)}
-                    className="bg-blue-600 hover:bg-blue-700 text-white"
-                    disabled={isUploading || bulkUploadPending}
+                    variant="outline"
+                    size="sm"
+                    className="border-gray-300 text-gray-700"
+                    onClick={() => {
+                      fileInputRef.current?.click()
+                    }}
                   >
-                    {isUploading || bulkUploadPending ? 'Starting...' : 'Start Analysis'}
-                  </Button>
-                  <Button variant="outline" size="sm" onClick={() => setUploadedFile(null)} className="border-gray-300 text-gray-700">
                     Upload Different File
                   </Button>
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    className="hidden"
+                    accept=".xlsx,.xls,.csv"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0]
+                      if (file) {
+                        setUploadedFile(null) // Clear previous file first
+                        handleFileSelect(file)
+                        // Reset the input value so the same file can be selected again
+                        e.target.value = ''
+                      }
+                    }}
+                  />
                 </div>
               </div>
             </div>
-          ) : uploadedFile && !isUploading ? (
+          ) : jobs.some(job => job.status === 'completed') && !hasActiveJobs ? (
             <div className="space-y-4">
               <CheckCircle className="h-16 w-16 text-green-500 mx-auto" />
               <div>
-                <h4 className="text-xl font-medium text-green-900 dark:text-green-100 mb-2">Analysis Complete!</h4>
-                <p className="text-green-700 dark:text-green-200 mb-2">File: {uploadedFile.name}</p>
+                <h4 className="text-xl font-medium text-green-900 dark:text-green-100 mb-2">
+                  {predictionType === 'annual' ? 'Annual' : 'Quarterly'} Analysis Complete!
+                </h4>
+                {uploadedFile && (
+                  <p className="text-green-700 dark:text-green-200 mb-2">File: {uploadedFile.name}</p>
+                )}
                 <p className="text-sm text-green-600 dark:text-green-300 mb-4">
-                  Analysis completed successfully. Check the results below.
+                  {predictionType === 'annual' ? 'Annual' : 'Quarterly'} analysis completed successfully. Check the results in the Jobs section below.
                 </p>
-                <Button variant="outline" size="sm" onClick={() => setUploadedFile(null)} className="border-green-300 text-green-700">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="border-green-300 text-green-700"
+                  onClick={() => {
+                    newFileInputRef.current?.click()
+                  }}
+                >
                   Upload New File
                 </Button>
+                <input
+                  ref={newFileInputRef}
+                  type="file"
+                  className="hidden"
+                  accept=".xlsx,.xls,.csv"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0]
+                    if (file) {
+                      setUploadedFile(null) // Clear previous file first
+                      handleFileSelect(file)
+                      // Reset the input value so the same file can be selected again
+                      e.target.value = ''
+                    }
+                  }}
+                />
               </div>
             </div>
           ) : (
@@ -274,8 +388,8 @@ export function BulkUploadSection({
                     }} />
                   </label>
                 </p>
-                <p className="text-sm text-gray-500">Supports CSV, XLSX, XLS files up to 10MB</p>
-                <p className="text-xs text-gray-400 mt-2">File will be processed immediately after upload</p>
+                <p className="text-sm text-gray-500">Supports CSV, XLSX, XLS files up to 50MB (max 10,000 rows)</p>
+                <p className="text-xs text-gray-400 mt-2">Analysis will start automatically using async processing</p>
               </div>
             </div>
           )}

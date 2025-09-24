@@ -11,13 +11,10 @@ export function useCreatePredictionMutations() {
   const queryClient = useQueryClient()
   const { addPrediction, replacePrediction } = usePredictionsStore()
 
-  // Annual prediction mutation
   const createAnnualPredictionMutation = useMutation({
     mutationFn: async (data: AnnualPredictionRequest) => {
-      // Make API call first - no optimistic updates to avoid issues
       const response = await predictionsApi.annual.createAnnualPrediction(data)
-      
-      // Return response with a temp ID for consistency
+
       return { response, tempId: `temp-${Date.now()}` }
     },
     onSuccess: ({ response, tempId }) => {
@@ -35,22 +32,17 @@ export function useCreatePredictionMutations() {
         }
       }
 
-      // Add the new prediction to the store
       addPrediction(realPrediction as any, 'annual')
 
-      // Invalidate React Query cache
       queryClient.invalidateQueries({ queryKey: predictionKeys.annual() })
       queryClient.invalidateQueries({ queryKey: predictionKeys.all })
 
-      // Trigger custom event to notify dashboard components to update
       if (typeof window !== 'undefined') {
         window.dispatchEvent(new CustomEvent('prediction-created', {
           detail: { type: 'annual', prediction: realPrediction }
         }))
         window.dispatchEvent(new CustomEvent('predictions-updated'))
       }
-
-      console.log('✅ Annual prediction created successfully and added to store')
 
       return {
         company: prediction.company_name,
@@ -72,13 +64,10 @@ export function useCreatePredictionMutations() {
     }
   })
 
-  // Quarterly prediction mutation
   const createQuarterlyPredictionMutation = useMutation({
     mutationFn: async (data: QuarterlyPredictionRequest) => {
-      // Make API call first - no optimistic updates to avoid issues
       const response = await predictionsApi.quarterly.createQuarterlyPrediction(data)
-      
-      // Return response with a temp ID for consistency
+
       return { response, tempId: `temp-${Date.now()}` }
     },
     onSuccess: ({ response, tempId }) => {
@@ -96,14 +85,11 @@ export function useCreatePredictionMutations() {
         }
       }
 
-      // Add the new prediction to the store
       addPrediction(realPrediction as any, 'quarterly')
 
-      // Invalidate React Query cache
       queryClient.invalidateQueries({ queryKey: predictionKeys.quarterly() })
       queryClient.invalidateQueries({ queryKey: predictionKeys.all })
 
-      // Trigger custom event to notify dashboard components to update
       if (typeof window !== 'undefined') {
         window.dispatchEvent(new CustomEvent('prediction-created', {
           detail: { type: 'quarterly', prediction: realPrediction }
@@ -133,7 +119,6 @@ export function useCreatePredictionMutations() {
     }
   })
 
-  // Bulk upload mutation
   const bulkUploadMutation = useMutation({
     mutationFn: async ({ file, type }: { file: File, type: 'annual' | 'quarterly' }) => {
       if (type === 'annual') {

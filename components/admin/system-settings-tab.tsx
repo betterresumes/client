@@ -40,7 +40,7 @@ interface SystemConfig {
 
 export function SystemSettingsTab() {
   const [config, setConfig] = useState<SystemConfig>({
-    siteName: 'AccuNode AI Platform',
+    siteName: 'AccuNode Platform',
     siteDescription: 'Financial risk prediction and analysis platform',
     allowRegistration: true,
     requireEmailVerification: true,
