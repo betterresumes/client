@@ -56,7 +56,17 @@ export const authApi = {
 
   // Change password
   async changePassword(data: ChangePasswordRequest): Promise<ApiResponse<{ message: string }>> {
-    return apiClient.put<{ message: string }>('/auth/change-password', data)
+    return apiClient.post<{ message: string }>('/auth/change-password', data)
+  },
+
+  // Forgot password
+  async forgotPassword(email: string): Promise<ApiResponse<{ message: string }>> {
+    return apiClient.post<{ message: string }>('/auth/forgot-password', { email })
+  },
+
+  // Reset password
+  async resetPassword(data: { token: string; new_password: string }): Promise<ApiResponse<{ message: string }>> {
+    return apiClient.post<{ message: string }>('/auth/reset-password', data)
   },
 
   // Get users list (admin endpoints)

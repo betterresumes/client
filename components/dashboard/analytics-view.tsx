@@ -63,10 +63,25 @@ export function AnalyticsView() {
       setForceRefresh(prev => prev + 1)
     }
 
+    const handlePredictionCreated = (event: CustomEvent) => {
+      console.log('📊 Analytics view - prediction created, refreshing view')
+      setForceRefresh(prev => prev + 1)
+    }
+
+    const handlePredictionsUpdated = () => {
+      console.log('📊 Analytics view - predictions updated, refreshing view')
+      setForceRefresh(prev => prev + 1)
+    }
+
     if (typeof window !== 'undefined') {
       window.addEventListener('data-filter-changed', handleDataFilterChanged as EventListener)
+      window.addEventListener('prediction-created', handlePredictionCreated as EventListener)
+      window.addEventListener('predictions-updated', handlePredictionsUpdated as EventListener)
+      
       return () => {
         window.removeEventListener('data-filter-changed', handleDataFilterChanged as EventListener)
+        window.removeEventListener('prediction-created', handlePredictionCreated as EventListener)
+        window.removeEventListener('predictions-updated', handlePredictionsUpdated as EventListener)
       }
     }
   }, [])
@@ -76,15 +91,35 @@ export function AnalyticsView() {
   const safeQuarterlyPredictions = useMemo(() => Array.isArray(quarterlyPredictions) ? quarterlyPredictions : [], [quarterlyPredictions, forceRefresh])
 
   // Get filtered predictions based on data access settings (trigger with forceRefresh)
-  const filteredAnnualPredictions = useMemo(() => getFilteredPredictions('annual'), [getFilteredPredictions, forceRefresh, annualPredictions, systemAnnualPredictions, activeDataFilter])
-  const filteredQuarterlyPredictions = useMemo(() => getFilteredPredictions('quarterly'), [getFilteredPredictions, forceRefresh])
+  const filteredAnnualPredictions = useMemo(() => {
+    const filtered = getFilteredPredictions('annual')
+    console.log('📊 Analytics - Annual predictions filtered:', {
+      activeDataFilter,
+      count: filtered.length,
+      sample: filtered.slice(0, 3).map(p => ({ symbol: p.company_symbol, access: p.organization_access }))
+    })
+    return filtered
+  }, [getFilteredPredictions, forceRefresh, annualPredictions, systemAnnualPredictions, activeDataFilter])
+  
+  const filteredQuarterlyPredictions = useMemo(() => {
+    const filtered = getFilteredPredictions('quarterly')
+    console.log('📊 Analytics - Quarterly predictions filtered:', {
+      activeDataFilter,
+      count: filtered.length,
+      systemQuarterlyCount: systemQuarterlyPredictions.length,
+      userQuarterlyCount: quarterlyPredictions.length,
+      sample: filtered.slice(0, 3).map(p => ({ symbol: p.company_symbol, access: p.organization_access })),
+      expectedFromSystem: activeDataFilter === 'system'
+    })
+    return filtered
+  }, [getFilteredPredictions, forceRefresh, quarterlyPredictions, systemQuarterlyPredictions, activeDataFilter])
 
   // Convert filtered predictions to match expected format
   const annualData = filteredAnnualPredictions.map((pred: any) => ({
     sector: pred.sector || 'Unknown',
-    defaultRate: pred.default_probability * 100,
+    defaultRate: (pred.default_probability || pred.probability || 0) * 100,
     marketCap: `$${(Math.random() * 400 + 50).toFixed(1)}B`, // Random market cap for demo
-    riskCategory: pred.risk_category,
+    riskCategory: pred.risk_category || pred.risk_level,
     symbol: pred.company_symbol,
     reportingYear: pred.reporting_year,
     confidence: pred.confidence
@@ -92,15 +127,16 @@ export function AnalyticsView() {
 
   const quarterlyData = filteredQuarterlyPredictions.map((pred: any) => ({
     sector: pred.sector || 'Unknown',
-    defaultRate: pred.default_probability * 100,
+    defaultRate: (pred.default_probability || pred.ensemble_probability || pred.logistic_probability || pred.gbm_probability || 0) * 100,
     marketCap: `$${(Math.random() * 400 + 50).toFixed(1)}B`, // Random market cap for demo
-    riskCategory: pred.risk_category,
+    riskCategory: pred.risk_category || pred.risk_level,
     symbol: pred.company_symbol,
     reportingQuarter: pred.reporting_quarter,
     reportingYear: pred.reporting_year,
     confidence: pred.confidence
   }))
 
+  // Define analytics data interface
   interface AnalyticsDataItem {
     sector?: string;
     defaultRate: number;

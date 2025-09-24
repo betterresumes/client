@@ -82,31 +82,40 @@ export function DashboardOverview() {
   // Listen for essential prediction events only
   useEffect(() => {
     const handlePredictionCreated = (event: CustomEvent) => {
-      console.log('🆕 Prediction created - refreshing dashboard')
+      console.log('🆕 Prediction created - refreshing dashboard without full reload')
       setForceRefresh(prev => prev + 1)
       setCurrentPage(1) // Reset pagination
 
-      // Refresh dashboard stats only
+      // Invalidate dashboard stats cache to trigger refresh
       const statsStore = useDashboardStatsStore.getState()
       statsStore.invalidateCache()
+      
+      // No need to manually fetch predictions - the store already has the new data
+      // from the mutation's addPrediction call
+    }
+
+    const handlePredictionsUpdated = () => {
+      console.log('📊 Predictions updated - refreshing view')
+      setForceRefresh(prev => prev + 1)
     }
 
     const handleNavigateToDashboard = () => {
-      console.log('🚀 Navigate to dashboard - refreshing')
-      setForceRefresh(prev => prev + 1)
-      setCurrentPage(1)
-      fetchStats(true) // Force refresh stats
+      console.log('🚀 Navigate to dashboard - refreshing stats')
+      fetchStats(true) // Only refresh stats, not predictions
     }
 
     if (typeof window !== 'undefined') {
       window.addEventListener('prediction-created', handlePredictionCreated as EventListener)
-      window.addEventListener('prediction-created-navigate-dashboard', handleNavigateToDashboard as EventListener)
+      window.addEventListener('predictions-updated', handlePredictionsUpdated as EventListener)  
+      window.addEventListener('navigate-to-dashboard', handleNavigateToDashboard as EventListener)
+
       return () => {
         window.removeEventListener('prediction-created', handlePredictionCreated as EventListener)
-        window.removeEventListener('prediction-created-navigate-dashboard', handleNavigateToDashboard as EventListener)
+        window.removeEventListener('predictions-updated', handlePredictionsUpdated as EventListener)
+        window.removeEventListener('navigate-to-dashboard', handleNavigateToDashboard as EventListener)
       }
     }
-  }, [])
+  }, [fetchStats])
 
   // Single useEffect to fetch initial data - should only run once after login
   useEffect(() => {

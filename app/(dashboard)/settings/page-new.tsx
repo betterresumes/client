@@ -12,7 +12,6 @@ import {
   Building,
   Building2,
   Users,
-  UserPlus,
   Shield,
   Plus,
   Edit,
@@ -52,8 +51,6 @@ import { authApi } from '@/lib/api/auth'
 import { organizationsApi } from '@/lib/api/organizations'
 import { tenantsApi } from '@/lib/api/tenants'
 import { UserRole } from '@/lib/types/user'
-import { UserCreate } from '@/lib/types/auth'
-import { TenantResponse, ComprehensiveTenantResponse, TenantCreate, OrganizationCreate, EnhancedOrganizationResponse, WhitelistCreate } from '@/lib/types/tenant'
 
 const profileSchema = z.object({
   full_name: z.string().min(1, 'Full name is required'),
@@ -85,21 +82,6 @@ const createTenantSchema = z.object({
   admin_password: z.string().min(8, 'Password must be at least 8 characters'),
 })
 
-const createOrganizationSchema = z.object({
-  name: z.string().min(1, 'Organization name is required'),
-  description: z.string().optional(),
-  domain: z.string().optional(),
-  max_users: z.number().min(1).optional(),
-  admin_email: z.string().email('Admin email is required'),
-  admin_first_name: z.string().min(1, 'Admin first name is required'),
-  admin_last_name: z.string().min(1, 'Admin last name is required'),
-  admin_password: z.string().min(8, 'Password must be at least 8 characters'),
-})
-
-const inviteMemberSchema = z.object({
-  emails: z.string().min(1, 'At least one email is required'),
-})
-
 const forgotPasswordSchema = z.object({
   email: z.string().email('Valid email is required'),
 })
@@ -107,8 +89,6 @@ const forgotPasswordSchema = z.object({
 type ProfileFormData = z.infer<typeof profileSchema>
 type PasswordFormData = z.infer<typeof passwordSchema>
 type CreateTenantFormData = z.infer<typeof createTenantSchema>
-type CreateOrganizationFormData = z.infer<typeof createOrganizationSchema>
-type InviteMemberFormData = z.infer<typeof inviteMemberSchema>
 type ForgotPasswordFormData = z.infer<typeof forgotPasswordSchema>
 
 interface UserProfile {
@@ -123,9 +103,54 @@ interface UserProfile {
   tenant_id?: string
 }
 
-// Use the imported types from lib
-type Tenant = ComprehensiveTenantResponse
-type TenantDetail = ComprehensiveTenantResponse
+interface Tenant {
+  id: string
+  name: string
+  slug: string
+  description?: string
+  is_active: boolean
+  created_at: string
+  updated_at: string
+  domain?: string
+  organization_count?: number
+}
+
+interface TenantDetail extends Tenant {
+  total_organizations: number
+  active_organizations: number
+  total_users_in_tenant: number
+  total_tenant_admins: number
+  tenant_admins: Array<{
+    id: string
+    email: string
+    full_name?: string
+    is_active: boolean
+    created_at: string
+  }>
+  organizations: Array<{
+    id: string
+    name: string
+    description?: string
+    is_active: boolean
+    created_at: string
+    member_count: number
+    max_users?: number
+    join_enabled: boolean
+    join_token?: string
+    admin?: {
+      id: string
+      email: string
+      full_name?: string
+    }
+    members: Array<{
+      id: string
+      email: string
+      full_name?: string
+      role: string
+      is_active: boolean
+    }>
+  }>
+}
 
 export default function SettingsPage() {
   const router = useRouter()
@@ -139,15 +164,6 @@ export default function SettingsPage() {
   const [selectedTenant, setSelectedTenant] = useState<TenantDetail | null>(null)
   const [showTenantDetail, setShowTenantDetail] = useState(false)
   const [showCreateTenantDialog, setShowCreateTenantDialog] = useState(false)
-
-  // Organization management states (for tenant admin)
-  const [organizations, setOrganizations] = useState<EnhancedOrganizationResponse[]>([])
-  const [selectedOrganization, setSelectedOrganization] = useState<EnhancedOrganizationResponse | null>(null)
-  const [showOrganizationDetail, setShowOrganizationDetail] = useState(false)
-  const [showCreateOrganizationDialog, setShowCreateOrganizationDialog] = useState(false)
-  const [showInviteMemberDialog, setShowInviteMemberDialog] = useState(false)
-  const [organizationMembers, setOrganizationMembers] = useState<any[]>([])
-  const [whitelistedEmails, setWhitelistedEmails] = useState<string[]>([])
 
   // Password visibility states
   const [showCurrentPassword, setShowCurrentPassword] = useState(false)
@@ -170,14 +186,6 @@ export default function SettingsPage() {
     resolver: zodResolver(createTenantSchema)
   })
 
-  const createOrganizationForm = useForm<CreateOrganizationFormData>({
-    resolver: zodResolver(createOrganizationSchema)
-  })
-
-  const inviteMemberForm = useForm<InviteMemberFormData>({
-    resolver: zodResolver(inviteMemberSchema)
-  })
-
   const forgotPasswordForm = useForm<ForgotPasswordFormData>({
     resolver: zodResolver(forgotPasswordSchema)
   })
@@ -186,8 +194,6 @@ export default function SettingsPage() {
     loadProfile()
     if (user?.role === UserRole.SUPER_ADMIN) {
       loadTenants()
-    } else if (user?.role === 'tenant_admin') {
-      loadOrganizations()
     }
   }, [user])
 
@@ -224,9 +230,9 @@ export default function SettingsPage() {
 
   const loadTenants = async () => {
     try {
-      const response = await tenantsApi.list()
+      const response = await tenantsApi.getAllTenants()
       if (response.success && response.data) {
-        setTenants(response.data.tenants || [])
+        setTenants(response.data)
       }
     } catch (error) {
       console.error('Error loading tenants:', error)
@@ -236,7 +242,7 @@ export default function SettingsPage() {
 
   const loadTenantDetails = async (tenantId: string) => {
     try {
-      const response = await tenantsApi.get(tenantId)
+      const response = await tenantsApi.getTenantDetails(tenantId)
       if (response.success && response.data) {
         setSelectedTenant(response.data)
         setShowTenantDetail(true)
@@ -244,43 +250,6 @@ export default function SettingsPage() {
     } catch (error) {
       console.error('Error loading tenant details:', error)
       toast.error('Failed to load tenant details')
-    }
-  }
-
-  const loadOrganizations = async () => {
-    try {
-      const response = await organizationsApi.list()
-      if (response.success && response.data) {
-        setOrganizations(response.data.organizations || [])
-      }
-    } catch (error) {
-      console.error('Error loading organizations:', error)
-      toast.error('Failed to load organizations')
-    }
-  }
-
-  const loadOrganizationDetails = async (orgId: string) => {
-    try {
-      const response = await organizationsApi.get(orgId)
-      if (response.success && response.data) {
-        setSelectedOrganization(response.data)
-        setShowOrganizationDetail(true)
-
-        // Load organization members
-        const membersResponse = await organizationsApi.getUsers(orgId)
-        if (membersResponse.success && membersResponse.data) {
-          setOrganizationMembers(membersResponse.data.users || [])
-        }
-
-        // Load whitelist
-        const whitelistResponse = await organizationsApi.whitelist.list(orgId)
-        if (whitelistResponse.success && whitelistResponse.data) {
-          setWhitelistedEmails(whitelistResponse.data.whitelist.map((item: any) => item.email))
-        }
-      }
-    } catch (error) {
-      console.error('Error loading organization details:', error)
-      toast.error('Failed to load organization details')
     }
   }
 
@@ -375,8 +344,8 @@ export default function SettingsPage() {
   const onCreateTenantSubmit = async (data: CreateTenantFormData) => {
     try {
       setSaving(true)
-      const response = await tenantsApi.create(data)
-
+      const response = await tenantsApi.createTenant(data)
+      
       if (response.success) {
         toast.success('Tenant created successfully')
         createTenantForm.reset()
@@ -393,121 +362,6 @@ export default function SettingsPage() {
     }
   }
 
-  const onCreateOrganizationSubmit = async (data: CreateOrganizationFormData) => {
-    try {
-      setSaving(true)
-
-      // Create organization
-      const orgResponse = await organizationsApi.create({
-        name: data.name,
-        description: data.description,
-        domain: data.domain,
-        max_users: data.max_users,
-      })
-
-      if (orgResponse.success) {
-        // Create admin user for the organization
-        const adminResponse = await authApi.admin.createUser({
-          email: data.admin_email,
-          password: data.admin_password,
-          first_name: data.admin_first_name,
-          last_name: data.admin_last_name,
-          role: UserRole.ORG_ADMIN,
-        })
-
-        if (adminResponse.success) {
-          toast.success('Organization and admin created successfully')
-          createOrganizationForm.reset()
-          setShowCreateOrganizationDialog(false)
-          loadOrganizations()
-        } else {
-          toast.error('Organization created but failed to create admin user')
-        }
-      } else {
-        toast.error(typeof orgResponse.error === 'string' ? orgResponse.error : 'Failed to create organization')
-      }
-    } catch (error) {
-      console.error('Error creating organization:', error)
-      toast.error('Failed to create organization')
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  const onInviteMembersSubmit = async (data: InviteMemberFormData) => {
-    try {
-      setSaving(true)
-      const emails = data.emails.split(',').map(email => email.trim()).filter(email => email)
-
-      if (!selectedOrganization) return
-
-      // Add emails to whitelist
-      const promises = emails.map(email =>
-        organizationsApi.whitelist.add(selectedOrganization.id, { email })
-      )
-
-      const results = await Promise.allSettled(promises)
-      const successCount = results.filter(result => result.status === 'fulfilled').length
-      const failureCount = results.length - successCount
-
-      if (successCount > 0) {
-        toast.success(`Successfully added ${successCount} email(s) to whitelist`)
-        if (failureCount > 0) {
-          toast.warning(`${failureCount} email(s) failed to be added`)
-        }
-      } else {
-        toast.error('Failed to add emails to whitelist')
-      }
-
-      inviteMemberForm.reset()
-      setShowInviteMemberDialog(false)
-
-      // Refresh whitelist
-      const whitelistResponse = await organizationsApi.whitelist.list(selectedOrganization.id)
-      if (whitelistResponse.success && whitelistResponse.data) {
-        setWhitelistedEmails(whitelistResponse.data.whitelist.map((item: any) => item.email))
-      }
-    } catch (error) {
-      console.error('Error inviting members:', error)
-      toast.error('Failed to invite members')
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  const removeWhitelistEmail = async (email: string) => {
-    try {
-      if (!selectedOrganization) return
-
-      const response = await organizationsApi.whitelist.remove(selectedOrganization.id, email)
-      if (response.success) {
-        toast.success('Email removed from whitelist')
-        setWhitelistedEmails(prev => prev.filter(e => e !== email))
-      } else {
-        toast.error('Failed to remove email from whitelist')
-      }
-    } catch (error) {
-      console.error('Error removing email from whitelist:', error)
-      toast.error('Failed to remove email from whitelist')
-    }
-  }
-
-  const regenerateJoinToken = async (orgId: string) => {
-    try {
-      const response = await organizationsApi.regenerateJoinToken(orgId)
-      if (response.success) {
-        toast.success('Join token regenerated successfully')
-        // Refresh organization details
-        await loadOrganizationDetails(orgId)
-      } else {
-        toast.error('Failed to regenerate join token')
-      }
-    } catch (error) {
-      console.error('Error regenerating join token:', error)
-      toast.error('Failed to regenerate join token')
-    }
-  }
-
   const copyToClipboard = (text: string) => {
     navigator.clipboard.writeText(text)
     toast.success('Copied to clipboard')
@@ -517,12 +371,8 @@ export default function SettingsPage() {
     switch (role) {
       case UserRole.SUPER_ADMIN:
         return 'border-red-500 text-red-700 bg-red-50'
-      case UserRole.TENANT_ADMIN:
+      case UserRole.ADMIN:
         return 'border-blue-500 text-blue-700 bg-blue-50'
-      case UserRole.ORG_ADMIN:
-        return 'border-purple-500 text-purple-700 bg-purple-50'
-      case UserRole.ORG_MEMBER:
-        return 'border-green-500 text-green-700 bg-green-50'
       case UserRole.USER:
         return 'border-gray-500 text-gray-700 bg-gray-50'
       default:
@@ -534,12 +384,8 @@ export default function SettingsPage() {
     switch (role) {
       case UserRole.SUPER_ADMIN:
         return <Shield className="h-3 w-3" />
-      case UserRole.TENANT_ADMIN:
+      case UserRole.ADMIN:
         return <Building className="h-3 w-3" />
-      case UserRole.ORG_ADMIN:
-        return <Users className="h-3 w-3" />
-      case UserRole.ORG_MEMBER:
-        return <UserPlus className="h-3 w-3" />
       case UserRole.USER:
         return <User className="h-3 w-3" />
       default:
@@ -551,12 +397,8 @@ export default function SettingsPage() {
     switch (role) {
       case UserRole.SUPER_ADMIN:
         return 'Super Administrator'
-      case UserRole.TENANT_ADMIN:
-        return 'Tenant Administrator'
-      case UserRole.ORG_ADMIN:
-        return 'Organization Administrator'
-      case UserRole.ORG_MEMBER:
-        return 'Organization Member'
+      case UserRole.ADMIN:
+        return 'Administrator'
       case UserRole.USER:
         return 'User'
       default:
@@ -617,10 +459,11 @@ export default function SettingsPage() {
       </div>
 
       <Tabs defaultValue="user-details" className="space-y-6">
-        <TabsList className={`grid ${profile.role === UserRole.SUPER_ADMIN ? 'grid-cols-3' :
-          profile.role === UserRole.TENANT_ADMIN ? 'grid-cols-3' :
-            'grid-cols-2'
-          }`}>
+        <TabsList className={`grid ${
+          profile.role === UserRole.SUPER_ADMIN ? 'grid-cols-3' : 
+          profile.role === UserRole.ADMIN ? 'grid-cols-3' : 
+          'grid-cols-2'
+        }`}>
           <TabsTrigger value="user-details">
             <User className="h-4 w-4 mr-2" />
             User Details
@@ -629,7 +472,7 @@ export default function SettingsPage() {
             <Lock className="h-4 w-4 mr-2" />
             Security
           </TabsTrigger>
-
+          
           {/* Role-specific management tabs */}
           {profile.role === UserRole.SUPER_ADMIN && (
             <TabsTrigger value="tenant-management">
@@ -637,8 +480,8 @@ export default function SettingsPage() {
               Tenant Management
             </TabsTrigger>
           )}
-
-          {profile.role === UserRole.TENANT_ADMIN && (
+          
+          {profile.role === UserRole.ADMIN && (
             <TabsTrigger value="organization-management">
               <Building2 className="h-4 w-4 mr-2" />
               Organization Management
@@ -873,7 +716,7 @@ export default function SettingsPage() {
                   <h2 className="text-2xl font-bold text-gray-900">Tenant Management</h2>
                   <p className="text-gray-500">Create and manage tenants</p>
                 </div>
-
+                
                 <Dialog open={showCreateTenantDialog} onOpenChange={setShowCreateTenantDialog}>
                   <DialogTrigger asChild>
                     <Button size="lg" className="bg-black hover:bg-gray-800">
@@ -1008,13 +851,13 @@ export default function SettingsPage() {
                   {tenants.map((tenant) => (
                     <Card
                       key={tenant.id}
-                      className="border cursor-pointer"
+                      className="group cursor-pointer hover:shadow-xl transition-all duration-300 border-2 hover:border-gray-300 bg-gradient-to-br from-white to-gray-50"
                       onClick={() => loadTenantDetails(tenant.id)}
                     >
                       <CardHeader className="pb-4">
                         <div className="flex items-start justify-between">
                           <div className="flex items-start gap-4 flex-1">
-                            <div className="w-12 h-12 rounded-xl flex items-center justify-center ">
+                            <div className="w-12 h-12 bg-gradient-to-br from-gray-100 to-gray-200 rounded-xl flex items-center justify-center group-hover:from-gray-200 group-hover:to-gray-300 transition-colors">
                               <Building className="h-6 w-6 text-gray-600" />
                             </div>
                             <div className="flex-1 min-w-0">
@@ -1030,6 +873,12 @@ export default function SettingsPage() {
                               )}
                             </div>
                           </div>
+                          <Badge
+                            variant={tenant.is_active ? 'default' : 'secondary'}
+                            className="shrink-0 ml-3"
+                          >
+                            {tenant.is_active ? 'Active' : 'Inactive'}
+                          </Badge>
                         </div>
                       </CardHeader>
                       <CardContent className="pt-0">
@@ -1038,9 +887,9 @@ export default function SettingsPage() {
                             <div className="flex items-center gap-3 text-gray-700">
                               <Building2 className="h-5 w-5" />
                               <div>
-                                <span className="text-lg font-bold">{tenant.total_organizations || 0}</span>
+                                <span className="text-lg font-bold">{tenant.organization_count || 0}</span>
                                 <span className="text-sm text-gray-500 ml-2">
-                                  {(tenant.total_organizations || 0) === 1 ? 'Organization' : 'Organizations'}
+                                  {(tenant.organization_count || 0) === 1 ? 'Organization' : 'Organizations'}
                                 </span>
                               </div>
                             </div>
@@ -1070,240 +919,23 @@ export default function SettingsPage() {
           </TabsContent>
         )}
 
-        {/* Organization Management Tab (Tenant Admin only) */}
-        {profile.role === UserRole.TENANT_ADMIN && (
+        {/* Organization Management Tab (Admin only) */}
+        {profile.role === UserRole.ADMIN && (
           <TabsContent value="organization-management">
             <div className="space-y-6">
-              {/* Header */}
-              <div className="flex items-center justify-between">
-                <div>
-                  <h2 className="text-2xl font-bold text-gray-900">Organization Management</h2>
-                  <p className="text-gray-500">Create and manage organizations</p>
+              <div className="text-center py-16">
+                <div className="w-20 h-20 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-6">
+                  <Building2 className="h-10 w-10 text-gray-400" />
                 </div>
-
-                <Dialog open={showCreateOrganizationDialog} onOpenChange={setShowCreateOrganizationDialog}>
-                  <DialogTrigger asChild>
-                    <Button size="lg" className="bg-blue-600 hover:bg-blue-700">
-                      <Plus className="h-5 w-5 mr-2" />
-                      Create Organization
-                    </Button>
-                  </DialogTrigger>
-                  <DialogContent className="max-w-2xl">
-                    <DialogHeader>
-                      <DialogTitle>Create New Organization</DialogTitle>
-                      <DialogDescription>
-                        Create a new organization and assign an admin user
-                      </DialogDescription>
-                    </DialogHeader>
-                    <form onSubmit={createOrganizationForm.handleSubmit(onCreateOrganizationSubmit)} className="space-y-4">
-                      <div className="grid gap-4 md:grid-cols-2">
-                        <div>
-                          <Label htmlFor="org_name">Organization Name</Label>
-                          <Input
-                            id="org_name"
-                            {...createOrganizationForm.register('name')}
-                            placeholder="Enter organization name"
-                          />
-                          {createOrganizationForm.formState.errors.name && (
-                            <p className="text-sm text-red-600 mt-1">
-                              {createOrganizationForm.formState.errors.name.message}
-                            </p>
-                          )}
-                        </div>
-                        <div>
-                          <Label htmlFor="org_domain">Domain (Optional)</Label>
-                          <Input
-                            id="org_domain"
-                            {...createOrganizationForm.register('domain')}
-                            placeholder="company.com"
-                          />
-                        </div>
-                      </div>
-
-                      <div>
-                        <Label htmlFor="org_description">Description (Optional)</Label>
-                        <Input
-                          id="org_description"
-                          {...createOrganizationForm.register('description')}
-                          placeholder="Enter organization description"
-                        />
-                      </div>
-
-                      <div>
-                        <Label htmlFor="max_users">Max Users (Optional)</Label>
-                        <Input
-                          id="max_users"
-                          type="number"
-                          min="1"
-                          {...createOrganizationForm.register('max_users', { valueAsNumber: true })}
-                          placeholder="500"
-                        />
-                      </div>
-
-                      <Separator />
-                      <h4 className="font-medium">Organization Admin Details</h4>
-
-                      <div className="grid gap-4 md:grid-cols-2">
-                        <div>
-                          <Label htmlFor="org_admin_email">Admin Email</Label>
-                          <Input
-                            id="org_admin_email"
-                            type="email"
-                            {...createOrganizationForm.register('admin_email')}
-                            placeholder="admin@example.com"
-                          />
-                          {createOrganizationForm.formState.errors.admin_email && (
-                            <p className="text-sm text-red-600 mt-1">
-                              {createOrganizationForm.formState.errors.admin_email.message}
-                            </p>
-                          )}
-                        </div>
-                        <div>
-                          <Label htmlFor="org_admin_password">Admin Password</Label>
-                          <Input
-                            id="org_admin_password"
-                            type="password"
-                            {...createOrganizationForm.register('admin_password')}
-                            placeholder="Password"
-                          />
-                          {createOrganizationForm.formState.errors.admin_password && (
-                            <p className="text-sm text-red-600 mt-1">
-                              {createOrganizationForm.formState.errors.admin_password.message}
-                            </p>
-                          )}
-                        </div>
-                      </div>
-
-                      <div className="grid gap-4 md:grid-cols-2">
-                        <div>
-                          <Label htmlFor="org_admin_first_name">Admin First Name</Label>
-                          <Input
-                            id="org_admin_first_name"
-                            {...createOrganizationForm.register('admin_first_name')}
-                            placeholder="John"
-                          />
-                          {createOrganizationForm.formState.errors.admin_first_name && (
-                            <p className="text-sm text-red-600 mt-1">
-                              {createOrganizationForm.formState.errors.admin_first_name.message}
-                            </p>
-                          )}
-                        </div>
-                        <div>
-                          <Label htmlFor="org_admin_last_name">Admin Last Name</Label>
-                          <Input
-                            id="org_admin_last_name"
-                            {...createOrganizationForm.register('admin_last_name')}
-                            placeholder="Doe"
-                          />
-                          {createOrganizationForm.formState.errors.admin_last_name && (
-                            <p className="text-sm text-red-600 mt-1">
-                              {createOrganizationForm.formState.errors.admin_last_name.message}
-                            </p>
-                          )}
-                        </div>
-                      </div>
-
-                      <DialogFooter>
-                        <Button type="button" variant="outline" onClick={() => setShowCreateOrganizationDialog(false)}>
-                          Cancel
-                        </Button>
-                        <Button type="submit" disabled={saving}>
-                          {saving ? 'Creating...' : 'Create Organization'}
-                        </Button>
-                      </DialogFooter>
-                    </form>
-                  </DialogContent>
-                </Dialog>
+                <h3 className="text-xl font-semibold text-gray-900 mb-3">Organization Management</h3>
+                <p className="text-gray-500 mb-8 max-w-md mx-auto">
+                  Organization management features will be available here for administrators.
+                </p>
+                <Button disabled size="lg">
+                  <Plus className="h-5 w-5 mr-2" />
+                  Coming Soon
+                </Button>
               </div>
-
-              {/* Organizations Grid */}
-              {organizations.length === 0 ? (
-                <div className="text-center py-16">
-                  <div className="w-20 h-20 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-6">
-                    <Building2 className="h-10 w-10 text-gray-400" />
-                  </div>
-                  <h3 className="text-xl font-semibold text-gray-900 mb-3">No Organizations Found</h3>
-                  <p className="text-gray-500 mb-8 max-w-md mx-auto">
-                    Get started by creating your first organization. Organizations help manage teams and projects.
-                  </p>
-                  <Button
-                    onClick={() => setShowCreateOrganizationDialog(true)}
-                    size="lg"
-                    className="inline-flex items-center gap-2"
-                  >
-                    <Plus className="h-5 w-5" />
-                    Create Your First Organization
-                  </Button>
-                </div>
-              ) : (
-                <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-                  {organizations.map((org) => (
-                    <Card
-                      key={org.id}
-                      className="border cursor-pointer hover:shadow-lg transition-shadow"
-                      onClick={() => loadOrganizationDetails(org.id)}
-                    >
-                      <CardHeader className="pb-4">
-                        <div className="flex items-start justify-between">
-                          <div className="flex items-start gap-4 flex-1">
-                            <div className="w-12 h-12 rounded-xl flex items-center justify-center bg-blue-50">
-                              <Building2 className="h-6 w-6 text-blue-600" />
-                            </div>
-                            <div className="flex-1 min-w-0">
-                              <CardTitle className="text-xl font-bold truncate text-gray-900">
-                                {org.name}
-                              </CardTitle>
-                              {org.description ? (
-                                <p className="text-sm text-gray-600 mt-2 line-clamp-2 leading-relaxed">
-                                  {org.description}
-                                </p>
-                              ) : (
-                                <p className="text-sm text-gray-400 mt-2 italic">No description</p>
-                              )}
-                            </div>
-                          </div>
-                          <Badge
-                            variant={org.is_active ? 'default' : 'secondary'}
-                            className="shrink-0 ml-3"
-                          >
-                            {org.is_active ? 'Active' : 'Inactive'}
-                          </Badge>
-                        </div>
-                      </CardHeader>
-                      <CardContent className="pt-0">
-                        <div className="space-y-4">
-                          <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                            <div className="flex items-center gap-3 text-gray-700">
-                              <Users className="h-5 w-5" />
-                              <div>
-                                <span className="text-lg font-bold">{org.total_users || 0}</span>
-                                <span className="text-sm text-gray-500 ml-2">
-                                  {(org.total_users || 0) === 1 ? 'Member' : 'Members'}
-                                </span>
-                              </div>
-                            </div>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              className="h-8 w-8 p-0 opacity-0 group-hover:opacity-100 transition-opacity"
-                              onClick={(e) => {
-                                e.stopPropagation()
-                                // Add edit functionality here
-                              }}
-                            >
-                              <Edit className="h-4 w-4" />
-                            </Button>
-                          </div>
-                          <div className="flex items-center justify-between text-xs text-gray-400 pt-2 border-t">
-                            <span className="font-medium">Click to manage members</span>
-                            <span className="text-gray-300">•••</span>
-                          </div>
-                        </div>
-                      </CardContent>
-                    </Card>
-                  ))}
-                </div>
-              )}
             </div>
           </TabsContent>
         )}
@@ -1312,7 +944,7 @@ export default function SettingsPage() {
       {/* Tenant Detail Dialog */}
       {profile.role === UserRole.SUPER_ADMIN && (
         <Dialog open={showTenantDetail} onOpenChange={setShowTenantDetail}>
-          <DialogContent className="max-h-[95vh] overflow-hidden w-full max-w-screen">
+          <DialogContent className="max-w-none w-[98vw] max-h-[95vh] overflow-hidden">
             <DialogHeader className="pb-4 border-b">
               <DialogTitle className="flex items-center gap-3 text-xl">
                 <div className="w-10 h-10 bg-gray-100 rounded-lg flex items-center justify-center">
@@ -1536,7 +1168,7 @@ export default function SettingsPage() {
                                   <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
                                     <div className="bg-gray-50 p-3 rounded-lg">
                                       <div className="text-xs uppercase tracking-wide text-gray-500 font-semibold">Users</div>
-                                      <div className="text-lg font-bold text-gray-900 mt-1">{org.total_users}</div>
+                                      <div className="text-lg font-bold text-gray-900 mt-1">{org.member_count}</div>
                                     </div>
                                     <div className="bg-gray-50 p-3 rounded-lg">
                                       <div className="text-xs uppercase tracking-wide text-gray-500 font-semibold">Max Users</div>
@@ -1614,272 +1246,6 @@ export default function SettingsPage() {
           </DialogContent>
         </Dialog>
       )}
-
-      {/* Organization Detail Dialog (Tenant Admin) */}
-      {profile.role === UserRole.TENANT_ADMIN && (
-        <Dialog open={showOrganizationDetail} onOpenChange={setShowOrganizationDetail}>
-          <DialogContent className="max-h-[95vh] overflow-hidden w-full max-w-screen">
-            <DialogHeader className="pb-4 border-b">
-              <DialogTitle className="flex items-center gap-3 text-xl">
-                <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center">
-                  <Building2 className="h-6 w-6 text-blue-600" />
-                </div>
-                <div>
-                  <div>{selectedOrganization?.name}</div>
-                  <div className="text-sm font-normal text-gray-500 mt-1">
-                    Organization Management Dashboard
-                  </div>
-                </div>
-              </DialogTitle>
-            </DialogHeader>
-
-            {selectedOrganization && (
-              <div className="overflow-y-auto max-h-[calc(90vh-120px)]">
-                <div className="space-y-6 p-1">
-                  {/* Basic Info */}
-                  <Card className="border-t-4 border-t-blue-500">
-                    <CardHeader className="pb-4">
-                      <CardTitle className="text-xl flex items-center gap-2">
-                        <Building2 className="h-5 w-5" />
-                        Organization Information
-                      </CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                        <div className="space-y-2">
-                          <Label className="text-xs uppercase tracking-wide text-gray-500 font-semibold">Organization Name</Label>
-                          <p className="text-lg font-medium">{selectedOrganization.name}</p>
-                        </div>
-                        <div className="space-y-2">
-                          <Label className="text-xs uppercase tracking-wide text-gray-500 font-semibold">Status</Label>
-                          <div>
-                            <Badge
-                              variant={selectedOrganization.is_active ? 'default' : 'secondary'}
-                              className="text-sm px-3 py-1"
-                            >
-                              {selectedOrganization.is_active ? 'Active' : 'Inactive'}
-                            </Badge>
-                          </div>
-                        </div>
-                        {selectedOrganization.domain && (
-                          <div className="space-y-2">
-                            <Label className="text-xs uppercase tracking-wide text-gray-500 font-semibold">Domain</Label>
-                            <p className="text-sm font-medium">{selectedOrganization.domain}</p>
-                          </div>
-                        )}
-                        <div className="space-y-2">
-                          <Label className="text-xs uppercase tracking-wide text-gray-500 font-semibold">Max Users</Label>
-                          <p className="text-sm">{selectedOrganization.max_users || 'Unlimited'}</p>
-                        </div>
-                        <div className="space-y-2">
-                          <Label className="text-xs uppercase tracking-wide text-gray-500 font-semibold">Created Date</Label>
-                          <p className="text-sm">{new Date(selectedOrganization.created_at).toLocaleDateString('en-US', {
-                            year: 'numeric',
-                            month: 'long',
-                            day: 'numeric'
-                          })}</p>
-                        </div>
-                        {selectedOrganization.description && (
-                          <div className="space-y-2 md:col-span-2 lg:col-span-3">
-                            <Label className="text-xs uppercase tracking-wide text-gray-500 font-semibold">Description</Label>
-                            <p className="text-sm text-gray-700 leading-relaxed bg-gray-50 p-4 rounded-lg">
-                              {selectedOrganization.description}
-                            </p>
-                          </div>
-                        )}
-                      </div>
-                    </CardContent>
-                  </Card>
-
-                  {/* Join Token */}
-                  {selectedOrganization.join_enabled && selectedOrganization.join_token && (
-                    <Card className="border-t-4 border-t-green-500">
-                      <CardHeader className="pb-4">
-                        <CardTitle className="text-xl flex items-center gap-2">
-                          <KeyRound className="h-5 w-5" />
-                          Join Token
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => regenerateJoinToken(selectedOrganization.id)}
-                            className="ml-auto"
-                          >
-                            Regenerate
-                          </Button>
-                        </CardTitle>
-                      </CardHeader>
-                      <CardContent>
-                        <div className="bg-green-50 border border-green-200 p-4 rounded-lg">
-                          <div className="flex items-center justify-between mb-2">
-                            <h5 className="font-medium text-green-900">Organization Join Token</h5>
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() => copyToClipboard(selectedOrganization.join_token || '')}
-                              className="text-green-700 border-green-300 hover:bg-green-100"
-                            >
-                              <Copy className="h-3 w-3 mr-1" />
-                              Copy
-                            </Button>
-                          </div>
-                          <div className="font-mono text-sm bg-white p-3 border border-green-200 rounded-md break-all">
-                            {selectedOrganization.join_token}
-                          </div>
-                        </div>
-                      </CardContent>
-                    </Card>
-                  )}
-
-                  {/* Member Management */}
-                  <Card className="border-t-4 border-t-purple-500">
-                    <CardHeader className="pb-4">
-                      <div className="flex items-center justify-between">
-                        <CardTitle className="text-xl flex items-center gap-2">
-                          <Users className="h-5 w-5" />
-                          Member Management
-                          <Badge variant="outline" className="ml-2 text-xs">
-                            {organizationMembers.length} members
-                          </Badge>
-                        </CardTitle>
-                        <Button
-                          onClick={() => setShowInviteMemberDialog(true)}
-                          className="bg-purple-600 hover:bg-purple-700"
-                        >
-                          <Plus className="h-4 w-4 mr-2" />
-                          Invite Members
-                        </Button>
-                      </div>
-                    </CardHeader>
-                    <CardContent>
-                      {organizationMembers.length > 0 ? (
-                        <div className="grid gap-4 md:grid-cols-2">
-                          {organizationMembers.map((member: any) => (
-                            <Card key={member.id} className="border border-gray-200">
-                              <CardContent className="p-4">
-                                <div className="flex items-start space-x-3">
-                                  <div className="w-10 h-10 bg-purple-100 rounded-full flex items-center justify-center">
-                                    <User className="h-5 w-5 text-purple-600" />
-                                  </div>
-                                  <div className="flex-1 min-w-0">
-                                    <div className="flex items-start justify-between">
-                                      <div className="min-w-0 flex-1">
-                                        <p className="text-sm font-medium text-gray-900 truncate">
-                                          {member.full_name || member.first_name + ' ' + member.last_name || 'N/A'}
-                                        </p>
-                                        <p className="text-sm text-gray-500 truncate">{member.email}</p>
-                                        <p className="text-xs text-gray-400 mt-1 capitalize">
-                                          {member.role?.replace('_', ' ') || 'Member'}
-                                        </p>
-                                      </div>
-                                      <Badge variant={member.is_active ? 'default' : 'secondary'} className="shrink-0 ml-2">
-                                        {member.is_active ? 'Active' : 'Inactive'}
-                                      </Badge>
-                                    </div>
-                                  </div>
-                                </div>
-                              </CardContent>
-                            </Card>
-                          ))}
-                        </div>
-                      ) : (
-                        <div className="text-center py-8">
-                          <Users className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-                          <p className="text-gray-500">No members found in this organization</p>
-                        </div>
-                      )}
-                    </CardContent>
-                  </Card>
-
-                  {/* Email Whitelist */}
-                  <Card className="border-t-4 border-t-orange-500">
-                    <CardHeader className="pb-4">
-                      <CardTitle className="text-xl flex items-center gap-2">
-                        <Mail className="h-5 w-5" />
-                        Email Whitelist
-                        <Badge variant="outline" className="ml-2 text-xs">
-                          {whitelistedEmails.length} emails
-                        </Badge>
-                      </CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                      {whitelistedEmails.length > 0 ? (
-                        <div className="space-y-2">
-                          {whitelistedEmails.map((email) => (
-                            <div key={email} className="flex items-center justify-between p-3 bg-orange-50 border border-orange-200 rounded-lg">
-                              <div className="flex items-center space-x-3">
-                                <Mail className="h-4 w-4 text-orange-600" />
-                                <span className="text-sm font-medium text-orange-900">{email}</span>
-                              </div>
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => removeWhitelistEmail(email)}
-                                className="text-red-600 hover:text-red-800 hover:bg-red-50"
-                              >
-                                Remove
-                              </Button>
-                            </div>
-                          ))}
-                        </div>
-                      ) : (
-                        <div className="text-center py-8">
-                          <Mail className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-                          <p className="text-gray-500">No emails in whitelist</p>
-                        </div>
-                      )}
-                    </CardContent>
-                  </Card>
-                </div>
-              </div>
-            )}
-          </DialogContent>
-        </Dialog>
-      )}
-
-      {/* Invite Member Dialog */}
-      <Dialog open={showInviteMemberDialog} onOpenChange={setShowInviteMemberDialog}>
-        <DialogContent className="max-w-sm">
-          <DialogHeader>
-            <DialogTitle>Invite Members</DialogTitle>
-            <p className="text-sm text-gray-600">
-              Add email addresses to the organization whitelist. Users with these emails can join the organization.
-            </p>
-          </DialogHeader>
-
-          <form onSubmit={inviteMemberForm.handleSubmit(onInviteMembersSubmit)} className="space-y-4">
-            <div>
-              <Label htmlFor="emails">Email Addresses</Label>
-              <textarea
-                id="emails"
-                {...inviteMemberForm.register('emails')}
-                placeholder="Enter email addresses separated by commas&#10;example: john@company.com, jane@company.com"
-                className="w-full p-3 border border-gray-300 rounded-lg resize-none h-32 text-sm"
-              />
-              {inviteMemberForm.formState.errors.emails && (
-                <p className="text-sm text-red-600 mt-1">
-                  {inviteMemberForm.formState.errors.emails.message}
-                </p>
-              )}
-              <p className="text-xs text-gray-500 mt-2">
-                Separate multiple email addresses with commas
-              </p>
-            </div>
-
-            <div className="flex justify-end space-x-2">
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => setShowInviteMemberDialog(false)}
-              >
-                Cancel
-              </Button>
-              <Button type="submit" disabled={saving}>
-                {saving ? 'Adding...' : 'Add to Whitelist'}
-              </Button>
-            </div>
-          </form>
-        </DialogContent>
-      </Dialog>
 
       {/* Forgot Password Dialog */}
       <Dialog open={showForgotPasswordDialog} onOpenChange={setShowForgotPasswordDialog}>

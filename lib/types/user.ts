@@ -54,7 +54,9 @@ export interface PasswordResetRequest {
 
 export enum UserRole {
   SUPER_ADMIN = 'super_admin',
-  ADMIN = 'admin',
+  TENANT_ADMIN = 'tenant_admin',
+  ORG_ADMIN = 'org_admin',
+  ORG_MEMBER = 'org_member',
   USER = 'user'
 }
 

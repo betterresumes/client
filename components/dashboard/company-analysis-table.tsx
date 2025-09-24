@@ -4,6 +4,7 @@ import { useState, useMemo, useEffect } from 'react'
 import { usePredictionsStore } from '@/lib/stores/predictions-store'
 import { useDashboardStore } from '@/lib/stores/dashboard-store'
 import { useDashboardStatsStore } from '@/lib/stores/dashboard-stats-store'
+import { useAuthStore } from '@/lib/stores/auth-store'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -82,6 +83,7 @@ export function CompanyAnalysisTable({
   } = usePredictionsStore()
 
   const { stats: dashboardStats } = useDashboardStatsStore()
+  const { user, isAdmin } = useAuthStore()
 
   // Get pagination info for current prediction type
   const pagination = type === 'annual' ? annualPagination : quarterlyPagination
@@ -607,20 +609,25 @@ export function CompanyAnalysisTable({
                               <Eye className="h-4 w-4 mr-2" />
                               View Details
                             </DropdownMenuItem>
-                            <DropdownMenuItem
-                              className="font-bricolage"
-                              onClick={() => handleEdit(item)}
-                            >
-                              <Edit className="h-4 w-4 mr-2" />
-                              Edit
-                            </DropdownMenuItem>
-                            <DropdownMenuItem
-                              className="text-red-600 font-bricolage"
-                              onClick={() => handleDelete(item)}
-                            >
-                              <Trash2 className="h-4 w-4 mr-2" />
-                              Delete
-                            </DropdownMenuItem>
+                            {/* Hide Edit/Delete options for non-super admin users when viewing platform data */}
+                            {(isAdmin() || activeDataFilter !== 'system') && (
+                              <>
+                                <DropdownMenuItem
+                                  className="font-bricolage"
+                                  onClick={() => handleEdit(item)}
+                                >
+                                  <Edit className="h-4 w-4 mr-2" />
+                                  Edit
+                                </DropdownMenuItem>
+                                <DropdownMenuItem
+                                  className="text-red-600 font-bricolage"
+                                  onClick={() => handleDelete(item)}
+                                >
+                                  <Trash2 className="h-4 w-4 mr-2" />
+                                  Delete
+                                </DropdownMenuItem>
+                              </>
+                            )}
                           </DropdownMenuContent>
                         </DropdownMenu>
                       </TableCell>

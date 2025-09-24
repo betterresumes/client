@@ -40,7 +40,6 @@ export type UpdateProfileRequest = UserUpdate
 export interface ChangePasswordRequest {
   current_password: string  // required
   new_password: string      // required, min 8 chars
-  confirm_password: string  // required, must match new_password
 }
 
 // Authentication response types

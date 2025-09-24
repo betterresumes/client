@@ -259,6 +259,18 @@ export function CustomAnalysisView() {
         // Create new prediction
         createAnnualPredictionMutation.mutate(requestData, {
           onSuccess: (results) => {
+            // Check if the mutation actually succeeded (no API errors)
+            if (!results?.response?.data?.prediction && !results?.response?.data) {
+              // API error occurred but was not caught by onError
+              const errorMsg = 'Prediction creation failed - invalid response from server'
+              setIsProcessing(false)
+              setIsSubmitting(false)
+              setProcessingStep(0)
+              setErrorMessage(errorMsg)
+              toast.error(errorMsg)
+              return
+            }
+
             // Format the API response for CompanyAnalysisPanel
             // API returns: { prediction: { ... } }
             const predictionData = results.response?.data?.prediction || results.response?.data
@@ -279,7 +291,6 @@ export function CustomAnalysisView() {
               setAnalysisResults(formattedResults)
               setShowResults(true)
               setIsProcessing(false)
-              setIsSubmitting(false)
               setIsSubmitting(false)
               setProcessingStep(0)
 
@@ -391,6 +402,18 @@ export function CustomAnalysisView() {
         // Create new quarterly prediction
         createQuarterlyPredictionMutation.mutate(requestData, {
           onSuccess: (results) => {
+            // Check if the mutation actually succeeded (no API errors)
+            if (!results?.response?.data?.prediction && !results?.response?.data) {
+              // API error occurred but was not caught by onError
+              const errorMsg = 'Prediction creation failed - invalid response from server'
+              setIsProcessing(false)
+              setIsSubmitting(false)
+              setProcessingStep(0)
+              setErrorMessage(errorMsg)
+              toast.error(errorMsg)
+              return
+            }
+
             // Format the API response for CompanyAnalysisPanel
             // API returns: { prediction: { ... } }
             const predictionData = results.response?.data?.prediction || results.response?.data

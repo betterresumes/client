@@ -13,12 +13,15 @@ interface AuthState {
   user: UserResponse | null
   tokenExpiresAt: number | null
   isRefreshing: boolean
+  isLoadingProfile: boolean
+  profileCacheTime: number | null
 
   // Actions
   setAuth: (accessToken: string, refreshToken: string, user: UserResponse, expiresIn?: number) => void
   clearAuth: () => void
   updateUser: (user: Partial<UserResponse>) => void
   refreshAccessToken: () => Promise<boolean>
+  refreshUserProfile: () => Promise<UserResponse | null>
 
   // Computed
   isAdmin: () => boolean
@@ -29,6 +32,7 @@ interface AuthState {
   isTokenExpired: () => boolean
   shouldRefreshToken: () => boolean
   getTokenTimeRemaining: () => number
+  shouldRefreshProfile: () => boolean
 }
 
 export const useAuthStore = create<AuthState>()(
@@ -41,6 +45,8 @@ export const useAuthStore = create<AuthState>()(
       user: null,
       tokenExpiresAt: null,
       isRefreshing: false,
+      isLoadingProfile: false,
+      profileCacheTime: null,
 
       // Actions
       setAuth: (accessToken, refreshToken, user, expiresIn = 3600) => {
@@ -159,6 +165,37 @@ export const useAuthStore = create<AuthState>()(
         }
       },
 
+      refreshUserProfile: async () => {
+        const state = get()
+        if (!state.isAuthenticated || state.isLoadingProfile) {
+          return null
+        }
+
+        set({ isLoadingProfile: true })
+
+        try {
+          const { authApi } = await import('../api/auth')
+          const response = await authApi.getMe()
+          
+          if (response.success && response.data) {
+            set({
+              user: response.data,
+              profileCacheTime: Date.now(),
+              isLoadingProfile: false
+            })
+            return response.data
+          } else {
+            console.error('Failed to refresh user profile:', response.error)
+            set({ isLoadingProfile: false })
+            return null
+          }
+        } catch (error) {
+          console.error('Error refreshing user profile:', error)
+          set({ isLoadingProfile: false })
+          return null
+        }
+      },
+
       // Computed helpers
       isAdmin: () => {
         const user = get().user
@@ -205,6 +242,14 @@ export const useAuthStore = create<AuthState>()(
         const remaining = state.tokenExpiresAt - Date.now()
         return Math.max(0, remaining)
       },
+
+      shouldRefreshProfile: () => {
+        const state = get()
+        if (!state.isAuthenticated || !state.profileCacheTime) return true
+        // Refresh profile cache every 5 minutes
+        const cacheTimeout = 5 * 60 * 1000 // 5 minutes in milliseconds
+        return Date.now() - state.profileCacheTime > cacheTimeout
+      },
     }),
     {
       name: 'auth-storage',
@@ -214,6 +259,7 @@ export const useAuthStore = create<AuthState>()(
         refreshToken: state.refreshToken,
         user: state.user,
         tokenExpiresAt: state.tokenExpiresAt,
+        profileCacheTime: state.profileCacheTime,
       }),
       onRehydrateStorage: () => (state) => {
         // When store is rehydrated from localStorage, set tokens in API client

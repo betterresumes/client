@@ -32,6 +32,7 @@ import { UserManagementTab } from '@/components/admin/user-management-tab'
 import { OrganizationManagementTab } from '@/components/admin/organization-management-tab'
 import { SystemSettingsTab } from '@/components/admin/system-settings-tab'
 import { PlatformOverviewTab } from '@/components/admin/platform-overview-tab'
+import Link from 'next/link'
 
 interface AdminStats {
   totalUsers: number
