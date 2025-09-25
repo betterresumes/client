@@ -68,6 +68,10 @@ export function JobStatusDisplay({
     }
   }
 
+  // Don't display jobs with unknown status at all
+  const statusText = getStatusText()
+  if (!statusText) return null
+
   const getStatusBadge = () => {
     switch (job.status) {
       case 'pending':

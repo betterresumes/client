@@ -189,13 +189,24 @@ export function BulkUploadSection({
     }
 
     try {
+      // Show immediate loading toast for user feedback
+      toast.info(`Uploading ${file.name}...`, {
+        id: 'file-upload-progress',
+        description: 'Please wait while we process your file'
+      })
+
       // Use the store's upload functionality with async endpoint
       console.log(`📤 Starting upload for ${predictionType} file:`, file.name)
       const jobId = await uploadFile(file, predictionType)
 
+      // Dismiss the loading toast
+      toast.dismiss('file-upload-progress')
+
       if (jobId) {
         console.log(`✅ Upload successful, job ID: ${jobId}`)
-        toast.success(`File "${file.name}" uploaded successfully! Analysis job started with ID: ${jobId}`)
+        toast.success(`File "${file.name}" uploaded successfully!`, {
+          description: `Analysis job started with ID: ${jobId.substring(0, 8)}... Processing will begin shortly.`
+        })
 
         // Call the original onFileUpload if provided for compatibility
         if (onFileUpload) {
@@ -207,6 +218,9 @@ export function BulkUploadSection({
         toast.error('Failed to start analysis job')
       }
     } catch (error) {
+      // Dismiss the loading toast on error
+      toast.dismiss('file-upload-progress')
+
       console.error('❌ Upload error:', error)
       const errorMessage = error instanceof Error ? error.message : 'Failed to upload file and start analysis'
       toast.error(`Upload failed: ${errorMessage}`)

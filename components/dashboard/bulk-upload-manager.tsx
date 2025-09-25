@@ -111,11 +111,22 @@ export function BulkUploadManager({ className }: BulkUploadManagerProps) {
     // Clear any previous errors
     clearError()
 
+    // Show immediate loading feedback
+    toast.info(`Uploading ${file.name}...`, {
+      id: 'bulk-upload-progress',
+      description: 'Starting background processing...'
+    })
+
     // Start upload
     const jobId = await uploadFile(file, selectedType)
 
+    // Dismiss loading toast
+    toast.dismiss('bulk-upload-progress')
+
     if (jobId) {
-      toast.success(`${selectedType === 'annual' ? 'Annual' : 'Quarterly'} bulk upload started successfully! Job ID: ${jobId.substring(0, 8)}...`)
+      toast.success(`${selectedType === 'annual' ? 'Annual' : 'Quarterly'} bulk upload started successfully!`, {
+        description: `Job ID: ${jobId.substring(0, 8)}... Processing will begin shortly.`
+      })
     } else if (error) {
       toast.error(`Upload failed: ${error}`)
     }

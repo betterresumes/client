@@ -830,73 +830,53 @@ export function CustomAnalysisView() {
       return
     }
 
+    // Show immediate loading feedback
+    toast.info(`Starting ${predictionType} analysis for ${fileToUse.name}...`, {
+      id: 'bulk-upload-analysis',
+      description: 'Uploading file and initializing background processing...'
+    })
+
     try {
-      // Use the correct predictionsApi endpoints
-      let result
-      if (predictionType === 'annual') {
-        result = await predictionsApi.annual.bulkUploadAnnualAsync(fileToUse)
-      } else {
-        result = await predictionsApi.quarterly.bulkUploadQuarterlyAsync(fileToUse)
-      }
+      // Use the bulk upload store's uploadFile method instead of direct API calls
+      // This ensures proper job management and immediate UI feedback
+      const { uploadFile } = useBulkUploadStore.getState()
 
-      const jobId = result.data?.job_id
+      console.log(`📤 Using bulk upload store for ${predictionType} file:`, fileToUse.name)
+      const jobId = await uploadFile(fileToUse, predictionType)
+
+      // Dismiss loading toast
+      toast.dismiss('bulk-upload-analysis')
+
       if (!jobId) {
-        throw new Error('No job ID returned from server')
+        throw new Error('No job ID returned from bulk upload')
       }
 
-      const estimatedTimeMinutes = result.data?.estimated_time_minutes
-      const totalRows = actualCompanyCount || Math.floor(fileToUse.size / 100) // Rough estimate
+      const estimatedTimeMinutes = useBulkUploadStore.getState().jobs.find(j => j.id === jobId)?.estimated_time_minutes
 
-      // Create ONE job with the server job ID and estimated time
-      useJobStore.setState((state) => ({
-        jobs: [...state.jobs, {
-          id: jobId,
-          fileName: fileToUse.name,
-          startTime: new Date(),
-          status: 'pending' as const,
-          progress: 0,
-          estimatedTimeMinutes: estimatedTimeMinutes,
-          totalRows: actualCompanyCount,
-        }]
-      }));
+      // Success message with job details
+      toast.success(`Analysis started for "${fileToUse.name}"!`, {
+        description: estimatedTimeMinutes && estimatedTimeMinutes > 0
+          ? `Estimated completion: ${estimatedTimeMinutes} minutes. Job ID: ${jobId.substring(0, 8)}...`
+          : `Processing started. Job ID: ${jobId.substring(0, 8)}...`
+      })
 
-      // Standardized 10-second polling interval for all jobs
-      const pollingInterval = 10000; // Always 10 seconds as requested
-      const initialDelay = 10000; // 10 seconds initial delay
-
+      // Show helpful message for large files
       if (estimatedTimeMinutes && estimatedTimeMinutes > 5) {
         toast.info(`Large file processing. Check back in ${Math.round(estimatedTimeMinutes / 2)} minutes.`)
       }
 
-      // Start 10-second interval polling
-      const pollJob = async () => {
-        try {
-          await updateJobFromAPI(jobId)
+      // Clear uploaded file state to allow new uploads
+      setUploadedFiles(prev => ({
+        ...prev,
+        [predictionType]: null
+      }))
 
-          const job = useJobStore.getState().jobs.find(j => j.id === jobId)
-          if (job && (job.status === 'pending' || job.status === 'processing')) {
-            setTimeout(pollJob, pollingInterval) // Always 10 seconds
-          } else if (job?.status === 'completed') {
-            toast.success(`Analysis completed for ${fileToUse.name}!`)
-          } else if (job?.status === 'failed') {
-            toast.error(`Analysis failed for ${fileToUse.name}`)
-          }
-        } catch (error) {
-          console.error('Failed to poll job status:', error)
-          // Retry with same 10-second interval on error
-          setTimeout(pollJob, pollingInterval)
-        }
-      }
-
-      // Start polling after initial delay (10 seconds)
-      setTimeout(async () => {
-        await updateJobFromAPI(jobId) // Immediate check
-        setTimeout(pollJob, initialDelay) // Then start 10-second polling
-      }, 2000) // Wait 2 seconds for server to register the job
-
-      toast.success(`Analysis started for "${fileToUse.name}"! ${estimatedTimeMinutes && estimatedTimeMinutes > 0 ? `Estimated completion: ${estimatedTimeMinutes} minutes.` : `Processing ${totalRows} rows...`}`)
+      console.log(`✅ Bulk upload completed successfully with job ID: ${jobId}`)
 
     } catch (error: any) {
+      // Dismiss loading toast on error
+      toast.dismiss('bulk-upload-analysis')
+
       console.error('Bulk upload error:', error)
       toast.error(`Analysis failed for "${fileToUse.name}": ${error.message}`)
     }

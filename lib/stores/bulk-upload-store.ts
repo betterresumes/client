@@ -80,8 +80,32 @@ export const useBulkUploadStore = create<BulkUploadStore>()(
       uploadFile: async (file: File, type: 'annual' | 'quarterly') => {
         set({ isUploading: true, error: null })
 
+        // Generate temp job ID for immediate feedback
+        const tempJobId = `temp-${Date.now()}`
+
         try {
           console.log(`🚀 Starting ${type} bulk upload for file:`, file.name)
+
+          // Show immediate upload feedback
+          const tempJob: BulkUploadJob = {
+            id: tempJobId,
+            status: 'pending',
+            job_type: type,
+            original_filename: file.name,
+            file_size: file.size,
+            total_rows: 0,
+            processed_rows: 0,
+            successful_rows: 0,
+            failed_rows: 0,
+            progress_percentage: 0,
+            created_at: new Date().toISOString()
+          }
+
+          // Add temporary job for immediate UI feedback
+          set(state => ({
+            jobs: [tempJob, ...state.jobs],
+            activeJob: tempJob
+          }))
 
           // Call the appropriate async bulk upload endpoint
           const response = type === 'annual'
@@ -97,56 +121,82 @@ export const useBulkUploadStore = create<BulkUploadStore>()(
           if (!response.success || !response.data) {
             const errorMsg = typeof response.error === 'string' ? response.error : 'Upload failed'
             console.error('❌ Bulk upload failed:', errorMsg)
+
+            // Remove temporary job and show error
+            set(state => ({
+              jobs: state.jobs.filter(j => j.id !== tempJobId),
+              activeJob: null,
+              isUploading: false,
+              error: errorMsg
+            }))
             throw new Error(errorMsg)
           }
 
           const jobData = response.data
           console.log(`📋 Job data received:`, jobData)
 
-          // Extract job ID with multiple fallbacks
+          // Extract job details from new Celery response format
           const jobId = jobData.job_id || jobData.id || jobData.task_id || jobData.jobId
+          const taskId = jobData.task_id || jobData.celery_task_id
+          const queuePriority = jobData.queue_priority || 'medium'
+          const estimatedTimeMinutes = jobData.estimated_time_minutes || jobData.estimatedTimeMinutes
+          const totalCompanies = jobData.total_companies || jobData.totalCompanies || 0
 
           if (!jobId) {
             console.error('❌ No job ID found in response:', jobData)
+            set(state => ({
+              jobs: state.jobs.filter(j => j.id !== tempJobId),
+              activeJob: null,
+              isUploading: false,
+              error: 'No job ID returned from upload'
+            }))
             throw new Error('No job ID returned from upload')
           }
 
-          console.log(`🆔 Extracted job ID: ${jobId}`)
+          console.log(`🆔 Extracted job details:`, {
+            jobId,
+            taskId,
+            queuePriority,
+            estimatedTimeMinutes,
+            totalCompanies
+          })
 
-          // Create job record in our store
-          const newJob: BulkUploadJob = {
+          // Update the temporary job with real job data
+          const realJob: BulkUploadJob = {
             id: jobId,
-            status: 'pending',
+            status: 'queued', // Start with queued status for new Celery system
             job_type: type,
             original_filename: file.name,
             file_size: file.size,
-            total_rows: jobData.total_rows || jobData.totalRows || 0,
+            total_rows: totalCompanies,
             processed_rows: 0,
             successful_rows: 0,
             failed_rows: 0,
             progress_percentage: 0,
             created_at: new Date().toISOString(),
-            celery_task_id: jobData.task_id || jobData.celery_task_id,
-            estimated_time_minutes: jobData.estimated_time_minutes || jobData.estimatedTimeMinutes
+            celery_task_id: taskId,
+            estimated_time_minutes: estimatedTimeMinutes
           }
 
+          // Replace temporary job with real job
           set(state => ({
-            jobs: [newJob, ...state.jobs],
-            activeJob: newJob,
+            jobs: [realJob, ...state.jobs.filter(j => j.id !== tempJobId)],
+            activeJob: realJob,
             isUploading: false
           }))
 
           console.log(`✅ Bulk upload job created:`, {
-            jobId: newJob.id,
-            taskId: newJob.celery_task_id,
-            estimatedTime: newJob.estimated_time_minutes,
-            filename: newJob.original_filename
+            jobId: realJob.id,
+            taskId: realJob.celery_task_id,
+            estimatedTime: realJob.estimated_time_minutes,
+            filename: realJob.original_filename,
+            queuePriority: queuePriority
           })
 
           // Immediately check if job exists by trying to get its status
           try {
-            console.log(`🔍 Verifying job exists by checking status for ID: ${newJob.id}`)
-            const statusResponse = await predictionsApi.jobs.getJobStatus(newJob.id)
+            console.log(`🔍 Verifying job exists by checking status for ID: ${realJob.id}`)
+            const statusResponse = await predictionsApi.jobs.getJobStatus(realJob.id)
 
             if (statusResponse.success) {
               console.log(`✅ Job verification successful:`, statusResponse.data)
@@ -159,15 +209,19 @@ export const useBulkUploadStore = create<BulkUploadStore>()(
           }
 
           // Start polling for progress
-          await get().startJobPolling(newJob.id)
+          await get().startJobPolling(realJob.id)
 
-          return newJob.id
+          return realJob.id
         } catch (error: any) {
           console.error('❌ Bulk upload failed:', error)
-          set({
+
+          // Remove temporary job on error
+          set(state => ({
+            jobs: state.jobs.filter(j => j.id !== tempJobId),
+            activeJob: null,
             isUploading: false,
             error: error.message || 'Upload failed'
-          })
+          }))
           return null
         }
       },
@@ -277,28 +331,55 @@ export const useBulkUploadStore = create<BulkUploadStore>()(
               job.id === jobId
                 ? {
                   ...job,
-                  status: jobStatus.status || job.status,
+                  // Map Celery worker statuses to our job statuses
+                  status: (jobStatus.status === 'pending' || jobStatus.status === 'queued') ? 'queued' :
+                    jobStatus.status === 'processing' ? 'processing' :
+                      jobStatus.status === 'completed' ? 'completed' :
+                        jobStatus.status === 'failed' ? 'failed' :
+                          job.status, // Keep current status if unknown
                   processed_rows: jobStatus.processed_records || jobStatus.processed_rows || job.processed_rows,
                   successful_rows: jobStatus.successful_predictions || jobStatus.successful_rows || job.successful_rows,
                   failed_rows: jobStatus.failed_predictions || jobStatus.failed_rows || job.failed_rows,
                   total_rows: jobStatus.total_records || jobStatus.total_rows || job.total_rows,
-                  progress_percentage: jobStatus.progress || jobStatus.progress_percentage || job.progress_percentage,
+                  progress_percentage: jobStatus.progress !== undefined ? jobStatus.progress :
+                    (jobStatus.processed_records && jobStatus.total_records && jobStatus.total_records > 0) ?
+                      Math.round((jobStatus.processed_records / jobStatus.total_records) * 100) :
+                      job.progress_percentage,
                   error_message: jobStatus.errors?.[0] || jobStatus.error_message || job.error_message,
                   updated_at: jobStatus.updated_at || new Date().toISOString(),
-                  completed_at: jobStatus.status === 'completed' ? (jobStatus.completed_at || new Date().toISOString()) : job.completed_at
+                  completed_at: (jobStatus.status === 'completed' || jobStatus.status === 'failed') ?
+                    (jobStatus.completed_at || new Date().toISOString()) :
+                    job.completed_at,
+                  // Store Celery-specific fields
+                  celery_status: jobStatus.status,
+                  celery_meta: jobStatus.meta || job.celery_meta
                 }
                 : job
             ),
             activeJob: state.activeJob?.id === jobId
               ? {
                 ...state.activeJob,
-                status: jobStatus.status || state.activeJob.status,
+                // Apply same status mapping for activeJob
+                status: (jobStatus.status === 'pending' || jobStatus.status === 'queued') ? 'queued' :
+                  jobStatus.status === 'processing' ? 'processing' :
+                    jobStatus.status === 'completed' ? 'completed' :
+                      jobStatus.status === 'failed' ? 'failed' :
+                        state.activeJob.status,
                 processed_rows: jobStatus.processed_records || jobStatus.processed_rows || state.activeJob.processed_rows,
                 successful_rows: jobStatus.successful_predictions || jobStatus.successful_rows || state.activeJob.successful_rows,
                 failed_rows: jobStatus.failed_predictions || jobStatus.failed_rows || state.activeJob.failed_rows,
-                progress_percentage: jobStatus.progress || jobStatus.progress_percentage || state.activeJob.progress_percentage,
+                total_rows: jobStatus.total_records || jobStatus.total_rows || state.activeJob.total_rows,
+                progress_percentage: jobStatus.progress !== undefined ? jobStatus.progress :
+                  (jobStatus.processed_records && jobStatus.total_records && jobStatus.total_records > 0) ?
+                    Math.round((jobStatus.processed_records / jobStatus.total_records) * 100) :
+                    state.activeJob.progress_percentage,
                 error_message: jobStatus.errors?.[0] || jobStatus.error_message || state.activeJob.error_message,
-                updated_at: jobStatus.updated_at || new Date().toISOString()
+                updated_at: jobStatus.updated_at || new Date().toISOString(),
+                completed_at: (jobStatus.status === 'completed' || jobStatus.status === 'failed') ?
+                  (jobStatus.completed_at || new Date().toISOString()) :
+                  state.activeJob.completed_at,
+                celery_status: jobStatus.status,
+                celery_meta: jobStatus.meta || state.activeJob.celery_meta
               }
               : state.activeJob
           }))
