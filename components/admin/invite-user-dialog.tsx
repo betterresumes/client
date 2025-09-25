@@ -22,7 +22,7 @@ import { Badge } from '@/components/ui/badge'
 import { organizationsApi } from '@/lib/api/organizations'
 
 const inviteUserSchema = z.object({
-  emails: z.string().optional(),
+  emails: z.string().min(1, 'At least one email is required'),
 })
 
 type InviteUserFormData = z.infer<typeof inviteUserSchema>
@@ -57,11 +57,9 @@ export function InviteUserDialog({
   const addEmailToList = () => {
     const emailsText = form.getValues('emails')
     const emails = emailsText
-      ? emailsText
-        .split(',')
-        .map(email => email.trim())
-        .filter(email => email && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))
-      : []
+      .split(',')
+      .map(email => email.trim())
+      .filter(email => email && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))
 
     if (emails.length > 0) {
       const newEmails = emails.filter(email => !emailList.includes(email))
@@ -75,26 +73,10 @@ export function InviteUserDialog({
   }
 
   const onSubmit = async (data: InviteUserFormData) => {
-    // Add any remaining emails in the input first
-    const emailsText = form.getValues('emails')
-    const pendingEmails = emailsText
-      ? emailsText
-        .split(',')
-        .map(email => email.trim())
-        .filter(email => email && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))
-      : []
+    // Add any remaining emails in the input
+    addEmailToList()
 
-    // Combine pending emails with existing email list
-    const allEmails = [...emailList]
-    if (pendingEmails.length > 0) {
-      const newEmails = pendingEmails.filter(email => !allEmails.includes(email))
-      allEmails.push(...newEmails)
-      // Update the email list state for display
-      setEmailList(allEmails)
-      form.setValue('emails', '')
-    }
-
-    if (allEmails.length === 0) {
+    if (emailList.length === 0) {
       setError('Please add at least one valid email address')
       return
     }
@@ -105,7 +87,7 @@ export function InviteUserDialog({
       setSuccess(null)
 
       // Add emails to organization whitelist
-      const promises = allEmails.map(email =>
+      const promises = emailList.map(email =>
         organizationsApi.whitelist.add(organizationId, { email })
       )
 
@@ -202,6 +184,11 @@ export function InviteUserDialog({
             <p className="text-xs text-muted-foreground mt-1">
               Enter email addresses separated by commas, or press Enter/comma to add them to the list
             </p>
+            {form.formState.errors.emails && (
+              <p className="text-sm text-red-600 mt-1">
+                {form.formState.errors.emails.message}
+              </p>
+            )}
           </div>
 
           {/* Email List */}
@@ -213,15 +200,14 @@ export function InviteUserDialog({
                   <Badge
                     key={index}
                     variant="secondary"
-                    className="mr-1 mb-1 flex items-center w-fit max-w-[250px]"
+                    className="mr-1 mb-1 flex items-center w-fit"
                   >
-                    <Mail className="h-3 w-3 mr-1 flex-shrink-0" />
-                    <span className="truncate" title={email}>{email}</span>
+                    <Mail className="h-3 w-3 mr-1" />
+                    <span className="truncate max-w-[200px]" title={email}>{email}</span>
                     <button
                       type="button"
                       onClick={() => removeEmail(email)}
-                      className="ml-2 hover:bg-red-200 hover:text-red-800 rounded-full p-0.5 transition-colors"
-                      title="Remove email"
+                      className="ml-1 hover:bg-gray-200 rounded-full p-0.5"
                     >
                       <X className="h-3 w-3" />
                     </button>
@@ -256,9 +242,9 @@ export function InviteUserDialog({
             </Button>
             <Button
               type="submit"
-              disabled={loading || (emailList.length === 0 && !form.watch('emails')?.trim())}
+              disabled={loading || (emailList.length === 0 && !form.getValues('emails')?.trim())}
             >
-              {loading ? 'Sending Invites...' : `Invite ${emailList.length} User${emailList.length !== 1 ? 's' : ''}`}
+              {loading ? 'Sending Invites...' : `Invite ${emailList.length || 0} User${emailList.length !== 1 ? 's' : ''}`}
             </Button>
           </div>
         </form>
