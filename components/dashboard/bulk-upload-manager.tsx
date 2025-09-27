@@ -21,7 +21,10 @@ import {
   BarChart3
 } from 'lucide-react'
 import { toast } from 'sonner'
-import { useBulkUploadStore } from '@/lib/stores/bulk-upload-store'
+import { useBulkUploadStore, BulkUploadJob } from '@/lib/stores/bulk-upload-store'
+import { BulkUploadResultsViewer } from './bulk-upload-results-viewer'
+import { JobResultsPreview } from './job-results-preview'
+import { jobsApi } from '@/lib/api/jobs'
 
 interface BulkUploadManagerProps {
   className?: string
@@ -51,6 +54,15 @@ export function BulkUploadManager({ className }: BulkUploadManagerProps) {
   const completedJobs = getCompletedJobs()
   const failedJobs = getFailedJobs()
 
+  // Debug logging
+  useEffect(() => {
+    console.log('🔍 Jobs status check:', {
+      totalJobs: jobs.length,
+      completedCount: completedJobs.length,
+      jobStatuses: jobs.map(j => ({ id: j.id.substring(0, 8), status: j.status, statusType: typeof j.status }))
+    })
+  }, [jobs, completedJobs])
+
   // Load jobs on mount
   useEffect(() => {
     fetchAllJobs()
@@ -61,16 +73,32 @@ export function BulkUploadManager({ className }: BulkUploadManagerProps) {
     }
   }, [fetchAllJobs, stopJobPolling])
 
-  // Auto-refresh job list every 30 seconds
+  // Auto-refresh job list every 5 seconds if there are active jobs
   useEffect(() => {
-    const interval = setInterval(() => {
-      if (!isPolling) {
+    const activeJobs = getActiveJobs()
+    
+    if (activeJobs.length > 0) {
+      const interval = setInterval(() => {
+        console.log('🔄 Auto-refreshing jobs due to active jobs:', activeJobs.length)
         fetchAllJobs()
-      }
-    }, 30000)
+      }, 5000)
 
-    return () => clearInterval(interval)
-  }, [isPolling, fetchAllJobs])
+      return () => clearInterval(interval)
+    }
+  }, [getActiveJobs, fetchAllJobs])
+
+  // Also refresh when jobs change and there are active ones
+  useEffect(() => {
+    const activeJobCount = getActiveJobs().length
+    if (activeJobCount > 0 && !isPolling) {
+      console.log('🚀 Starting polling for active jobs:', activeJobCount)
+      // Start polling for the first active job
+      const firstActiveJob = getActiveJobs()[0]
+      if (firstActiveJob) {
+        startJobPolling(firstActiveJob.id)
+      }
+    }
+  }, [jobs, isPolling, getActiveJobs, startJobPolling])
 
   const handleDragOver = (e: React.DragEvent) => {
     e.preventDefault()
@@ -124,11 +152,32 @@ export function BulkUploadManager({ className }: BulkUploadManagerProps) {
     toast.dismiss('bulk-upload-progress')
 
     if (jobId) {
-      toast.success(`${selectedType === 'annual' ? 'Annual' : 'Quarterly'} bulk upload started successfully!`, {
-        description: `Job ID: ${jobId.substring(0, 8)}... Processing will begin shortly.`
+      toast.success(`${selectedType === 'annual' ? 'Annual' : 'Quarterly'} bulk upload started!`, {
+        description: `Processing has started. You can monitor progress below.`
       })
     } else if (error) {
-      toast.error(`Upload failed: ${error}`)
+      // Show detailed error with helpful actions
+      if (error.includes('Wrong file format') && error.includes('switch to')) {
+        toast.error('Wrong File Format', {
+          description: error,
+          duration: 8000, // Show longer for important errors
+        })
+      } else if (error.includes('Missing required columns')) {
+        toast.error('File Format Error', {
+          description: error + ' Download the correct template above.',
+          duration: 8000,
+        })
+      } else if (error.includes('Server error')) {
+        toast.error('Server Error', {
+          description: error,
+          duration: 6000,
+        })
+      } else {
+        toast.error('Upload Failed', {
+          description: error,
+          duration: 5000,
+        })
+      }
     }
   }
 
@@ -265,8 +314,52 @@ export function BulkUploadManager({ className }: BulkUploadManagerProps) {
               {activeJobs.length} active
             </Badge>
           )}
+          {completedJobs.length > 0 && (
+            <Badge className="bg-green-100 text-green-800 font-mono text-xs">
+              {completedJobs.length} completed
+            </Badge>
+          )}
         </div>
       </div>
+
+      {/* Quick Stats for Completed Jobs */}
+      {completedJobs.length > 0 && (
+        <Card className="p-4 bg-gradient-to-r from-green-50 to-blue-50 dark:from-green-900/10 dark:to-blue-900/10 border-green-200">
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="font-semibold text-gray-900 dark:text-white">Recent Completions</h3>
+            <Badge variant="outline" className="text-xs">
+              {completedJobs.slice(0, 3).length} latest
+            </Badge>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            {completedJobs.slice(0, 3).map((job) => (
+              <div key={job.id} className="bg-white dark:bg-gray-800 rounded-lg p-3 shadow-sm">
+                <div className="flex items-center justify-between mb-2">
+                  <div className="text-sm font-medium text-gray-900 dark:text-white truncate max-w-32">
+                    {job.original_filename}
+                  </div>
+                  <Badge className="text-xs bg-green-100 text-green-800">
+                    <CheckCircle className="h-3 w-3 mr-1" />
+                    Done
+                  </Badge>
+                </div>
+                <div className="grid grid-cols-2 gap-2 text-xs text-gray-600">
+                  <div>
+                    <span className="block font-medium">{job.successful_rows}</span>
+                    <span>Successful</span>
+                  </div>
+                  <div>
+                    <span className="block font-medium">
+                      {job.processed_rows > 0 ? ((job.successful_rows / job.processed_rows) * 100).toFixed(0) : 0}%
+                    </span>
+                    <span>Success Rate</span>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </Card>
+      )}
 
       {/* Upload Section */}
       <Card className="p-6">
@@ -285,19 +378,26 @@ export function BulkUploadManager({ className }: BulkUploadManagerProps) {
           </div>
 
           {/* Template Download */}
-          <div className="flex items-center gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => downloadTemplate(selectedType)}
-              className="h-8 text-xs"
-            >
-              <Download className="h-3 w-3 mr-1" />
-              Download {selectedType} Template
-            </Button>
-            <span className="text-xs text-gray-500">
-              Download the template first to see required columns
-            </span>
+          <div className="space-y-2">
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => downloadTemplate(selectedType)}
+                className="h-8 text-xs"
+              >
+                <Download className="h-3 w-3 mr-1" />
+                Download {selectedType} Template
+              </Button>
+              <span className="text-xs text-gray-500">
+                Download the template first to see required columns
+              </span>
+            </div>
+            <div className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded p-2">
+              <strong>⚠️ Important:</strong> Make sure you&apos;re using the <strong>{selectedType}</strong> tab. 
+              Annual and quarterly files have different required columns. 
+              Using the wrong format will cause upload errors.
+            </div>
           </div>
 
           {/* Drop Zone */}
@@ -473,7 +573,20 @@ export function BulkUploadManager({ className }: BulkUploadManagerProps) {
 }
 
 // Job Card Component
-function JobCard({ job }: { job: any }) {
+function JobCard({ job }: { job: BulkUploadJob }) {
+  const [isResultsViewerOpen, setIsResultsViewerOpen] = useState(false)
+  const [isDownloading, setIsDownloading] = useState(false)
+
+  // Debug logging
+  useEffect(() => {
+    console.log('🔍 JobCard rendered:', {
+      id: job.id.substring(0, 8),
+      status: job.status,
+      filename: job.original_filename,
+      showButtons: job.status === 'completed'
+    })
+  }, [job.status, job.id, job.original_filename])
+
   const getJobStatusColor = (status: string) => {
     switch (status) {
       case 'completed':
@@ -516,6 +629,61 @@ function JobCard({ job }: { job: any }) {
     return `${Math.floor(duration / 3600)}h ${Math.floor((duration % 3600) / 60)}m`
   }
 
+  const formatEstimatedTime = (estimatedCompletion: string | null) => {
+    if (!estimatedCompletion) return null
+    
+    const now = Date.now()
+    const completionTime = new Date(estimatedCompletion).getTime()
+    const remainingTime = Math.max(0, completionTime - now)
+    const remainingMinutes = Math.ceil(remainingTime / (1000 * 60))
+    
+    if (remainingMinutes < 1) return 'Less than 1 minute'
+    if (remainingMinutes < 60) return `${remainingMinutes} minute${remainingMinutes > 1 ? 's' : ''}`
+    
+    const hours = Math.floor(remainingMinutes / 60)
+    const minutes = remainingMinutes % 60
+    return `${hours}h ${minutes}m`
+  }
+
+  const getProcessingRate = (job: BulkUploadJob) => {
+    if (!job.started_at || !job.processed_rows || job.processed_rows === 0) return null
+    
+    const startTime = new Date(job.started_at).getTime()
+    const currentTime = Date.now()
+    const elapsedMinutes = (currentTime - startTime) / (1000 * 60)
+    
+    if (elapsedMinutes === 0) return null
+    
+    const rowsPerMinute = job.processed_rows / elapsedMinutes
+    return `${rowsPerMinute.toFixed(1)} rows/min`
+  }
+
+  const downloadJobResults = async () => {
+    if (!job.id) return
+    
+    setIsDownloading(true)
+    
+    try {
+      console.log('🔽 Attempting to download results for job:', job.id)
+      const blob = await jobsApi.downloadJobResult(job.id)
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `bulk_results_${job.original_filename}_${job.id.substring(0, 8)}.csv`
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      URL.revokeObjectURL(url)
+      
+      toast.success('Results downloaded successfully')
+    } catch (err) {
+      console.error('Download error:', err)
+      toast.error('Failed to download results. The API might not have this endpoint available yet.')
+    } finally {
+      setIsDownloading(false)
+    }
+  }
+
   return (
     <div className="border rounded-lg p-4 hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors">
       <div className="flex items-start justify-between">
@@ -537,27 +705,60 @@ function JobCard({ job }: { job: any }) {
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
             <div>
               <span className="text-gray-500">Progress:</span>
-              <div className="font-medium">{job.progress_percentage.toFixed(1)}%</div>
+              <div className="font-medium">{job.progress_percentage?.toFixed(1) || 0}%</div>
             </div>
             <div>
               <span className="text-gray-500">Processed:</span>
-              <div className="font-medium">{job.processed_rows} / {job.total_rows}</div>
+              <div className="font-medium">
+                {job.processed_rows || 0} / {job.total_rows || 0}
+              </div>
+              {job.status === 'processing' && job.total_rows && job.processed_rows && (
+                <div className="text-xs text-blue-600">
+                  {job.total_rows - job.processed_rows} remaining
+                </div>
+              )}
             </div>
             <div>
               <span className="text-gray-500">Success Rate:</span>
               <div className="font-medium">
-                {job.processed_rows > 0 ? ((job.successful_rows / job.processed_rows) * 100).toFixed(1) : 0}%
+                {job.processed_rows && job.processed_rows > 0 ? 
+                  (((job.successful_rows || 0) / job.processed_rows) * 100).toFixed(1) : 0}%
               </div>
+              {job.failed_rows && job.failed_rows > 0 && (
+                <div className="text-xs text-red-600">
+                  {job.failed_rows} failed
+                </div>
+              )}
             </div>
             <div>
               <span className="text-gray-500">Duration:</span>
               <div className="font-medium">{formatDuration(job.created_at, job.completed_at)}</div>
+              {job.status === 'processing' && (
+                <div className="text-xs text-blue-600">
+                  {formatEstimatedTime(job.estimated_completion || null) ?
+                    `ETA: ${formatEstimatedTime(job.estimated_completion || null)}` :
+                    'Processing...'}
+                </div>
+              )}
             </div>
           </div>
 
           {job.status === 'processing' && (
             <div className="mt-3">
-              <Progress value={job.progress_percentage} className="h-1.5" />
+              <Progress value={job.progress_percentage || 0} className="h-1.5" />
+              <div className="flex justify-between text-xs text-gray-500 mt-1">
+                <span>
+                  {getProcessingRate(job) ? 
+                    `Processing at ${getProcessingRate(job)}` : 
+                    'Processing...'}
+                </span>
+                <span>{job.processed_rows || 0}/{job.total_rows || 0} rows</span>
+              </div>
+              {formatEstimatedTime(job.estimated_completion || null) && (
+                <div className="text-center text-xs text-blue-600 mt-1">
+                  Estimated completion: {formatEstimatedTime(job.estimated_completion || null)}
+                </div>
+              )}
             </div>
           )}
 
@@ -569,16 +770,46 @@ function JobCard({ job }: { job: any }) {
         </div>
 
         <div className="flex items-center gap-2 ml-4">
-          {job.status === 'completed' && (
+          {/* Debug info - temporary */}
+          <div className="text-xs text-gray-400 mr-2">
+            Status: &quot;{job.status}&quot; ({typeof job.status}) Length: {job.status.length}
+          </div>
+          
+          {/* Try multiple variations of completed status */}
+          {(job.status === 'completed' || 
+            job.status === 'Completed' || 
+            job.status.toLowerCase() === 'completed' ||
+            job.status.trim().toLowerCase() === 'completed') && (
             <>
-              <Button variant="outline" size="sm">
+              <Button 
+                variant="outline" 
+                size="sm"
+                onClick={() => setIsResultsViewerOpen(true)}
+              >
                 <Eye className="h-4 w-4 mr-1" />
                 View Results
               </Button>
-              <Button variant="outline" size="sm">
-                <Download className="h-4 w-4 mr-1" />
+              <Button 
+                variant="outline" 
+                size="sm"
+                onClick={downloadJobResults}
+                disabled={isDownloading}
+              >
+                {isDownloading ? (
+                  <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+                ) : (
+                  <Download className="h-4 w-4 mr-1" />
+                )}
                 Export
               </Button>
+              
+              {/* Results Viewer Dialog */}
+              <BulkUploadResultsViewer
+                jobId={job.id}
+                jobName={job.original_filename}
+                isOpen={isResultsViewerOpen}
+                onOpenChange={setIsResultsViewerOpen}
+              />
             </>
           )}
 
@@ -590,6 +821,14 @@ function JobCard({ job }: { job: any }) {
           )}
         </div>
       </div>
+
+      {/* Results Preview for Completed Jobs */}
+      {job.status === 'completed' && (
+        <JobResultsPreview
+          jobId={job.id}
+          onViewFullResults={() => setIsResultsViewerOpen(true)}
+        />
+      )}
     </div>
   )
 }
