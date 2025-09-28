@@ -16,6 +16,7 @@ import {
   Building2,
   TrendingUp
 } from 'lucide-react'
+import Image from 'next/image'
 
 export default function Home() {
   const router = useRouter()
@@ -48,8 +49,8 @@ export default function Home() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center py-6">
             <div className="flex items-center">
-              <Shield className="h-8 w-8 text-blue-600 mr-2" />
-              <span className="text-xl font-bold text-gray-900">RiskGuard</span>
+              <Image src="/logo.svg" alt="AccuNode" width={40} height={40} />
+              <span className="text-xl font-bold text-gray-900 ml-1">AccuNode</span>
             </div>
             <div className="flex items-center space-x-4">
               <Link href="/login">
@@ -96,7 +97,7 @@ export default function Home() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="text-center mb-16">
             <h2 className="text-3xl md:text-4xl font-bold text-gray-900 mb-4">
-              Why Choose RiskGuard?
+              Why Choose AccuNode?
             </h2>
             <p className="text-xl text-gray-600 max-w-2xl mx-auto">
               Everything you need to assess financial risk in one powerful platform
@@ -211,16 +212,8 @@ export default function Home() {
       <footer className="bg-gray-900 text-white py-12">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="text-center">
-            <div className="flex items-center justify-center mb-4">
-              <Shield className="h-8 w-8 text-blue-400 mr-2" />
-              <span className="text-xl font-bold">RiskGuard</span>
-            </div>
-            <p className="text-gray-400 mb-8 max-w-md mx-auto">
-              Advanced financial risk prediction platform powered by machine learning.
-              Make informed decisions with confidence.
-            </p>
-            <div className="border-t border-gray-800 pt-8 text-gray-400">
-              <p>&copy; 2025 RiskGuard. All rights reserved.</p>
+            <div className="text-gray-400">
+              <p>&copy; 2025 AccuNode. All rights reserved.</p>
             </div>
           </div>
         </div>

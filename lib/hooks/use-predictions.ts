@@ -6,6 +6,7 @@ import type {
   QuarterlyPredictionRequest,
   PredictionParams
 } from '../types/prediction'
+import { formatApiError } from '../utils/error-formatting'
 
 export const predictionKeys = {
   all: ['predictions'] as const,
@@ -32,7 +33,7 @@ export function useAnnualPredictions(params?: {
       }
       return response.data
     },
-    staleTime: 2 * 60 * 1000, 
+    staleTime: 2 * 60 * 1000,
   })
 }
 
@@ -52,7 +53,7 @@ export function useQuarterlyPredictions(params?: {
       }
       return response.data
     },
-    staleTime: 2 * 60 * 1000, 
+    staleTime: 2 * 60 * 1000,
   })
 }
 
@@ -68,7 +69,7 @@ export function usePredictions(params?: PredictionParams) {
       }
       return response.data
     },
-    staleTime: 2 * 60 * 1000, 
+    staleTime: 2 * 60 * 1000,
   })
 }
 
@@ -87,8 +88,9 @@ export function useCreateAnnualPrediction() {
       queryClient.invalidateQueries({ queryKey: predictionKeys.annual() })
       toast.success('Annual prediction created successfully')
     },
-    onError: (error: Error) => {
-      toast.error(error.message || 'Failed to create annual prediction')
+    onError: (error: any) => {
+      const formattedErrorMessage = formatApiError(error, 'Failed to create annual prediction')
+      toast.error(formattedErrorMessage)
     },
   })
 }
@@ -108,8 +110,9 @@ export function useCreateQuarterlyPrediction() {
       queryClient.invalidateQueries({ queryKey: predictionKeys.quarterly() })
       toast.success('Quarterly prediction created successfully')
     },
-    onError: (error: Error) => {
-      toast.error(error.message || 'Failed to create quarterly prediction')
+    onError: (error: any) => {
+      const formattedErrorMessage = formatApiError(error, 'Failed to create quarterly prediction')
+      toast.error(formattedErrorMessage)
     },
   })
 }
@@ -129,8 +132,9 @@ export function useUpdateAnnualPrediction() {
       queryClient.invalidateQueries({ queryKey: predictionKeys.annual() })
       toast.success('Annual prediction updated successfully')
     },
-    onError: (error: Error) => {
-      toast.error(error.message || 'Failed to update annual prediction')
+    onError: (error: any) => {
+      const formattedErrorMessage = formatApiError(error, 'Failed to update annual prediction')
+      toast.error(formattedErrorMessage)
     },
   })
 }
@@ -150,8 +154,9 @@ export function useUpdateQuarterlyPrediction() {
       queryClient.invalidateQueries({ queryKey: predictionKeys.quarterly() })
       toast.success('Quarterly prediction updated successfully')
     },
-    onError: (error: Error) => {
-      toast.error(error.message || 'Failed to update quarterly prediction')
+    onError: (error: any) => {
+      const formattedErrorMessage = formatApiError(error, 'Failed to update quarterly prediction')
+      toast.error(formattedErrorMessage)
     },
   })
 }
@@ -172,7 +177,8 @@ export function useDeleteAnnualPrediction() {
       toast.success('Annual prediction deleted successfully')
     },
     onError: (error: Error) => {
-      toast.error(error.message || 'Failed to delete annual prediction')
+      const formattedErrorMessage = formatApiError(error, 'Failed to delete annual prediction')
+      toast.error(formattedErrorMessage)
     },
   })
 }
@@ -193,7 +199,8 @@ export function useDeleteQuarterlyPrediction() {
       toast.success('Quarterly prediction deleted successfully')
     },
     onError: (error: Error) => {
-      toast.error(error.message || 'Failed to delete quarterly prediction')
+      const formattedErrorMessage = formatApiError(error, 'Failed to delete quarterly prediction')
+      toast.error(formattedErrorMessage)
     },
   })
 }
@@ -214,7 +221,8 @@ export function useBulkUploadAnnualPredictions() {
       toast.success('Bulk upload started successfully')
     },
     onError: (error: Error) => {
-      toast.error(error.message || 'Failed to start bulk upload')
+      const formattedErrorMessage = formatApiError(error, 'Failed to start bulk upload')
+      toast.error(formattedErrorMessage)
     },
   })
 }
@@ -235,7 +243,8 @@ export function useBulkUploadQuarterlyPredictions() {
       toast.success('Bulk upload started successfully')
     },
     onError: (error: Error) => {
-      toast.error(error.message || 'Failed to start bulk upload')
+      const formattedErrorMessage = formatApiError(error, 'Failed to start bulk upload')
+      toast.error(formattedErrorMessage)
     },
   })
 }
@@ -260,7 +269,8 @@ export function useExportPredictions() {
       toast.success('Predictions exported successfully')
     },
     onError: (error: Error) => {
-      toast.error(error.message || 'Failed to export predictions')
+      const formattedErrorMessage = formatApiError(error, 'Failed to export predictions')
+      toast.error(formattedErrorMessage)
     },
   })
 }

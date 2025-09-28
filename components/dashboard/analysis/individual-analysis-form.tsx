@@ -53,7 +53,6 @@ export function IndividualAnalysisForm({
   onReset,
   onPredictionTypeChange,
   isLoading,
-  errorMessage,
   editMode,
   isSubmitting = false
 }: IndividualAnalysisFormProps) {
@@ -324,15 +323,6 @@ export function IndividualAnalysisForm({
 
         {/* Action Buttons */}
         <div className="pt-4 border-t border-gray-200 dark:border-gray-700 space-y-3">
-          {/* Error Message Display */}
-          {errorMessage && (
-            <div className="p-3 rounded-lg bg-red-50 border border-red-200 dark:bg-red-900/20 dark:border-red-800">
-              <p className="text-sm text-red-800 dark:text-red-200">
-                <strong>Error:</strong> {errorMessage}
-              </p>
-            </div>
-          )}
-
           <Button
             onClick={onAnalysis}
             className={`w-full h-12 text-white font-medium cursor-pointer ${predictionType === 'annual'

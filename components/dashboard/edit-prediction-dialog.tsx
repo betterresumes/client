@@ -211,7 +211,7 @@ export function EditPredictionDialog({ isOpen, onClose, prediction, type }: Edit
                 <div>
                   <p className="text-gray-500 font-bricolage">Current Default Rate</p>
                   <p className="font-semibold font-bricolage">
-                    {((prediction.probability || prediction.ensemble_probability || 0) * 100).toFixed(2)}%
+                    {((prediction?.probability || prediction?.ensemble_probability || 0) * 100).toFixed(2)}%
                   </p>
                 </div>
                 <div>

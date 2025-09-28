@@ -58,6 +58,7 @@ import { tenantsApi } from '@/lib/api/tenants'
 import { UserRole } from '@/lib/types/user'
 import { UserCreate } from '@/lib/types/auth'
 import { TenantResponse, ComprehensiveTenantResponse, TenantCreate, OrganizationCreate, EnhancedOrganizationResponse, WhitelistCreate } from '@/lib/types/tenant'
+import { useSettingsStore } from '@/lib/stores/settings-store'
 
 const profileSchema = z.object({
   full_name: z.string().min(1, 'Full name is required'),
@@ -137,21 +138,19 @@ export default function SettingsPage() {
   const [profile, setProfile] = useState<UserProfile | null>(null)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
+  const [loadingTenants, setLoadingTenants] = useState(false)
+  const [loadingOrganizations, setLoadingOrganizations] = useState(false)
 
   // Tenant management states (for super admin)
-  const [tenants, setTenants] = useState<Tenant[]>([])
   const [selectedTenant, setSelectedTenant] = useState<TenantDetail | null>(null)
   const [showTenantDetail, setShowTenantDetail] = useState(false)
   const [showCreateTenantDialog, setShowCreateTenantDialog] = useState(false)
 
   // Organization management states (for tenant admin)
-  const [organizations, setOrganizations] = useState<EnhancedOrganizationResponse[]>([])
   const [selectedOrganization, setSelectedOrganization] = useState<EnhancedOrganizationResponse | null>(null)
   const [showOrganizationDetail, setShowOrganizationDetail] = useState(false)
   const [showCreateOrganizationDialog, setShowCreateOrganizationDialog] = useState(false)
   const [showInviteMemberDialog, setShowInviteMemberDialog] = useState(false)
-  const [organizationMembers, setOrganizationMembers] = useState<any[]>([])
-  const [whitelistedEmails, setWhitelistedEmails] = useState<string[]>([])
 
   // Password visibility states
   const [showCurrentPassword, setShowCurrentPassword] = useState(false)
@@ -186,14 +185,34 @@ export default function SettingsPage() {
     resolver: zodResolver(forgotPasswordSchema)
   })
 
+  const {
+    tenants,
+    organizations,
+    organizationMembers,
+    whitelistedEmails,
+    tenantsLoaded,
+    organizationsLoaded,
+    organizationMembersLoaded,
+    whitelistedEmailsLoaded,
+    setTenants,
+    setOrganizations,
+    setOrganizationMembers,
+    setWhitelistedEmails,
+    refreshTenants,
+    refreshOrganizations,
+    refreshOrganizationMembers,
+    refreshWhitelistedEmails,
+    resetSettings
+  } = useSettingsStore()
+
   useEffect(() => {
     loadProfile()
-    if (user?.role === UserRole.SUPER_ADMIN) {
+    if (user?.role === UserRole.SUPER_ADMIN && !tenantsLoaded) {
       loadTenants()
-    } else if (user?.role === 'tenant_admin') {
+    } else if (user?.role === 'tenant_admin' && !organizationsLoaded) {
       loadOrganizations()
     }
-  }, [user])
+  }, [user, tenantsLoaded, organizationsLoaded])
 
   const loadProfile = async () => {
     try {
@@ -227,7 +246,9 @@ export default function SettingsPage() {
   }
 
   const loadTenants = async () => {
+    if (loadingTenants) return // Prevent duplicate calls
     try {
+      setLoadingTenants(true)
       const response = await tenantsApi.list()
       if (response.success && response.data) {
         setTenants(response.data.tenants || [])
@@ -235,6 +256,8 @@ export default function SettingsPage() {
     } catch (error) {
       console.error('Error loading tenants:', error)
       toast.error('Failed to load tenants')
+    } finally {
+      setLoadingTenants(false)
     }
   }
 
@@ -252,7 +275,9 @@ export default function SettingsPage() {
   }
 
   const loadOrganizations = async () => {
+    if (loadingOrganizations) return // Prevent duplicate calls
     try {
+      setLoadingOrganizations(true)
       const response = await organizationsApi.list()
       if (response.success && response.data) {
         setOrganizations(response.data.organizations || [])
@@ -260,6 +285,8 @@ export default function SettingsPage() {
     } catch (error) {
       console.error('Error loading organizations:', error)
       toast.error('Failed to load organizations')
+    } finally {
+      setLoadingOrganizations(false)
     }
   }
 
@@ -385,6 +412,8 @@ export default function SettingsPage() {
         toast.success('Tenant created successfully')
         createTenantForm.reset()
         setShowCreateTenantDialog(false)
+        // Force refresh tenants
+        refreshTenants()
         loadTenants()
       } else {
         toast.error(typeof response.error === 'string' ? response.error : 'Failed to create tenant')
@@ -423,6 +452,8 @@ export default function SettingsPage() {
           toast.success('Organization and admin created successfully')
           createOrganizationForm.reset()
           setShowCreateOrganizationDialog(false)
+          // Force refresh organizations
+          refreshOrganizations()
           loadOrganizations()
         } else {
           toast.error('Organization created but failed to create admin user')
@@ -486,7 +517,7 @@ export default function SettingsPage() {
       const response = await organizationsApi.whitelist.remove(selectedOrganization.id, email)
       if (response.success) {
         toast.success('Email removed from whitelist')
-        setWhitelistedEmails(prev => prev.filter(e => e !== email))
+        setWhitelistedEmails(whitelistedEmails.filter(e => e !== email))
       } else {
         toast.error('Failed to remove email from whitelist')
       }
@@ -709,58 +740,7 @@ export default function SettingsPage() {
                 </div>
               </CardContent>
             </Card>
-
-            {/* Edit Profile Form */}
-            <Card className="md:col-span-2">
-              <CardHeader>
-                <CardTitle>Edit Profile Information</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <form onSubmit={profileForm.handleSubmit(onProfileSubmit)} className="space-y-4">
-                  <div className="grid gap-4 md:grid-cols-2">
-                    <div>
-                      <Label htmlFor="full_name">Full Name</Label>
-                      <Input
-                        id="full_name"
-                        {...profileForm.register('full_name')}
-                        placeholder="Enter your full name"
-                      />
-                      {profileForm.formState.errors.full_name && (
-                        <p className="text-sm text-red-600 mt-1">
-                          {profileForm.formState.errors.full_name.message}
-                        </p>
-                      )}
-                    </div>
-
-                    <div>
-                      <Label htmlFor="email">Email Address</Label>
-                      <Input
-                        id="email"
-                        type="email"
-                        disabled
-                        {...profileForm.register('email')}
-                        placeholder="Enter your email"
-                      />
-                      {profileForm.formState.errors.email && (
-                        <p className="text-sm text-red-600 mt-1">
-                          {profileForm.formState.errors.email.message}
-                        </p>
-                      )}
-                    </div>
-                  </div>
-
-                  <div className="flex justify-end">
-                    <Button
-                      type="submit"
-                      disabled={saving || !profileForm.formState.isDirty}
-                    >
-                      <Save className="h-4 w-4 mr-2" />
-                      {saving ? 'Saving...' : 'Save Changes'}
-                    </Button>
-                  </div>
-                </form>
-              </CardContent>
-            </Card>
+            {/* Removed Edit Profile Form */}
           </div>
         </TabsContent>
 
@@ -887,21 +867,45 @@ export default function SettingsPage() {
         {/* Tenant Management Tab (Super Admin only) */}
         {profile.role === UserRole.SUPER_ADMIN && (
           <TabsContent value="tenant-management">
-            <SuperAdminManagement />
+            <SuperAdminManagement
+              initialTenants={tenants}
+              onTenantUpdate={() => {
+                refreshTenants()
+                loadTenants()
+              }}
+            />
           </TabsContent>
         )}
 
         {/* Organization Management Tab (Tenant Admin only) */}
         {profile.role === UserRole.TENANT_ADMIN && profile.tenant_id && (
           <TabsContent value="organization-management">
-            <TenantAdminManagement tenantId={profile.tenant_id} />
+            <TenantAdminManagement
+              tenantId={profile.tenant_id}
+              initialOrganizations={organizations}
+              onOrganizationUpdate={() => {
+                refreshOrganizations()
+                loadOrganizations()
+              }}
+            />
           </TabsContent>
         )}
 
         {/* Organization Admin Management Tab */}
         {profile.role === UserRole.ORG_ADMIN && profile.organization_id && (
           <TabsContent value="org-admin-management">
-            <OrgAdminManagement organizationId={profile.organization_id} />
+            <OrgAdminManagement
+              organizationId={profile.organization_id}
+              initialMembers={organizationMembers}
+              initialWhitelist={whitelistedEmails}
+              onMemberUpdate={() => {
+                if (profile.organization_id) {
+                  refreshOrganizationMembers()
+                  refreshWhitelistedEmails()
+                  loadOrganizationDetails(profile.organization_id)
+                }
+              }}
+            />
           </TabsContent>
         )}
         {/* Join Organization Tab for Regular Users */}

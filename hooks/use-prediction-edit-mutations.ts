@@ -6,6 +6,7 @@ import { predictionsApi } from '@/lib/api/predictions'
 import { AnnualPredictionRequest, QuarterlyPredictionRequest } from '@/lib/types/prediction'
 import { predictionKeys } from '@/lib/hooks/use-predictions'
 import { usePredictionsStore } from '@/lib/stores/predictions-store'
+import { formatApiError } from '@/lib/utils/error-formatting'
 
 export function usePredictionMutations() {
   const queryClient = useQueryClient()
@@ -45,8 +46,12 @@ export function usePredictionMutations() {
     },
     onError: (error, variables) => {
       console.error(`${variables.type} prediction update failed:`, error)
-      toast.error(`Failed to update ${variables.type} prediction`, {
-        description: error.message || 'Please try again'
+
+      // Format user-friendly error messages
+      const formattedErrorMessage = formatApiError(error, `Failed to update ${variables.type} prediction`)
+
+      toast.error(formattedErrorMessage, {
+        description: 'Please try again'
       })
     }
   })
@@ -86,8 +91,11 @@ export function usePredictionMutations() {
 
       refetchPredictions()
 
-      toast.error(`Failed to delete ${variables.type} prediction`, {
-        description: error.message || 'Please try again'
+      // Format user-friendly error messages
+      const formattedErrorMessage = formatApiError(error, `Failed to delete ${variables.type} prediction`)
+
+      toast.error(formattedErrorMessage, {
+        description: 'Please try again'
       })
     }
   })

@@ -6,6 +6,7 @@ import { predictionsApi } from '@/lib/api/predictions'
 import { AnnualPredictionRequest, QuarterlyPredictionRequest } from '@/lib/types/prediction'
 import { predictionKeys } from '@/lib/hooks/use-predictions'
 import { usePredictionsStore } from '@/lib/stores/predictions-store'
+import { formatApiError } from '@/lib/utils/error-formatting'
 
 export function useCreatePredictionMutations() {
   const queryClient = useQueryClient()
@@ -56,10 +57,14 @@ export function useCreatePredictionMutations() {
         marketCap: `$${prediction.market_cap || 0}M`
       }
     },
-    onError: (error) => {
+    onError: (error: any) => {
       console.error('Annual analysis failed:', error)
-      toast.error('Failed to create annual prediction', {
-        description: error.message || 'Please try again'
+
+      // Format user-friendly error messages
+      const formattedErrorMessage = formatApiError(error, 'Failed to create annual prediction')
+
+      toast.error(formattedErrorMessage, {
+        description: 'Please try again'
       })
     }
   })
@@ -113,8 +118,12 @@ export function useCreatePredictionMutations() {
     },
     onError: (error: any) => {
       console.error('Quarterly analysis failed:', error)
-      toast.error('Failed to create quarterly prediction', {
-        description: error.message || 'Please try again'
+
+      // Format user-friendly error messages
+      const formattedErrorMessage = formatApiError(error, 'Failed to create quarterly prediction')
+
+      toast.error(formattedErrorMessage, {
+        description: 'Please try again'
       })
     }
   })
@@ -144,8 +153,12 @@ export function useCreatePredictionMutations() {
     },
     onError: (error) => {
       console.error('Bulk upload failed:', error)
-      toast.error('Failed to upload file', {
-        description: error.message || 'Please check your file format and try again'
+
+      // Format user-friendly error messages
+      const formattedErrorMessage = formatApiError(error, 'Failed to upload file')
+
+      toast.error(formattedErrorMessage, {
+        description: 'Please check your file format and try again'
       })
 
       return {

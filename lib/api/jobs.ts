@@ -3,7 +3,8 @@ import {
   Job,
   JobProgress,
   JobParams,
-  BulkJobOperationResponse
+  BulkJobOperationResponse,
+  JobResultsComplete
 } from '../types/job'
 import { JobStatus } from '../types/common'
 import { ApiResponse, PaginatedResponse } from '../types/common'
@@ -223,6 +224,32 @@ export const jobsApi = {
       created_at: string
     }>> {
       return apiClient.get<any>(`/predictions/jobs/${jobId}/results`)
+    },
+
+    // New POST endpoint for complete job results with selective data inclusion
+    async getJobResultsComplete(jobId: string, options?: {
+      include_predictions?: boolean
+      include_companies?: boolean
+      include_errors?: boolean
+    }): Promise<ApiResponse<JobResultsComplete>> {
+      return apiClient.post<JobResultsComplete>(`/predictions/jobs/${jobId}/results`, {
+        include_predictions: options?.include_predictions ?? true,
+        include_companies: options?.include_companies ?? true,
+        include_errors: options?.include_errors ?? true
+      })
+    },
+
+    // Download job results as Excel file
+    async downloadJobResultsExcel(jobId: string): Promise<Blob> {
+      const response = await apiClient.get<Blob>(`/predictions/jobs/${jobId}/download`, {
+        responseType: 'blob'
+      })
+
+      if (response.success && response.data) {
+        return response.data
+      }
+
+      throw new Error('Failed to download job results')
     },
 
     async listBulkUploadJobs(params?: {

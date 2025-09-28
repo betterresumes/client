@@ -56,14 +56,16 @@ import { useAuthStore } from '@/lib/stores/auth-store'
 
 interface TenantAdminManagementProps {
   tenantId: string
+  initialOrganizations?: any[]
+  onOrganizationUpdate?: () => void
 }
 
-export function TenantAdminManagement({ tenantId }: TenantAdminManagementProps) {
+export function TenantAdminManagement({ tenantId, initialOrganizations = [], onOrganizationUpdate }: TenantAdminManagementProps) {
   const { user } = useAuthStore()
   const [tenant, setTenant] = useState<any>(null)
-  const [organizations, setOrganizations] = useState<any[]>([])
+  const [organizations, setOrganizations] = useState<any[]>(initialOrganizations)
   const [tenantStats, setTenantStats] = useState<any>(null)
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useState(!initialOrganizations.length)
   const [actionLoading, setActionLoading] = useState<string | null>(null)
   const [searchTerm, setSearchTerm] = useState('')
 
@@ -72,15 +74,6 @@ export function TenantAdminManagement({ tenantId }: TenantAdminManagementProps) 
   const [editDialogOpen, setEditDialogOpen] = useState(false)
   const [assignAdminDialogOpen, setAssignAdminDialogOpen] = useState(false)
   const [selectedOrganization, setSelectedOrganization] = useState<any>(null)
-
-  // Cache management
-  const [dataCache, setDataCache] = useState<{
-    tenant: any
-    organizations: any[]
-    stats: any
-    lastFetch: number
-  } | null>(null)
-  const CACHE_DURATION = 5 * 60 * 1000 // 5 minutes
 
   // Helper function to safely format dates
   const formatSafeDate = (dateString: string | null | undefined, formatStr: string = 'MMM dd, yyyy') => {
@@ -94,61 +87,63 @@ export function TenantAdminManagement({ tenantId }: TenantAdminManagementProps) 
     }
   }
 
-  useEffect(() => {
-    if (tenantId) {
-      // Check if we have cached data that's still valid
-      const now = Date.now()
-      if (dataCache && (now - dataCache.lastFetch) < CACHE_DURATION) {
-        // Use cached data
-        setTenant(dataCache.tenant)
-        setOrganizations(dataCache.organizations)
-        setTenantStats(dataCache.stats)
-        setLoading(false)
-        return
-      }
-
-      // Load fresh data
-      loadAllData()
-    }
-  }, [tenantId])
-
-  const loadAllData = async () => {
-    setLoading(true)
+  const loadTenantDetails = async () => {
     try {
-      const [tenantResponse, orgsResponse, statsResponse] = await Promise.all([
+      const [tenantResponse, statsResponse] = await Promise.all([
         tenantsApi.get(tenantId),
-        organizationsApi.list({ tenant_id: tenantId, limit: 100 }),
         tenantsApi.getStats(tenantId)
       ])
 
-      const tenantData = tenantResponse.success ? tenantResponse.data : null
-      const orgsData = orgsResponse.success ? (orgsResponse.data?.organizations || []) : []
-      const statsData = statsResponse.success ? statsResponse.data : null
+      if (tenantResponse.success) {
+        setTenant(tenantResponse.data)
+      }
 
-      // Update state
-      setTenant(tenantData)
-      setOrganizations(orgsData)
-      setTenantStats(statsData)
-
-      // Update cache
-      setDataCache({
-        tenant: tenantData,
-        organizations: orgsData,
-        stats: statsData,
-        lastFetch: Date.now()
-      })
+      if (statsResponse.success) {
+        setTenantStats(statsResponse.data)
+      }
     } catch (error) {
-      console.error('Error loading tenant data:', error)
-      toast.error('Failed to load tenant data')
-    } finally {
-      setLoading(false)
+      console.error('Error loading tenant details:', error)
     }
   }
 
-  const refreshData = () => {
-    // Clear cache and force fresh load
-    setDataCache(null)
-    loadAllData()
+  const loadOrganizations = async () => {
+    if (initialOrganizations.length) return // Use props data if available
+
+    try {
+      const response = await organizationsApi.list({ tenant_id: tenantId, limit: 100 })
+      if (response.success) {
+        setOrganizations(response.data?.organizations || [])
+      }
+    } catch (error) {
+      console.error('Error loading organizations:', error)
+    }
+  }
+
+  useEffect(() => {
+    if (user && tenantId) {
+      const loadData = async () => {
+        setLoading(true)
+        await Promise.all([
+          loadTenantDetails(),
+          !initialOrganizations.length && loadOrganizations()
+        ].filter(Boolean))
+        setLoading(false)
+      }
+
+      loadData()
+    }
+  }, [user, tenantId])
+
+  const refreshData = async () => {
+    await Promise.all([
+      loadTenantDetails(),
+      loadOrganizations()
+    ])
+
+    // Call parent callback to refresh global store
+    if (onOrganizationUpdate) {
+      onOrganizationUpdate()
+    }
   }
 
   const filteredOrganizations = organizations.filter(org =>
@@ -444,7 +439,7 @@ export function TenantAdminManagement({ tenantId }: TenantAdminManagementProps) 
         open={createDialogOpen}
         onOpenChange={setCreateDialogOpen}
         onOrganizationCreated={() => {
-          loadAllData()
+          refreshData()
           toast.success('Organization created successfully!')
         }}
         tenantId={tenantId}
@@ -457,7 +452,7 @@ export function TenantAdminManagement({ tenantId }: TenantAdminManagementProps) 
           onOpenChange={setEditDialogOpen}
           organization={selectedOrganization}
           onSuccess={() => {
-            loadAllData()
+            refreshData()
             setSelectedOrganization(null)
             toast.success('Organization updated successfully!')
           }}
@@ -471,7 +466,7 @@ export function TenantAdminManagement({ tenantId }: TenantAdminManagementProps) 
           onOpenChange={setAssignAdminDialogOpen}
           organization={selectedOrganization}
           onSuccess={() => {
-            loadAllData()
+            refreshData()
             setSelectedOrganization(null)
             toast.success('Org admin assigned successfully!')
           }}

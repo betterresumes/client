@@ -17,10 +17,13 @@ import { IndividualAnalysisForm } from './analysis/individual-analysis-form'
 import { CompanyAnalysisPanel } from './company-analysis-panel'
 import { ProcessingSteps } from './processing-steps'
 import { EmptyAnalysisState } from './empty-analysis-state'
+import { formatApiError } from '@/lib/utils/error-formatting'
 import { SAMPLE_DATA } from '@/lib/config/sectors'
 import { BulkUploadSection } from './analysis/bulk-upload-section-new'
 import { JobStatusContainer } from './job-status-display'
-import { Loader2, Download, Trash2, X, FileSpreadsheet, ChevronDown, ChevronUp } from 'lucide-react'
+import { JobResultsDialog } from './job-results-dialog'
+import { jobsApi } from '@/lib/api/jobs'
+import { Loader2, Download, Trash2, X, FileSpreadsheet, ChevronDown, ChevronUp, Eye } from 'lucide-react'
 
 // Simple Jobs Display Component - Just jobs, no upload widget integration
 function SimpleJobsDisplaySection({
@@ -29,7 +32,9 @@ function SimpleJobsDisplaySection({
   hasActiveJobs,
   onDeleteBulkJob,
   onCancelBulkJob,
-  canDeleteJob
+  canDeleteJob,
+  onViewResults,
+  onDownloadExcel
 }: {
   jobs: any[]
   bulkJobs: any[]
@@ -37,6 +42,8 @@ function SimpleJobsDisplaySection({
   onDeleteBulkJob: (jobId: string, filename: string) => void
   onCancelBulkJob: (jobId: string, filename: string) => void
   canDeleteJob: (job: any) => boolean
+  onViewResults?: (jobId: string, filename?: string) => void
+  onDownloadExcel?: (jobId: string, filename?: string) => void
 }) {
   const [showAllJobs, setShowAllJobs] = useState(false)
 
@@ -124,6 +131,8 @@ function SimpleJobsDisplaySection({
                 onCancel={onCancelBulkJob}
                 canDelete={canDeleteJob}
                 isCompact={showAllJobs}
+                onViewResults={onViewResults}
+                onDownloadExcel={onDownloadExcel}
               />
             ))}
           </div>
@@ -139,13 +148,17 @@ function JobCard({
   onDelete,
   onCancel,
   canDelete,
-  isCompact
+  isCompact,
+  onViewResults,
+  onDownloadExcel
 }: {
   job: any
   onDelete: (jobId: string, filename: string) => void
   onCancel: (jobId: string, filename: string) => void
   canDelete: (job: any) => boolean
   isCompact: boolean
+  onViewResults?: (jobId: string, filename?: string) => void
+  onDownloadExcel?: (jobId: string, filename?: string) => void
 }) {
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -197,31 +210,7 @@ function JobCard({
             </h4>
           </div>
 
-          {/* Action Buttons */}
-          <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-            {job.status === 'processing' && (
-              <Button
-                onClick={() => onCancel(job.id, job.original_filename)}
-                variant="ghost"
-                size="sm"
-                className="h-6 w-6 p-0 text-amber-600 hover:text-amber-700 hover:bg-amber-50"
-                title="Cancel processing"
-              >
-                <X className="h-3 w-3" />
-              </Button>
-            )}
-            {canDelete(job) && (
-              <Button
-                onClick={() => onDelete(job.id, job.original_filename)}
-                variant="ghost"
-                size="sm"
-                className="h-6 w-6 p-0 text-gray-400 hover:text-red-600 hover:bg-red-50"
-                title="Delete job"
-              >
-                <Trash2 className="h-3 w-3" />
-              </Button>
-            )}
-          </div>
+
         </div>
 
         {/* Progress Section */}
@@ -261,11 +250,43 @@ function JobCard({
               </span>
             )}
           </div>
-          <div className="text-xs text-gray-400">
-            {new Date(job.created_at || job.startTime).toLocaleTimeString([], {
-              hour: '2-digit',
-              minute: '2-digit'
-            })}
+          <div className="flex items-center gap-1">
+            {/* View Results Icon */}
+            {job.status === 'completed' && onViewResults && (
+              <Button
+                onClick={() => onViewResults(job.id, job.original_filename)}
+                variant="ghost"
+                size="sm"
+                className="h-6 w-6 p-0 text-blue-600 hover:text-blue-700 hover:bg-blue-50"
+                title="View Results"
+              >
+                <Eye className="h-3 w-3" />
+              </Button>
+            )}
+            {/* Download Excel Icon */}
+            {job.status === 'completed' && onDownloadExcel && (
+              <Button
+                onClick={() => onDownloadExcel(job.id, job.original_filename)}
+                variant="ghost"
+                size="sm"
+                className="h-6 w-6 p-0 text-green-600 hover:text-green-700 hover:bg-green-50"
+                title="Export CSV"
+              >
+                <Download className="h-3 w-3" />
+              </Button>
+            )}
+            {/* Delete Job Icon */}
+            {canDelete(job) && (
+              <Button
+                onClick={() => onDelete(job.id, job.original_filename)}
+                variant="ghost"
+                size="sm"
+                className="h-6 w-6 p-0 text-gray-400 hover:text-red-600 hover:bg-red-50"
+                title="Delete Job"
+              >
+                <Trash2 className="h-3 w-3" />
+              </Button>
+            )}
           </div>
         </div>
 
@@ -283,41 +304,8 @@ function JobCard({
 }
 
 // Helper function to format error messages for better user experience
-const formatErrorMessage = (rawMessage: string): string => {
-  if (!rawMessage) return 'An unexpected error occurred. Please try again.'
-
-  // Handle common API error patterns
-  if (rawMessage.includes('already exists in your global scope')) {
-    const match = rawMessage.match(/Annual prediction for (\w+) in (\d+) Q(\d+) already exists/)
-    if (match) {
-      const [, symbol, year, quarter] = match
-      return `A prediction for ${symbol} already exists for ${year} Q${quarter}. Please try a different company or time period.`
-    }
-  }
-
-  if (rawMessage.includes('Quarterly prediction for')) {
-    const match = rawMessage.match(/Quarterly prediction for (\w+) in (\d+) Q(\d+) already exists/)
-    if (match) {
-      const [, symbol, year, quarter] = match
-      return `A quarterly prediction for ${symbol} already exists for ${year} Q${quarter}. Please try a different company or time period.`
-    }
-  }
-
-  // Handle validation errors
-  if (rawMessage.toLowerCase().includes('validation')) {
-    return 'Please check your input data. Some fields may have invalid values.'
-  }
-
-  if (rawMessage.toLowerCase().includes('unauthorized')) {
-    return 'You are not authorized to perform this action. Please check your permissions.'
-  }
-
-  if (rawMessage.toLowerCase().includes('not found')) {
-    return 'The requested resource was not found. Please try again.'
-  }
-
-  // Return original message if no specific pattern matched, but limit length
-  return rawMessage.length > 100 ? rawMessage.substring(0, 100) + '...' : rawMessage
+const formatErrorMessage = (error: any, fallbackMessage: string): string => {
+  return formatApiError(error, fallbackMessage)
 }
 
 export function CustomAnalysisView() {
@@ -334,9 +322,12 @@ export function CustomAnalysisView() {
   const [predictionType, setPredictionType] = useState<'annual' | 'quarterly'>('annual')
   const [showResults, setShowResults] = useState(false)
   const [processingStep, setProcessingStep] = useState(0)
+  // Job Results Dialog states
+  const [resultsDialogOpen, setResultsDialogOpen] = useState(false)
+  const [selectedJobId, setSelectedJobId] = useState<string | null>(null)
+  const [selectedJobName, setSelectedJobName] = useState<string | null>(null)
   const [isProcessing, setIsProcessing] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
-  const [errorMessage, setErrorMessage] = useState<string>('')
   const [editMode, setEditMode] = useState<{ isEditing: boolean; predictionId: string | null }>({
     isEditing: false,
     predictionId: null
@@ -507,7 +498,7 @@ export function CustomAnalysisView() {
     }
 
     // Clear any previous error message
-    setErrorMessage('')    // Start processing simulation
+    // Start processing simulation
     await simulateProcessing()
 
     if (predictionType === 'annual') {
@@ -535,14 +526,22 @@ export function CustomAnalysisView() {
           onSuccess: (results) => {
             // Format the API response for CompanyAnalysisPanel
             const predictionData = results.data?.prediction || results.data || results
+
+            // Add null check to prevent errors
+            if (!predictionData) {
+              toast.error('No prediction data received from server')
+              setIsProcessing(false)
+              return
+            }
+
             const formattedResults = {
               company: {
-                id: predictionData.company_symbol || formData.stockSymbol,
-                name: predictionData.company_symbol || formData.stockSymbol,
-                subtitle: predictionData.company_name || formData.companyName,
-                sector: predictionData.sector || formData.sector,
-                defaultRate: `${((predictionData.ensemble_probability || predictionData.probability || 0) * 100).toFixed(2)}%`,
-                riskCategory: predictionData.risk_level || 'MEDIUM'
+                id: predictionData?.company_symbol || formData.stockSymbol,
+                name: predictionData?.company_symbol || formData.stockSymbol,
+                subtitle: predictionData?.company_name || formData.companyName,
+                sector: predictionData?.sector || formData.sector,
+                defaultRate: `${((predictionData?.ensemble_probability || predictionData?.probability || 0) * 100).toFixed(2)}%`,
+                riskCategory: predictionData?.risk_level || 'MEDIUM'
               },
               predictions: [predictionData]
             }
@@ -564,8 +563,7 @@ export function CustomAnalysisView() {
             setIsSubmitting(false)
             setProcessingStep(0)
             const rawErrorMessage = error?.response?.data?.detail || error?.message || 'Update failed. Please try again.'
-            const formattedErrorMessage = formatErrorMessage(rawErrorMessage)
-            setErrorMessage(formattedErrorMessage)
+            const formattedErrorMessage = formatErrorMessage(error, 'Update failed. Please try again.')
             toast.error(formattedErrorMessage)
           }
         })
@@ -580,7 +578,6 @@ export function CustomAnalysisView() {
               setIsProcessing(false)
               setIsSubmitting(false)
               setProcessingStep(0)
-              setErrorMessage(errorMsg)
               toast.error(errorMsg)
               return
             }
@@ -588,6 +585,16 @@ export function CustomAnalysisView() {
             // Format the API response for CompanyAnalysisPanel
             // API returns: { prediction: { ... } }
             const predictionData = results.response?.data?.prediction || results.response?.data
+
+            // Add null check to prevent errors
+            if (!predictionData) {
+              toast.error('No prediction data received from server')
+              setIsProcessing(false)
+              setIsSubmitting(false)
+              setProcessingStep(0)
+              return
+            }
+
             const formattedResults = {
               company: {
                 id: predictionData.company_symbol || formData.stockSymbol,
@@ -629,8 +636,7 @@ export function CustomAnalysisView() {
             const rawErrorMessage = error?.response?.data?.detail || error?.message || 'Analysis failed. Please try again.'
 
             // Format user-friendly error messages
-            const formattedErrorMessage = formatErrorMessage(rawErrorMessage)
-            setErrorMessage(formattedErrorMessage)
+            const formattedErrorMessage = formatErrorMessage(error, 'Analysis failed. Please try again.')
             toast.error(formattedErrorMessage)
           }
         })
@@ -658,6 +664,15 @@ export function CustomAnalysisView() {
         }, {
           onSuccess: (results) => {
             const predictionData = results.data?.prediction || results.data || results
+
+            // Add null check to prevent errors
+            if (!predictionData) {
+              toast.error('No prediction data received from server')
+              setIsProcessing(false)
+              setIsSubmitting(false)
+              setProcessingStep(0)
+              return
+            }
 
             // Log the enhanced response
             console.log('✅ Enhanced Quarterly Prediction Update Response:', {
@@ -707,8 +722,7 @@ export function CustomAnalysisView() {
             setIsSubmitting(false)
             setProcessingStep(0)
             const rawErrorMessage = error?.response?.data?.detail || error?.message || 'Update failed. Please try again.'
-            const formattedErrorMessage = formatErrorMessage(rawErrorMessage)
-            setErrorMessage(formattedErrorMessage)
+            const formattedErrorMessage = formatErrorMessage(error, 'Update failed. Please try again.')
             toast.error(formattedErrorMessage)
           }
         })
@@ -723,7 +737,6 @@ export function CustomAnalysisView() {
               setIsProcessing(false)
               setIsSubmitting(false)
               setProcessingStep(0)
-              setErrorMessage(errorMsg)
               toast.error(errorMsg)
               return
             }
@@ -731,6 +744,16 @@ export function CustomAnalysisView() {
             // Format the API response for CompanyAnalysisPanel
             // API returns: { prediction: { ... } }
             const predictionData = results.response?.data?.prediction || results.response?.data
+
+            // Add null check to prevent errors
+            if (!predictionData) {
+              toast.error('No prediction data received from server')
+              setIsProcessing(false)
+              setIsSubmitting(false)
+              setProcessingStep(0)
+              return
+            }
+
             const formattedResults = {
               company: {
                 id: predictionData.company_symbol || formData.stockSymbol,
@@ -771,8 +794,7 @@ export function CustomAnalysisView() {
             const rawErrorMessage = error?.response?.data?.detail || error?.message || 'Analysis failed. Please try again.'
 
             // Format user-friendly error messages
-            const formattedErrorMessage = formatErrorMessage(rawErrorMessage)
-            setErrorMessage(formattedErrorMessage)
+            const formattedErrorMessage = formatErrorMessage(error, 'Analysis failed. Please try again.')
             toast.error(formattedErrorMessage)
           }
         })
@@ -920,6 +942,101 @@ export function CustomAnalysisView() {
     )
   }
 
+  // Handle job results viewing
+  const handleViewResults = (jobId: string, jobName?: string) => {
+    setSelectedJobId(jobId)
+    setSelectedJobName(jobName || null)
+    setResultsDialogOpen(true)
+  }
+
+  // Handle Excel download - frontend only
+  const handleDownloadExcel = async (jobId: string, jobName?: string) => {
+    try {
+      // Get job results first
+      const response = await jobsApi.predictions.getJobResultsComplete(jobId, {
+        include_predictions: true,
+        include_companies: true,
+        include_errors: false
+      })
+
+      if (!response.success || !response.data) {
+        toast.error('Failed to fetch job results for export')
+        return
+      }
+
+      const results = response.data
+
+      // Create CSV content from results data
+      const headers = [
+        'Company Symbol',
+        'Company Name',
+        'Sector',
+        'Market Cap',
+        'Reporting Period',
+        'Probability (%)',
+        'Risk Level',
+        'Confidence (%)',
+        'Predicted At'
+      ]
+
+      const rows: string[][] = []
+
+      // Add company and prediction data
+      if (results.created_data?.predictions) {
+        results.created_data.predictions.forEach((prediction: any) => {
+          const company = prediction.company
+          const period = prediction.reporting_quarter
+            ? `${prediction.reporting_quarter} ${prediction.reporting_year}`
+            : `Annual ${prediction.reporting_year}`
+
+          // Get all financial metrics
+          const financialMetrics = prediction.financial_metrics || {}
+          const predictionData = prediction.prediction || {}
+
+          rows.push([
+            company?.symbol || 'N/A',
+            company?.name || 'N/A',
+            company?.sector || 'N/A',
+            period,
+            ((predictionData.ensemble_probability || predictionData.probability) * 100).toFixed(2),
+            predictionData.risk_level || 'N/A',
+            (predictionData.confidence * 100).toFixed(1),
+            new Date(predictionData.predicted_at).toLocaleDateString(),
+            // Add all financial metrics
+            financialMetrics.total_debt_to_ebitda?.toFixed(2) || 'N/A',
+            financialMetrics.sga_margin?.toFixed(2) || 'N/A',
+            financialMetrics.long_term_debt_to_total_capital?.toFixed(2) || 'N/A',
+            financialMetrics.return_on_capital?.toFixed(2) || 'N/A',
+            // Add prediction model details
+            (predictionData.logistic_probability * 100).toFixed(4) || 'N/A',
+            (predictionData.gbm_probability * 100).toFixed(4) || 'N/A'
+          ])
+        })
+      }
+
+      // Create CSV content
+      const csvContent = [
+        headers.join(','),
+        ...rows.map(row => row.map((field: string) => `"${field}"`).join(','))
+      ].join('\n')
+
+      // Download the file
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' })
+      const url = window.URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = `${jobName || 'analysis-results'}-${jobId.substring(0, 8)}.csv`
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
+      window.URL.revokeObjectURL(url)
+
+      toast.success('Analysis data exported successfully!')
+    } catch (err: any) {
+      toast.error('Failed to export analysis data: ' + err.message)
+    }
+  }
+
   // Handle job cancellation
   const handleCancelBulkJob = async (jobId: string, jobFilename: string) => {
     showConfirmDialog(
@@ -1026,7 +1143,6 @@ export function CustomAnalysisView() {
     Object.entries(sampleData).forEach(([key, value]) => {
       setFormData(prev => ({ ...prev, [key]: value }))
     })
-    setErrorMessage('') // Clear any previous error
     toast.success('Sample data loaded!')
   }
 
@@ -1103,7 +1219,6 @@ export function CustomAnalysisView() {
     setProcessingStep(0)
     setIsProcessing(false)
     setIsSubmitting(false)
-    setErrorMessage('') // Clear any previous error
     setEditMode({ isEditing: false, predictionId: null }) // Clear edit mode
     toast.success('Form reset!')
   }
@@ -1116,7 +1231,6 @@ export function CustomAnalysisView() {
     setProcessingStep(0)
     setIsProcessing(false)
     setIsSubmitting(false)
-    setErrorMessage('') // Clear any previous error
   }
 
   // Processing simulation
@@ -1177,7 +1291,6 @@ export function CustomAnalysisView() {
               onReset={handleReset}
               onPredictionTypeChange={handlePredictionTypeChange}
               isLoading={isAnalysisLoading}
-              errorMessage={errorMessage}
               editMode={editMode}
               isSubmitting={isSubmitting}
             />
@@ -1257,6 +1370,8 @@ export function CustomAnalysisView() {
                 onDeleteBulkJob={handleDeleteBulkJob}
                 onCancelBulkJob={handleCancelBulkJob}
                 canDeleteJob={canDeleteJob}
+                onViewResults={handleViewResults}
+                onDownloadExcel={handleDownloadExcel}
               />
             ) : (
               <div className="space-y-6">
@@ -1635,6 +1750,18 @@ export function CustomAnalysisView() {
           </div>
         </>
       )}
+
+      {/* Job Results Dialog */}
+      <JobResultsDialog
+        jobId={selectedJobId}
+        jobName={selectedJobName || undefined}
+        isOpen={resultsDialogOpen}
+        onClose={() => {
+          setResultsDialogOpen(false)
+          setSelectedJobId(null)
+          setSelectedJobName(null)
+        }}
+      />
     </div>
   )
 }

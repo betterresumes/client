@@ -34,11 +34,21 @@ export function useJobStatus(jobId: string, enabled: boolean = true) {
   return useQuery({
     queryKey: jobKeys.status(jobId),
     queryFn: async () => {
-      const response = await jobsApi.getJobStatus(jobId)
-      if (!response.success || !response.data) {
-        throw new Error(response.error?.message || 'Failed to load job status')
+      // FIXED: Use list endpoint instead of individual status endpoint to get fresh data
+      const response = await jobsApi.listJobs({ limit: 50, offset: 0 })
+      if (!response.success) {
+        throw new Error(response.error?.message || 'Failed to load jobs list')
       }
-      return response.data
+
+      // Find the specific job in the list
+      const jobsArray = response.data?.items || []
+      const jobStatus = jobsArray.find((job: any) => job.id === jobId)
+
+      if (!jobStatus) {
+        throw new Error(`Job ${jobId} not found in jobs list`)
+      }
+
+      return jobStatus
     },
     enabled: enabled && !!jobId,
     staleTime: 10 * 1000,
@@ -147,7 +157,7 @@ export function useJobLogs(jobId: string) {
       return response.data
     },
     enabled: !!jobId,
-    staleTime: 30 * 1000, 
+    staleTime: 30 * 1000,
   })
 }
 
@@ -191,7 +201,7 @@ export function useJobStatistics(params?: {
       }
       return response.data
     },
-    staleTime: 5 * 60 * 1000, 
+    staleTime: 5 * 60 * 1000,
   })
 }
 

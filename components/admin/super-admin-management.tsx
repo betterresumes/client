@@ -53,11 +53,16 @@ import { organizationsApi } from '@/lib/api/organizations'
 import { useAuthStore } from '@/lib/stores/auth-store'
 import { CreateTenantDialog } from './create-tenant-dialog'
 
-export function SuperAdminManagement() {
+interface SuperAdminManagementProps {
+  initialTenants?: any[]
+  onTenantUpdate?: () => void
+}
+
+export function SuperAdminManagement({ initialTenants = [], onTenantUpdate }: SuperAdminManagementProps) {
   const { user } = useAuthStore()
-  const [tenants, setTenants] = useState<any[]>([])
+  const [tenants, setTenants] = useState<any[]>(initialTenants)
   const [platformStats, setPlatformStats] = useState<any>(null)
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useState(!initialTenants.length)
   const [actionLoading, setActionLoading] = useState<string | null>(null)
   const [searchTerm, setSearchTerm] = useState('')
   const [showCreateTenantDialog, setShowCreateTenantDialog] = useState(false)
@@ -83,6 +88,13 @@ export function SuperAdminManagement() {
   }
 
   useEffect(() => {
+    // If we already have initial tenants data, just load stats
+    if (initialTenants.length > 0) {
+      setTenants(initialTenants)
+      loadPlatformStats()
+      return
+    }
+
     // Check if we have cached data that's still valid
     const now = Date.now()
     if (dataCache && (now - dataCache.lastFetch) < CACHE_DURATION) {
@@ -93,9 +105,30 @@ export function SuperAdminManagement() {
       return
     }
 
-    // Load fresh data
+    // Load fresh data only if no initial data
     loadAllData()
-  }, [])
+  }, [initialTenants])
+
+  const loadPlatformStats = async () => {
+    setLoading(true)
+    try {
+      const currentTenants = tenants.length > 0 ? tenants : initialTenants
+
+      // Calculate platform stats from existing tenant data
+      const statsData = {
+        total_tenants: currentTenants.length,
+        active_tenants: currentTenants.filter((t: any) => t.is_active).length,
+        total_organizations: currentTenants.reduce((sum: number, t: any) => sum + (t.total_organizations || 0), 0),
+        total_users: currentTenants.reduce((sum: number, t: any) => sum + (t.total_users || 0), 0)
+      }
+
+      setPlatformStats(statsData)
+    } catch (error) {
+      console.error('Error calculating platform stats:', error)
+    } finally {
+      setLoading(false)
+    }
+  }
 
   const loadAllData = async () => {
     setLoading(true)
@@ -171,7 +204,11 @@ export function SuperAdminManagement() {
   const refreshData = () => {
     // Clear cache and force fresh load
     setDataCache(null)
-    loadAllData()
+    if (onTenantUpdate) {
+      onTenantUpdate() // Call parent to refresh Zustand store
+    } else {
+      loadAllData()
+    }
   }
 
   const filteredTenants = tenants.filter(tenant =>

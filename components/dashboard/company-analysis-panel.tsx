@@ -199,11 +199,11 @@ export function CompanyAnalysisPanel({
               }`}
           >
             {activeTab === 'annual' && currentAnnualPrediction
-              ? ((currentAnnualPrediction.probability * 100 || 0)).toFixed(2)
+              ? ((currentAnnualPrediction?.probability * 100 || 0)).toFixed(2)
               : activeTab === 'quarterly' && currentQuarterlyPrediction
-                ? ((currentQuarterlyPrediction.ensemble_probability * 100 || 0)
+                ? ((currentQuarterlyPrediction?.ensemble_probability * 100 || 0)
                 ).toFixed(2)
-                : company.defaultRate}%
+                : company.defaultRate.replace('%', '')}%
           </div>
           <div className="text-sm text-gray-600 dark:text-gray-400 font-bricolage">
             Default Rate
@@ -259,7 +259,7 @@ export function CompanyAnalysisPanel({
                   <div
                     className="absolute top-0 w-3 h-3 bg-gray-900 rounded-full transform -translate-x-1/2 -translate-y-0.5"
                     style={{
-                      left: `${Math.min(Math.max(((currentAnnualPrediction.ensemble_probability || currentAnnualPrediction.probability || 0)) * 4, 5), 95)}%`
+                      left: `${Math.min(Math.max(((currentAnnualPrediction?.ensemble_probability || currentAnnualPrediction?.probability || 0)) * 4, 5), 95)}%`
                     }}
                   />
                 </div>
@@ -404,7 +404,7 @@ export function CompanyAnalysisPanel({
                   <div
                     className="absolute top-0 w-3 h-3 bg-gray-900 rounded-full transform -translate-x-1/2 -translate-y-0.5"
                     style={{
-                      left: `${Math.min(Math.max(((currentQuarterlyPrediction.ensemble_probability || currentQuarterlyPrediction.probability || 0) * 100) * 4, 5), 95)}%`
+                      left: `${Math.min(Math.max(((currentQuarterlyPrediction?.ensemble_probability || currentQuarterlyPrediction?.probability || 0) * 100) * 4, 5), 95)}%`
                     }}
                   />
                 </div>

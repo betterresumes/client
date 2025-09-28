@@ -50,26 +50,25 @@ import { InviteUserDialog } from '@/components/admin/invite-user-dialog'
 
 interface OrgAdminManagementProps {
   organizationId: string
+  initialMembers?: any[]
+  initialWhitelist?: any[]
+  onMemberUpdate?: () => void
 }
 
-export function OrgAdminManagement({ organizationId }: OrgAdminManagementProps) {
+export function OrgAdminManagement({
+  organizationId,
+  initialMembers = [],
+  initialWhitelist = [],
+  onMemberUpdate
+}: OrgAdminManagementProps) {
   const { user } = useAuthStore()
   const [organization, setOrganization] = useState<any>(null)
-  const [members, setMembers] = useState<any[]>([])
-  const [whitelist, setWhitelist] = useState<any[]>([])
-  const [loading, setLoading] = useState(true)
+  const [members, setMembers] = useState<any[]>(initialMembers)
+  const [whitelist, setWhitelist] = useState<any[]>(initialWhitelist)
+  const [loading, setLoading] = useState(!initialMembers.length && !initialWhitelist.length)
   const [actionLoading, setActionLoading] = useState<string | null>(null)
   const [showInviteDialog, setShowInviteDialog] = useState(false)
   const [showJoinToken, setShowJoinToken] = useState(false)
-
-  // Cache management
-  const [dataCache, setDataCache] = useState<{
-    organization: any
-    members: any[]
-    whitelist: any[]
-    lastFetch: number
-  } | null>(null)
-  const CACHE_DURATION = 5 * 60 * 1000 // 5 minutes
 
   // Helper function to safely format dates
   const formatSafeDate = (dateString: string | null | undefined, formatStr: string = 'MMM dd, yyyy') => {
@@ -83,91 +82,24 @@ export function OrgAdminManagement({ organizationId }: OrgAdminManagementProps) 
     }
   }
 
-  useEffect(() => {
-    if (organizationId) {
-      // Check if we have cached data that's still valid
-      const now = Date.now()
-      if (dataCache && (now - dataCache.lastFetch) < CACHE_DURATION) {
-        // Use cached data
-        setOrganization(dataCache.organization)
-        setMembers(dataCache.members)
-        setWhitelist(dataCache.whitelist)
-        setLoading(false)
-        return
-      }
-
-      // Load fresh data
-      loadAllData()
-    }
-  }, [organizationId, dataCache])
-
-  const loadAllData = async () => {
-    setLoading(true)
-    try {
-      const [orgResponse, membersResponse, whitelistResponse] = await Promise.all([
-        organizationsApi.get(organizationId),
-        organizationsApi.getUsers(organizationId, { limit: 100 }),
-        organizationsApi.whitelist.list(organizationId, { limit: 100 })
-      ])
-
-      const orgData = orgResponse.success ? orgResponse.data : null
-      const membersData = membersResponse.success ? (membersResponse.data?.users || []) : []
-      const whitelistData = whitelistResponse.success ? (whitelistResponse.data?.whitelist || []) : []
-
-      // Update state
-      setOrganization(orgData)
-      setMembers(membersData)
-      setWhitelist(whitelistData)
-
-      // Update cache
-      setDataCache({
-        organization: orgData,
-        members: membersData,
-        whitelist: whitelistData,
-        lastFetch: Date.now()
-      })
-    } catch (error) {
-      console.error('Error loading organization data:', error)
-      toast.error('Failed to load organization data')
-    } finally {
-      setLoading(false)
-    }
-  }
-
   const loadOrganizationDetails = async () => {
     try {
       const response = await organizationsApi.get(organizationId)
       if (response.success && response.data) {
         setOrganization(response.data)
-        // Update cache
-        if (dataCache) {
-          setDataCache({
-            ...dataCache,
-            organization: response.data,
-            lastFetch: Date.now()
-          })
-        }
       }
     } catch (error) {
       console.error('Error loading organization details:', error)
-      toast.error('Failed to load organization details')
     }
   }
 
   const loadMembers = async () => {
+    if (initialMembers.length) return // Use props data if available
+
     try {
       const response = await organizationsApi.getUsers(organizationId, { limit: 100 })
-      if (response.success && response.data) {
-        const membersData = response.data.users || []
-        setMembers(membersData)
-        // Update cache
-        if (dataCache) {
-          setDataCache({
-            ...dataCache,
-            members: membersData,
-            lastFetch: Date.now()
-          })
-        }
+      if (response.success) {
+        setMembers(response.data?.users || [])
       }
     } catch (error) {
       console.error('Error loading members:', error)
@@ -175,24 +107,44 @@ export function OrgAdminManagement({ organizationId }: OrgAdminManagementProps) 
   }
 
   const loadWhitelist = async () => {
+    if (initialWhitelist.length) return // Use props data if available
+
     try {
       const response = await organizationsApi.whitelist.list(organizationId, { limit: 100 })
-      if (response.success && response.data) {
-        const whitelistData = response.data.whitelist || []
-        setWhitelist(whitelistData)
-        // Update cache
-        if (dataCache) {
-          setDataCache({
-            ...dataCache,
-            whitelist: whitelistData,
-            lastFetch: Date.now()
-          })
-        }
+      if (response.success) {
+        setWhitelist(response.data?.whitelist || [])
       }
     } catch (error) {
       console.error('Error loading whitelist:', error)
-    } finally {
-      setLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    if (user && organizationId) {
+      const loadData = async () => {
+        setLoading(true)
+        await Promise.all([
+          loadOrganizationDetails(),
+          !initialMembers.length && loadMembers(),
+          !initialWhitelist.length && loadWhitelist()
+        ].filter(Boolean))
+        setLoading(false)
+      }
+
+      loadData()
+    }
+  }, [user, organizationId])
+
+  const refreshData = async () => {
+    await Promise.all([
+      loadOrganizationDetails(),
+      loadMembers(),
+      loadWhitelist()
+    ])
+
+    // Call parent callback to refresh global store
+    if (onMemberUpdate) {
+      onMemberUpdate()
     }
   }
 
@@ -239,11 +191,7 @@ export function OrgAdminManagement({ organizationId }: OrgAdminManagementProps) 
     }
   }
 
-  const refreshData = () => {
-    // Clear cache and force fresh load
-    setDataCache(null)
-    loadAllData()
-  }
+
 
   if (loading) {
     return (
@@ -497,8 +445,7 @@ export function OrgAdminManagement({ organizationId }: OrgAdminManagementProps) 
           organizationId={organization.id}
           organizationName={organization.name}
           onUsersInvited={() => {
-            loadWhitelist()
-            loadMembers()
+            refreshData()
           }}
         />
       )}

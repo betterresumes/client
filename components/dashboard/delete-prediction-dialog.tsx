@@ -77,7 +77,7 @@ export function DeletePredictionDialog({ isOpen, onClose, prediction, type }: De
               <div>
                 <p className="text-gray-500 font-bricolage">Default Rate</p>
                 <p className="font-semibold font-bricolage">
-                  {((prediction.probability || prediction.ensemble_probability || 0) * 100).toFixed(2)}%
+                  {((prediction?.probability || prediction?.ensemble_probability || 0) * 100).toFixed(2)}%
                 </p>
               </div>
               <div>

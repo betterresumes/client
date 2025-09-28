@@ -193,15 +193,22 @@ export const useBulkUploadStore = create<BulkUploadStore>()(
             queuePriority: queuePriority
           })
 
-          // Immediately check if job exists by trying to get its status
+          // Immediately check if job exists by getting it from the jobs list (not individual status endpoint)
           try {
-            console.log(`🔍 Verifying job exists by checking status for ID: ${realJob.id}`)
-            const statusResponse = await predictionsApi.jobs.getJobStatus(realJob.id)
+            console.log(`🔍 Verifying job exists by checking jobs list for ID: ${realJob.id}`)
+            const listResponse = await predictionsApi.jobs.listJobs({ limit: 50, offset: 0 })
 
-            if (statusResponse.success) {
-              console.log(`✅ Job verification successful:`, statusResponse.data)
+            if (listResponse.success) {
+              const jobsArray = listResponse.data?.jobs || listResponse.data?.items || listResponse.data || []
+              const foundJob = jobsArray.find((job: any) => (job.job_id || job.id) === realJob.id)
+
+              if (foundJob) {
+                console.log(`✅ Job verification successful:`, foundJob)
+              } else {
+                console.warn(`⚠️ Job not found in list yet - it might still be initializing`)
+              }
             } else {
-              console.warn(`⚠️ Job verification failed:`, statusResponse.error)
+              console.warn(`⚠️ Job verification failed:`, listResponse.error)
               // Don't throw error here, as the job might just be initializing
             }
           } catch (verificationError) {
@@ -249,8 +256,8 @@ export const useBulkUploadStore = create<BulkUploadStore>()(
               return
             }
 
-            // Continue polling
-            const intervalId = setTimeout(poll, 3000) // Poll every 3 seconds
+            // Continue polling more aggressively for active jobs
+            const intervalId = setTimeout(poll, 1500) // Poll every 1.5 seconds for better responsiveness
             set({ pollingIntervalId: intervalId })
           } catch (error) {
             console.error('❌ Job polling error:', error)
@@ -277,54 +284,67 @@ export const useBulkUploadStore = create<BulkUploadStore>()(
 
       refreshJobStatus: async (jobId: string) => {
         try {
-          // Use the predictions-specific job status endpoint
-          const response = await predictionsApi.jobs.getJobStatus(jobId)
+          // FIXED: Use the list endpoint to get fresh status instead of individual status endpoint
+          // The individual status endpoint appears to return cached/stale data
+          const response = await predictionsApi.jobs.listJobs({
+            limit: 50,
+            offset: 0
+          })
 
           if (!response.success) {
-            // Handle specific error cases
-            const errorMessage = typeof response.error === 'string'
-              ? response.error
-              : response.error?.message || 'Unknown error'
-
-            if (errorMessage.includes('not found') || errorMessage.includes('Job not found')) {
-              console.warn(`⚠️ Job ${jobId} not found - it might still be initializing or was deleted`)
-
-              // Mark job as potentially failed if it's been too long
-              const job = get().jobs.find(j => j.id === jobId)
-              if (job) {
-                const createdTime = new Date(job.created_at).getTime()
-                const now = new Date().getTime()
-                const minutesElapsed = (now - createdTime) / (1000 * 60)
-
-                if (minutesElapsed > 2) { // If job has been missing for more than 2 minutes
-                  console.warn(`⚠️ Job ${jobId} has been missing for ${minutesElapsed.toFixed(1)} minutes, marking as failed`)
-
-                  set(state => ({
-                    jobs: state.jobs.map(j =>
-                      j.id === jobId
-                        ? {
-                          ...j,
-                          status: 'failed' as const,
-                          error_message: 'Job not found on server - may have been deleted or failed to create',
-                          completed_at: new Date().toISOString()
-                        }
-                        : j
-                    )
-                  }))
-
-                  return // Stop polling this job
-                }
-              }
-
-              return // Don't update anything, job might still be initializing
-            }
-
-            console.warn(`⚠️ Failed to get status for job ${jobId}:`, response.error)
+            console.warn(`⚠️ Failed to get jobs list for status update:`, response.error)
             return
           }
 
-          const jobStatus = response.data
-          console.log(`📊 Job ${jobId} status update:`, jobStatus)
+          // Find the specific job in the list
+          const jobsArray = response.data?.jobs || response.data?.items || response.data || []
+          const jobStatus = jobsArray.find((job: any) =>
+            (job.job_id || job.id) === jobId
+          )
+
+          if (!jobStatus) {
+            console.warn(`⚠️ Job ${jobId} not found in jobs list - it might still be initializing or was deleted`)
+
+            // Mark job as potentially failed if it's been too long
+            const job = get().jobs.find(j => j.id === jobId)
+            if (job) {
+              const createdTime = new Date(job.created_at).getTime()
+              const now = new Date().getTime()
+              const minutesElapsed = (now - createdTime) / (1000 * 60)
+
+              if (minutesElapsed > 2) { // If job has been missing for more than 2 minutes
+                console.warn(`⚠️ Job ${jobId} has been missing for ${minutesElapsed.toFixed(1)} minutes, marking as failed`)
+
+                set(state => ({
+                  jobs: state.jobs.map(j =>
+                    j.id === jobId
+                      ? {
+                        ...j,
+                        status: 'failed' as const,
+                        error_message: 'Job not found on server - may have been deleted or failed to create',
+                        completed_at: new Date().toISOString()
+                      }
+                      : j
+                  )
+                }))
+
+                return // Stop polling this job
+              }
+            }
+
+            return // Don't update anything, job might still be initializing
+          }
+
+          // Now we have jobStatus from the jobs list - use it directly
+          console.log(`📊 Job ${jobId} status update [${new Date().toISOString()}]:`, {
+            status: jobStatus.status,
+            progress_percentage: jobStatus.progress_percentage,
+            progress: jobStatus.progress,
+            processed_records: jobStatus.processed_records,
+            total_records: jobStatus.total_records,
+            isActiveJob: get().activeJob?.id === jobId,
+            fullJobStatus: jobStatus
+          })
 
           set(state => ({
             jobs: state.jobs.map(job =>
@@ -341,10 +361,17 @@ export const useBulkUploadStore = create<BulkUploadStore>()(
                   successful_rows: jobStatus.successful_predictions || jobStatus.successful_rows || job.successful_rows,
                   failed_rows: jobStatus.failed_predictions || jobStatus.failed_rows || job.failed_rows,
                   total_rows: jobStatus.total_records || jobStatus.total_rows || job.total_rows,
-                  progress_percentage: jobStatus.progress !== undefined ? jobStatus.progress :
-                    (jobStatus.processed_records && jobStatus.total_records && jobStatus.total_records > 0) ?
-                      Math.round((jobStatus.processed_records / jobStatus.total_records) * 100) :
-                      job.progress_percentage,
+                  progress_percentage: (() => {
+                    // Try multiple progress field names that might exist in the API response
+                    if (jobStatus.progress_percentage !== undefined) return jobStatus.progress_percentage
+                    if (jobStatus.progress !== undefined) return jobStatus.progress
+                    if (jobStatus.processed_records && jobStatus.total_records && jobStatus.total_records > 0) {
+                      const calculated = Math.round((jobStatus.processed_records / jobStatus.total_records) * 100)
+                      console.log(`📊 Calculated progress for ${jobId}: ${calculated}% (${jobStatus.processed_records}/${jobStatus.total_records})`)
+                      return calculated
+                    }
+                    return job.progress_percentage || 0
+                  })(),
                   error_message: jobStatus.errors?.[0] || jobStatus.error_message || job.error_message,
                   updated_at: jobStatus.updated_at || new Date().toISOString(),
                   completed_at: (jobStatus.status === 'completed' || jobStatus.status === 'failed') ?
@@ -369,10 +396,17 @@ export const useBulkUploadStore = create<BulkUploadStore>()(
                 successful_rows: jobStatus.successful_predictions || jobStatus.successful_rows || state.activeJob.successful_rows,
                 failed_rows: jobStatus.failed_predictions || jobStatus.failed_rows || state.activeJob.failed_rows,
                 total_rows: jobStatus.total_records || jobStatus.total_rows || state.activeJob.total_rows,
-                progress_percentage: jobStatus.progress !== undefined ? jobStatus.progress :
-                  (jobStatus.processed_records && jobStatus.total_records && jobStatus.total_records > 0) ?
-                    Math.round((jobStatus.processed_records / jobStatus.total_records) * 100) :
-                    state.activeJob.progress_percentage,
+                progress_percentage: (() => {
+                  // Try multiple progress field names that might exist in the API response
+                  if (jobStatus.progress_percentage !== undefined) return jobStatus.progress_percentage
+                  if (jobStatus.progress !== undefined) return jobStatus.progress
+                  if (jobStatus.processed_records && jobStatus.total_records && jobStatus.total_records > 0) {
+                    const calculated = Math.round((jobStatus.processed_records / jobStatus.total_records) * 100)
+                    console.log(`📊 ActiveJob calculated progress for ${jobId}: ${calculated}% (${jobStatus.processed_records}/${jobStatus.total_records})`)
+                    return calculated
+                  }
+                  return state.activeJob.progress_percentage || 0
+                })(),
                 error_message: jobStatus.errors?.[0] || jobStatus.error_message || state.activeJob.error_message,
                 updated_at: jobStatus.updated_at || new Date().toISOString(),
                 completed_at: (jobStatus.status === 'completed' || jobStatus.status === 'failed') ?
@@ -599,9 +633,22 @@ export const useBulkUploadStore = create<BulkUploadStore>()(
       testJobStatus: async (jobId: string) => {
         console.log(`🔍 Testing job status for ID: ${jobId}`)
         try {
-          const response = await predictionsApi.jobs.getJobStatus(jobId)
-          console.log(`📡 Response:`, response)
-          return response
+          console.log(`📡 Testing individual status endpoint...`)
+          const individualResponse = await predictionsApi.jobs.getJobStatus(jobId)
+          console.log(`� Individual endpoint response:`, individualResponse)
+
+          console.log(`�📡 Testing list endpoint...`)
+          const listResponse = await predictionsApi.jobs.listJobs({ limit: 50, offset: 0 })
+          if (listResponse.success) {
+            const jobsArray = listResponse.data?.jobs || listResponse.data?.items || listResponse.data || []
+            const jobInList = jobsArray.find((job: any) => (job.job_id || job.id) === jobId)
+            console.log(`📋 Job found in list:`, jobInList)
+          }
+
+          return {
+            individual: individualResponse,
+            list: listResponse
+          }
         } catch (error) {
           console.error(`❌ Error testing job status:`, error)
           return { success: false, error: error }
@@ -619,6 +666,56 @@ export const useBulkUploadStore = create<BulkUploadStore>()(
           console.error(`❌ Error listing jobs:`, error)
           return { success: false, error: error }
         }
+      },
+
+      // Debug helper to compare both endpoints
+      compareEndpoints: async (jobId: string) => {
+        console.log(`🔍 Comparing endpoints for job ${jobId}`)
+
+        try {
+          // Test individual status endpoint - THIS IS THE STALE ONE
+          console.log(`📡 Calling individual status endpoint: GET /api/v1/predictions/jobs/${jobId}/status`)
+          const individual = await predictionsApi.jobs.getJobStatus(jobId)
+
+          // Test list endpoint and find the job - THIS IS THE FRESH ONE  
+          console.log(`📡 Calling list endpoint: GET /api/v1/predictions/jobs?limit=50&offset=0`)
+          const list = await predictionsApi.jobs.listJobs({ limit: 50, offset: 0 })
+          let jobInList = null
+          if (list.success) {
+            const jobsArray = list.data?.jobs || list.data?.items || list.data || []
+            jobInList = jobsArray.find((job: any) => (job.job_id || job.id) === jobId)
+          }
+
+          console.log(`
+🚨 ENDPOINT COMPARISON FOR JOB ${jobId}:
+
+❌ STALE Individual Status Endpoint (/jobs/${jobId}/status):
+   Status: ${individual.data?.status || 'N/A'}
+   Processed: ${individual.data?.processed_rows || individual.data?.processed_records || 'N/A'}  
+   Progress: ${individual.data?.progress_percentage || individual.data?.progress || 'N/A'}%
+
+✅ FRESH List Endpoint (/jobs?limit=50&offset=0):
+   Status: ${jobInList?.status || 'NOT FOUND'}
+   Processed: ${jobInList?.processed_rows || jobInList?.processed_records || 'N/A'}
+   Progress: ${jobInList?.progress_percentage || jobInList?.progress || 'N/A'}%
+
+🔑 USE THE LIST ENDPOINT DATA - IT'S ACCURATE!
+          `)
+
+          return { individual, list, jobInList }
+        } catch (error) {
+          console.error(`❌ Error comparing endpoints:`, error)
+          return { error }
+        }
+      },
+
+      // Add method to force use list endpoint for debugging
+      debugRefreshJobFromList: async (jobId: string) => {
+        console.log(`🔄 Force refreshing job ${jobId} from list endpoint only`)
+        await get().fetchAllJobs() // This uses list endpoint
+        const job = get().jobs.find(j => j.id === jobId)
+        console.log(`📋 Current job state after list refresh:`, job)
+        return job
       }
     }),
     {

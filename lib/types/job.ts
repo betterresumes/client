@@ -146,3 +146,81 @@ export interface BulkJobOperationResponse {
   deleted?: string[]
   failed: Array<{ id: string; error: string }>
 }
+
+// Complete Job Results Types for the new API
+export interface JobResultsComplete {
+  success: boolean
+  job_id: string
+  status: string
+  job_summary: {
+    job_type: 'annual' | 'quarterly'
+    file_name: string
+    total_rows: number
+    successful_rows: number
+    failed_rows: number
+    success_rate: number
+    processing_time_seconds: number
+    rows_per_second: number
+  }
+  created_data?: {
+    companies_count: number
+    predictions_count: number
+    companies?: JobCompany[]
+    predictions?: JobPrediction[]
+  }
+  analysis?: {
+    by_sector: Record<string, number>
+    by_risk_level: Record<string, number>
+    risk_distribution: {
+      low_risk: number
+      medium_risk: number
+      high_risk: number
+    }
+    average_probability: number
+    confidence_stats: {
+      min: number
+      max: number
+      average: number
+    }
+  }
+  timestamps: {
+    created_at: string
+    started_at?: string
+    completed_at?: string
+  }
+  errors?: {
+    has_errors: boolean
+    error_message?: string
+    error_details?: {
+      errors: JobProcessingError[]
+    }
+    error_count: number
+  }
+}
+
+export interface JobCompany {
+  id: string
+  symbol: string
+  name: string
+  market_cap: number
+  sector: string
+  access_level: string
+}
+
+export interface JobPrediction {
+  id: string
+  company_id: string
+  reporting_year: string
+  reporting_quarter?: string
+  probability: number
+  risk_level: string
+  confidence: number
+  predicted_at: string
+  financial_metrics: Record<string, number>
+}
+
+export interface JobProcessingError {
+  row: number
+  error: string
+  data?: Record<string, any>
+}

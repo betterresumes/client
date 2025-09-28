@@ -54,22 +54,29 @@ export const useJobStore = create<JobState>()(
 
       updateJobFromAPI: async (jobId: string) => {
         try {
-          const statusResponse = await predictionsApi.jobs.getJobStatus(jobId);
+          // FIXED: Use jobs list endpoint instead of individual status endpoint
+          const listResponse = await predictionsApi.jobs.listJobs({ limit: 50, offset: 0 });
 
           let status: 'pending' | 'processing' | 'completed' | 'failed' = 'pending';
           let progress = 0;
           let jobResult: Job['jobResult'] = undefined;
 
-          if (statusResponse.data) {
-            status = statusResponse.data.status;
-            progress = statusResponse.data.progress || 0;
+          if (listResponse.success) {
+            // Find the specific job in the list
+            const jobsArray = listResponse.data?.jobs || listResponse.data?.items || listResponse.data || []
+            const jobData = jobsArray.find((job: any) => (job.job_id || job.id) === jobId)
 
-            // If completed, try to get results
-            if (status === 'completed') {
-              jobResult = {
-                summary: statusResponse.data.summary,
-                results: statusResponse.data.results
-              };
+            if (jobData) {
+              status = jobData.status || 'pending';
+              progress = jobData.progress_percentage || jobData.progress || 0;
+
+              // If completed, try to get results
+              if (status === 'completed') {
+                jobResult = {
+                  summary: jobData.summary,
+                  results: jobData.results
+                };
+              }
             }
           }
 

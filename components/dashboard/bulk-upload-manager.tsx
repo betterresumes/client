@@ -18,10 +18,13 @@ import {
   RefreshCw,
   X,
   TrendingUp,
-  BarChart3
+  BarChart3,
+  Trash2
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { useBulkUploadStore } from '@/lib/stores/bulk-upload-store'
+import { JobResultsDialog } from '@/components/dashboard/job-results-dialog'
+import { jobsApi } from '@/lib/api/jobs'
 
 interface BulkUploadManagerProps {
   className?: string
@@ -30,6 +33,9 @@ interface BulkUploadManagerProps {
 export function BulkUploadManager({ className }: BulkUploadManagerProps) {
   const [dragActive, setDragActive] = useState(false)
   const [selectedType, setSelectedType] = useState<'annual' | 'quarterly'>('annual')
+  const [resultsDialogOpen, setResultsDialogOpen] = useState(false)
+  const [selectedJobId, setSelectedJobId] = useState<string | null>(null)
+  const [selectedJobName, setSelectedJobName] = useState<string | null>(null)
 
   const {
     jobs,
@@ -44,7 +50,8 @@ export function BulkUploadManager({ className }: BulkUploadManagerProps) {
     clearError,
     getActiveJobs,
     getCompletedJobs,
-    getFailedJobs
+    getFailedJobs,
+    deleteJob
   } = useBulkUploadStore()
 
   const activeJobs = getActiveJobs()
@@ -242,6 +249,44 @@ export function BulkUploadManager({ className }: BulkUploadManagerProps) {
     if (duration < 60) return `${duration}s`
     if (duration < 3600) return `${Math.floor(duration / 60)}m ${duration % 60}s`
     return `${Math.floor(duration / 3600)}h ${Math.floor((duration % 3600) / 60)}m`
+  }
+
+  const handleViewResults = (jobId: string, jobName?: string) => {
+    setSelectedJobId(jobId)
+    setSelectedJobName(jobName || null)
+    setResultsDialogOpen(true)
+  }
+
+  const handleDownloadExcel = async (jobId: string, jobName?: string) => {
+    try {
+      const blob = await jobsApi.predictions.downloadJobResultsExcel(jobId)
+
+      // Create download link
+      const url = window.URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = `${jobName || 'job-results'}-${jobId.substring(0, 8)}.xlsx`
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
+      window.URL.revokeObjectURL(url)
+
+      toast.success('Excel file downloaded successfully!')
+    } catch (err: any) {
+      toast.error('Failed to download Excel file: ' + err.message)
+    }
+  }
+
+  const handleDeleteJob = async (jobId: string, jobName?: string) => {
+    if (window.confirm(`Are you sure you want to delete the job "${jobName || jobId}"?`)) {
+      const success = await deleteJob(jobId)
+      if (success) {
+        toast.success('Job deleted successfully!')
+        fetchAllJobs() // Refresh the jobs list
+      } else {
+        toast.error('Failed to delete job')
+      }
+    }
   }
 
   return (
@@ -443,37 +488,83 @@ export function BulkUploadManager({ className }: BulkUploadManagerProps) {
                 </div>
               ) : (
                 jobs.map((job) => (
-                  <JobCard key={job.id} job={job} />
+                  <JobCard
+                    key={job.id}
+                    job={job}
+                    onViewResults={handleViewResults}
+                    onDownloadExcel={handleDownloadExcel}
+                    onDeleteJob={handleDeleteJob}
+                  />
                 ))
               )}
             </TabsContent>
 
             <TabsContent value="active" className="space-y-2">
               {activeJobs.map((job) => (
-                <JobCard key={job.id} job={job} />
+                <JobCard
+                  key={job.id}
+                  job={job}
+                  onViewResults={handleViewResults}
+                  onDownloadExcel={handleDownloadExcel}
+                  onDeleteJob={handleDeleteJob}
+                />
               ))}
             </TabsContent>
 
             <TabsContent value="completed" className="space-y-2">
               {completedJobs.map((job) => (
-                <JobCard key={job.id} job={job} />
+                <JobCard
+                  key={job.id}
+                  job={job}
+                  onViewResults={handleViewResults}
+                  onDownloadExcel={handleDownloadExcel}
+                  onDeleteJob={handleDeleteJob}
+                />
               ))}
             </TabsContent>
 
             <TabsContent value="failed" className="space-y-2">
               {failedJobs.map((job) => (
-                <JobCard key={job.id} job={job} />
+                <JobCard
+                  key={job.id}
+                  job={job}
+                  onViewResults={handleViewResults}
+                  onDownloadExcel={handleDownloadExcel}
+                  onDeleteJob={handleDeleteJob}
+                />
               ))}
             </TabsContent>
           </Tabs>
         </div>
       </Card>
+
+      {/* Job Results Dialog */}
+      <JobResultsDialog
+        jobId={selectedJobId}
+        jobName={selectedJobName || undefined}
+        isOpen={resultsDialogOpen}
+        onClose={() => {
+          setResultsDialogOpen(false)
+          setSelectedJobId(null)
+          setSelectedJobName(null)
+        }}
+      />
     </div>
   )
 }
 
 // Job Card Component
-function JobCard({ job }: { job: any }) {
+function JobCard({
+  job,
+  onViewResults,
+  onDownloadExcel,
+  onDeleteJob
+}: {
+  job: any
+  onViewResults: (jobId: string, jobName?: string) => void
+  onDownloadExcel: (jobId: string, jobName?: string) => void
+  onDeleteJob: (jobId: string, jobName?: string) => void
+}) {
   const getJobStatusColor = (status: string) => {
     switch (status) {
       case 'completed':
@@ -506,16 +597,6 @@ function JobCard({ job }: { job: any }) {
     }
   }
 
-  const formatDuration = (start: string, end?: string) => {
-    const startTime = new Date(start).getTime()
-    const endTime = end ? new Date(end).getTime() : Date.now()
-    const duration = Math.floor((endTime - startTime) / 1000)
-
-    if (duration < 60) return `${duration}s`
-    if (duration < 3600) return `${Math.floor(duration / 60)}m ${duration % 60}s`
-    return `${Math.floor(duration / 3600)}h ${Math.floor((duration % 3600) / 60)}m`
-  }
-
   return (
     <div className="border rounded-lg p-4 hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors">
       <div className="flex items-start justify-between">
@@ -534,7 +615,7 @@ function JobCard({ job }: { job: any }) {
             </Badge>
           </div>
 
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-4 text-sm">
             <div>
               <span className="text-gray-500">Progress:</span>
               <div className="font-medium">{job.progress_percentage.toFixed(1)}%</div>
@@ -548,10 +629,6 @@ function JobCard({ job }: { job: any }) {
               <div className="font-medium">
                 {job.processed_rows > 0 ? ((job.successful_rows / job.processed_rows) * 100).toFixed(1) : 0}%
               </div>
-            </div>
-            <div>
-              <span className="text-gray-500">Duration:</span>
-              <div className="font-medium">{formatDuration(job.created_at, job.completed_at)}</div>
             </div>
           </div>
 
@@ -568,26 +645,43 @@ function JobCard({ job }: { job: any }) {
           )}
         </div>
 
-        <div className="flex items-center gap-2 ml-4">
+        <div className="flex items-center gap-1 ml-4">
+          {/* View Results Icon */}
           {job.status === 'completed' && (
-            <>
-              <Button variant="outline" size="sm">
-                <Eye className="h-4 w-4 mr-1" />
-                View Results
-              </Button>
-              <Button variant="outline" size="sm">
-                <Download className="h-4 w-4 mr-1" />
-                Export
-              </Button>
-            </>
-          )}
-
-          {job.status === 'failed' && (
-            <Button variant="outline" size="sm">
-              <RefreshCw className="h-4 w-4 mr-1" />
-              Retry
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-8 w-8 p-0"
+              onClick={() => onViewResults(job.id, job.original_filename)}
+              title="View Results"
+            >
+              <Eye className="h-4 w-4" />
             </Button>
           )}
+
+          {/* Download Excel Icon */}
+          {job.status === 'completed' && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-8 w-8 p-0"
+              onClick={() => onDownloadExcel(job.id, job.original_filename)}
+              title="Download Excel"
+            >
+              <Download className="h-4 w-4" />
+            </Button>
+          )}
+
+          {/* Delete Job Icon */}
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-8 w-8 p-0 text-red-500 hover:text-red-700 hover:bg-red-50"
+            onClick={() => onDeleteJob(job.id, job.original_filename)}
+            title="Delete Job"
+          >
+            <Trash2 className="h-4 w-4" />
+          </Button>
         </div>
       </div>
     </div>

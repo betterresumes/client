@@ -284,7 +284,7 @@ export function RiskInsightsView() {
                   </div>
                   <div className="text-right">
                     <Badge className="bg-red-100 text-red-800">
-                      {(company.default_probability * 100).toFixed(2)}%
+                      {((company.default_probability || 0) * 100).toFixed(2)}%
                     </Badge>
                     <div className="text-xs text-gray-500 mt-1">
                       {company.risk_category}

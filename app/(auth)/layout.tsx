@@ -1,7 +1,7 @@
 import { Metadata } from 'next'
 
 export const metadata: Metadata = {
-  title: 'Authentication | AccuNode AI',
+  title: 'Authentication | AccuNode',
   description: 'Secure login and registration for AccuNode platform',
 }
 
