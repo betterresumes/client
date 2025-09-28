@@ -241,7 +241,7 @@ export default function SettingsPage() {
         profileForm.reset({
           full_name: profile.full_name,
           email: profile.email,
-          sector: profile.sector || '',
+          sector: profile.sector || undefined,
         })
       }
     } catch (error) {
@@ -802,14 +802,14 @@ export default function SettingsPage() {
                   <div className="space-y-2">
                     <Label htmlFor="sector">Industry Sector</Label>
                     <Select
-                      value={profileForm.watch('sector') || ''}
-                      onValueChange={(value) => profileForm.setValue('sector', value)}
+                      value={profileForm.watch('sector') || 'none'}
+                      onValueChange={(value) => profileForm.setValue('sector', value === 'none' ? undefined : value)}
                     >
                       <SelectTrigger className="w-full">
                         <SelectValue placeholder="Select your industry sector" />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="">No sector selected</SelectItem>
+                        <SelectItem value="none">No sector selected</SelectItem>
                         {SECTORS.map((sector) => (
                           <SelectItem key={sector} value={sector}>
                             <div className="flex items-center gap-2">
