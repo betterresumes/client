@@ -22,6 +22,7 @@ import {
   Mail,
   CheckCircle,
   Settings,
+  Loader2,
 } from 'lucide-react'
 import { z } from 'zod'
 import { useForm } from 'react-hook-form'
@@ -59,10 +60,13 @@ import { UserRole } from '@/lib/types/user'
 import { UserCreate } from '@/lib/types/auth'
 import { TenantResponse, ComprehensiveTenantResponse, TenantCreate, OrganizationCreate, EnhancedOrganizationResponse, WhitelistCreate } from '@/lib/types/tenant'
 import { useSettingsStore } from '@/lib/stores/settings-store'
+import { SECTORS } from '@/lib/config/sectors'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 
 const profileSchema = z.object({
   full_name: z.string().min(1, 'Full name is required'),
   email: z.string().email('Valid email is required'),
+  sector: z.string().optional(),
 })
 
 const passwordSchema = z.object({
@@ -126,6 +130,7 @@ interface UserProfile {
   last_login?: string
   organization_id?: string
   tenant_id?: string
+  sector?: string
 }
 
 // Use the imported types from lib
@@ -230,11 +235,13 @@ export default function SettingsPage() {
           last_login: userData.last_login,
           organization_id: userData.organization_id,
           tenant_id: userData.tenant_id,
+          sector: userData.sector,
         }
         setProfile(profile)
         profileForm.reset({
           full_name: profile.full_name,
           email: profile.email,
+          sector: profile.sector || '',
         })
       }
     } catch (error) {
@@ -322,6 +329,7 @@ export default function SettingsPage() {
       const response = await authApi.updateProfile({
         full_name: data.full_name,
         email: data.email,
+        sector: data.sector,
       })
 
       if (response.success && response.data) {
@@ -336,6 +344,7 @@ export default function SettingsPage() {
           last_login: userData.last_login,
           organization_id: userData.organization_id,
           tenant_id: userData.tenant_id,
+          sector: userData.sector,
         }
         setProfile(profile)
         if (user) {
@@ -732,6 +741,14 @@ export default function SettingsPage() {
                     <span>Last login {format(new Date(profile.last_login), 'MMM dd, yyyy')}</span>
                   </div>
                 )}
+                {profile.sector && (
+                  <div className="flex items-center space-x-3 text-sm text-gray-600">
+                    <Building className="h-4 w-4" />
+                    <span className="font-medium text-blue-600 bg-blue-50 px-2 py-1 rounded-full text-xs">
+                      {profile.sector}
+                    </span>
+                  </div>
+                )}
                 <div className="flex items-center space-x-3 text-sm">
                   <div className={`h-3 w-3 rounded-full ${profile.is_active ? 'bg-green-500' : 'bg-red-500'}`}></div>
                   <span className={profile.is_active ? 'text-green-700' : 'text-red-700'}>
@@ -740,7 +757,94 @@ export default function SettingsPage() {
                 </div>
               </CardContent>
             </Card>
-            {/* Removed Edit Profile Form */}
+
+            {/* Profile Edit Form */}
+            <Card className="md:col-span-2">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <User className="h-5 w-5" />
+                  Edit Profile
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <form onSubmit={profileForm.handleSubmit(onProfileSubmit)} className="space-y-6">
+                  <div className="grid gap-4 md:grid-cols-2">
+                    <div className="space-y-2">
+                      <Label htmlFor="full_name">Full Name</Label>
+                      <Input
+                        id="full_name"
+                        {...profileForm.register('full_name')}
+                        placeholder="Enter your full name"
+                      />
+                      {profileForm.formState.errors.full_name && (
+                        <p className="text-sm text-red-600">
+                          {profileForm.formState.errors.full_name.message}
+                        </p>
+                      )}
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label htmlFor="email">Email</Label>
+                      <Input
+                        id="email"
+                        type="email"
+                        {...profileForm.register('email')}
+                        placeholder="Enter your email"
+                      />
+                      {profileForm.formState.errors.email && (
+                        <p className="text-sm text-red-600">
+                          {profileForm.formState.errors.email.message}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="sector">Industry Sector</Label>
+                    <Select
+                      value={profileForm.watch('sector') || ''}
+                      onValueChange={(value) => profileForm.setValue('sector', value)}
+                    >
+                      <SelectTrigger className="w-full">
+                        <SelectValue placeholder="Select your industry sector" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="">No sector selected</SelectItem>
+                        {SECTORS.map((sector) => (
+                          <SelectItem key={sector} value={sector}>
+                            <div className="flex items-center gap-2">
+                              <div className="w-2 h-2 rounded-full bg-blue-500"></div>
+                              {sector}
+                            </div>
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    {profileForm.formState.errors.sector && (
+                      <p className="text-sm text-red-600">
+                        {profileForm.formState.errors.sector.message}
+                      </p>
+                    )}
+                  </div>
+
+                  <div className="flex justify-end">
+                    <Button type="submit" disabled={saving}>
+                      {saving ? (
+                        <>
+                          <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                          Saving...
+                        </>
+                      ) : (
+                        <>
+                          <Save className="h-4 w-4 mr-2" />
+                          Save Changes
+                        </>
+                      )}
+                    </Button>
+                  </div>
+                </form>
+              </CardContent>
+            </Card>
           </div>
         </TabsContent>
 

@@ -899,8 +899,71 @@ export function CustomAnalysisView() {
       // Dismiss loading toast on error
       toast.dismiss('bulk-upload-analysis')
 
-      console.error('Bulk upload error:', error)
-      toast.error(`Analysis failed for "${fileToUse.name}": ${error.message}`)
+      console.error('Bulk upload error:', {
+        error,
+        message: error.message,
+        detail: error.detail,
+        response: error.response?.data,
+        fullError: error
+      })
+
+      // Enhanced error handling for API errors - extract detailed error message
+      let errorMessage = 'Unknown error'
+
+      if (error.response?.data?.detail) {
+        errorMessage = error.response.data.detail
+      } else if (error.detail) {
+        errorMessage = error.detail
+      } else if (error.message) {
+        errorMessage = error.message
+      } else if (typeof error === 'string') {
+        errorMessage = error
+      }
+
+      if (errorMessage.includes('Missing required columns')) {
+        // Extract missing columns from error message
+        const missingColumnsMatch = errorMessage.match(/Missing required columns: (.+)/)
+        const missingColumns = missingColumnsMatch ? missingColumnsMatch[1] : 'unknown columns'
+
+        // Determine correct file type based on missing columns
+        const isQuarterlyColumns = missingColumns.includes('sga_margin') || missingColumns.includes('return_on_capital')
+        const isAnnualColumns = missingColumns.includes('long_term_debt_to_total_capital') || missingColumns.includes('return_on_assets')
+
+        let suggestedTab = 'unknown'
+        let currentFileType = 'unknown'
+
+        if (isQuarterlyColumns && predictionType === 'annual') {
+          suggestedTab = 'quarterly'
+          currentFileType = 'annual'
+        } else if (isAnnualColumns && predictionType === 'quarterly') {
+          suggestedTab = 'annual'
+          currentFileType = 'quarterly'
+        }
+
+        if (suggestedTab !== 'unknown') {
+          toast.error(`Wrong file type selected!`, {
+            description: `You uploaded a ${currentFileType} file but selected the ${predictionType} tab. Missing columns: ${missingColumns}`,
+            duration: 10000,
+            action: {
+              label: `Switch to ${suggestedTab}`,
+              onClick: () => {
+                setPredictionType(suggestedTab as 'annual' | 'quarterly')
+                toast.success(`Switched to ${suggestedTab} tab. Please try uploading again.`)
+              }
+            }
+          })
+        } else {
+          toast.error(`Column validation failed for "${fileToUse.name}"`, {
+            description: `Missing required columns: ${missingColumns}. Please check your file format.`,
+            duration: 8000
+          })
+        }
+      } else {
+        toast.error(`Analysis failed for "${fileToUse.name}": ${errorMessage}`)
+      }
+
+      // Re-throw the error so it can be caught by the caller (bulk-upload-section-new.tsx)
+      throw error
     }
 
     // Don't set uploading state - this allows multiple concurrent uploads
@@ -949,7 +1012,7 @@ export function CustomAnalysisView() {
     setResultsDialogOpen(true)
   }
 
-  // Handle Excel download - frontend only
+  // Handle Excel download - frontend only with correct column mapping
   const handleDownloadExcel = async (jobId: string, jobName?: string) => {
     try {
       // Get job results first
@@ -966,66 +1029,161 @@ export function CustomAnalysisView() {
 
       const results = response.data
 
-      // Create CSV content from results data
-      const headers = [
-        'Company Symbol',
-        'Company Name',
-        'Sector',
-        'Market Cap',
-        'Reporting Period',
-        'Probability (%)',
-        'Risk Level',
-        'Confidence (%)',
-        'Predicted At'
-      ]
+      if (!results.created_data?.predictions || results.created_data.predictions.length === 0) {
+        toast.error('No prediction data available for export')
+        return
+      }
+
+      // Debug: Log the actual data structure - same as job-results-dialog.tsx
+      console.log('Job Summary:', results.job_summary)
+      console.log('Sample Prediction:', results.created_data?.predictions?.[0])
+      console.log('Sample Company:', (results.created_data?.predictions?.[0] as any)?.company)
+      console.log('Sample Financial Metrics:', results.created_data?.predictions?.[0]?.financial_metrics)
+      console.log('Sample Prediction Data:', (results.created_data?.predictions?.[0] as any)?.prediction)
+
+      // Determine if this is annual or quarterly based on job_type or presence of quarterly data - EXACTLY as job-results-dialog.tsx
+      const isAnnual = results.job_summary.job_type === 'annual' ||
+        !results.created_data?.predictions?.some((p: any) => p.reporting_quarter)
+
+      // Define headers based on job type - EXACTLY as in job-results-dialog.tsx
+      const headers = isAnnual
+        ? [
+          'Company Symbol',
+          'Company Name',
+          'Sector',
+          'Reporting Year',
+          'Reporting Quarter',
+          'Long Term Debt to Total Capital (%)',
+          'Total Debt to EBITDA',
+          'Net Income Margin (%)',
+          'EBIT to Interest Expense',
+          'Return on Assets (%)',
+          'Default Rate (%)',
+          'Risk Level',
+          'Confidence (%)'
+        ]
+        : [
+          'Company Symbol',
+          'Company Name',
+          'Sector',
+          'Reporting Year',
+          'Reporting Quarter',
+          'Total Debt to EBITDA',
+          'SGA Margin (%)',
+          'Long Term Debt to Total Capital (%)',
+          'Return on Capital (%)',
+          'Logistic Probability (%)',
+          'Risk Level',
+          'Confidence (%)',
+          'GBM Probability (%)',
+          'Ensemble Probability (%)',
+          'Default Rate (%)'
+        ]
 
       const rows: string[][] = []
 
-      // Add company and prediction data
-      if (results.created_data?.predictions) {
-        results.created_data.predictions.forEach((prediction: any) => {
-          const company = prediction.company
-          const period = prediction.reporting_quarter
-            ? `${prediction.reporting_quarter} ${prediction.reporting_year}`
-            : `Annual ${prediction.reporting_year}`
+      // Process predictions data with STRICT column mapping - EXACTLY as in job-results-dialog.tsx
+      results.created_data.predictions.forEach((prediction: any) => {
+        const company = prediction.company || {}
+        const financialMetrics = prediction.financial_metrics || {}
+        const predictionData = prediction.prediction || {}
 
-          // Get all financial metrics
-          const financialMetrics = prediction.financial_metrics || {}
-          const predictionData = prediction.prediction || {}
+        // Helper function to safely format numbers - same as job-results-dialog.tsx
+        const formatNumber = (value: any, decimals: number = 2) => {
+          if (value === null || value === undefined || isNaN(value)) return 'N/A'
+          return Number(value).toFixed(decimals)
+        }
 
-          rows.push([
-            company?.symbol || 'N/A',
-            company?.name || 'N/A',
-            company?.sector || 'N/A',
-            period,
-            ((predictionData.ensemble_probability || predictionData.probability) * 100).toFixed(2),
-            predictionData.risk_level || 'N/A',
-            (predictionData.confidence * 100).toFixed(1),
-            new Date(predictionData.predicted_at).toLocaleDateString(),
-            // Add all financial metrics
-            financialMetrics.total_debt_to_ebitda?.toFixed(2) || 'N/A',
-            financialMetrics.sga_margin?.toFixed(2) || 'N/A',
-            financialMetrics.long_term_debt_to_total_capital?.toFixed(2) || 'N/A',
-            financialMetrics.return_on_capital?.toFixed(2) || 'N/A',
-            // Add prediction model details
-            (predictionData.logistic_probability * 100).toFixed(4) || 'N/A',
-            (predictionData.gbm_probability * 100).toFixed(4) || 'N/A'
-          ])
-        })
+        const formatPercent = (value: any, decimals: number = 2) => {
+          if (value === null || value === undefined || isNaN(value)) return 'N/A'
+          return (Number(value) * 100).toFixed(decimals)
+        }
+
+        // Helper function for values that are already in percentage format
+        const formatPercentDirect = (value: any, decimals: number = 2) => {
+          if (value === null || value === undefined || isNaN(value)) return 'N/A'
+          return Number(value).toFixed(decimals)
+        }
+
+        if (isAnnual) {
+          // ANNUAL: Exactly 13 columns in this exact order matching headers
+          const row = [
+            company.symbol || 'N/A',                                         // Company Symbol
+            company.name || 'N/A',                                          // Company Name
+            company.sector || 'N/A',                                        // Sector
+            (prediction.reporting_year || 'N/A').toString(),               // Reporting Year
+            (prediction.reporting_quarter || 'N/A').toString(),            // Reporting Quarter
+            formatPercentDirect(financialMetrics.long_term_debt_to_total_capital), // Long Term Debt to Total Capital (%)
+            formatNumber(financialMetrics.total_debt_to_ebitda),          // Total Debt to EBITDA
+            formatPercentDirect(financialMetrics.net_income_margin),      // Net Income Margin (%)
+            formatNumber(financialMetrics.ebit_to_interest_expense),      // EBIT to Interest Expense
+            formatPercentDirect(financialMetrics.return_on_assets),       // Return on Assets (%)
+            formatPercent(predictionData.probability),                    // Default Rate (%)
+            predictionData.risk_level || 'N/A',                          // Risk Level
+            formatPercent(predictionData.confidence, 1)                   // Confidence (%)
+          ]
+          rows.push(row)
+        } else {
+          // QUARTERLY: Exactly 15 columns in this exact order matching headers
+          const row = [
+            company.symbol || 'N/A',                                         // Company Symbol
+            company.name || 'N/A',                                          // Company Name
+            company.sector || 'N/A',                                        // Sector
+            (prediction.reporting_year || 'N/A').toString(),               // Reporting Year
+            (prediction.reporting_quarter || 'N/A').toString(),            // Reporting Quarter
+            formatNumber(financialMetrics.total_debt_to_ebitda),          // Total Debt to EBITDA
+            formatPercentDirect(financialMetrics.sga_margin),             // SGA Margin (%)
+            formatPercentDirect(financialMetrics.long_term_debt_to_total_capital), // Long Term Debt to Total Capital (%)
+            formatPercentDirect(financialMetrics.return_on_capital),      // Return on Capital (%)
+            formatPercent(predictionData.logistic_probability),           // Logistic Probability (%)
+            predictionData.risk_level || 'N/A',                          // Risk Level
+            formatPercent(predictionData.confidence, 1),                  // Confidence (%)
+            formatPercent(predictionData.gbm_probability),                // GBM Probability (%)
+            formatPercent(predictionData.ensemble_probability),           // Ensemble Probability (%)
+            formatPercent(predictionData.logistic_probability)            // Default Rate (%) = Logistic Probability (%)
+          ]
+          rows.push(row)
+        }
+      })
+
+      // Validate column counts match headers - EXACTLY as job-results-dialog.tsx
+      const expectedColumns = isAnnual ? 13 : 15
+      console.log(`Expected columns: ${expectedColumns}`)
+      console.log(`Headers count: ${headers.length}`)
+      console.log(`First row count: ${rows[0]?.length || 0}`)
+
+      if (headers.length !== expectedColumns) {
+        throw new Error(`Header count mismatch: expected ${expectedColumns}, got ${headers.length}`)
       }
 
-      // Create CSV content
+      if (rows.length > 0 && rows[0].length !== expectedColumns) {
+        throw new Error(`Row column count mismatch: expected ${expectedColumns}, got ${rows[0].length}`)
+      }
+
+      // Create CSV content with explicit structure - EXACTLY as job-results-dialog.tsx
       const csvContent = [
         headers.join(','),
-        ...rows.map(row => row.map((field: string) => `"${field}"`).join(','))
+        ...rows.map(row => {
+          if (row.length !== expectedColumns) {
+            console.warn(`Row has ${row.length} columns, expected ${expectedColumns}:`, row)
+          }
+          return row.map((field: string) => `"${field}"`).join(',')
+        })
       ].join('\n')
 
-      // Download the file
+      console.log('Generated CSV preview:', csvContent.split('\n').slice(0, 3))
+      console.log('File type:', isAnnual ? 'ANNUAL' : 'QUARTERLY')
+      console.log('Expected columns:', expectedColumns)
+      console.log('Actual headers:', headers)
+      console.log('Sample row:', rows[0])
+
+      // Download the file - EXACTLY as job-results-dialog.tsx
       const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' })
       const url = window.URL.createObjectURL(blob)
       const link = document.createElement('a')
       link.href = url
-      link.download = `${jobName || 'analysis-results'}-${jobId.substring(0, 8)}.csv`
+      const jobType = isAnnual ? 'annual' : 'quarterly'
+      link.download = `${jobType}-predictions-${new Date().toISOString().slice(0, 10)}.csv`
       document.body.appendChild(link)
       link.click()
       document.body.removeChild(link)
@@ -1033,6 +1191,7 @@ export function CustomAnalysisView() {
 
       toast.success('Analysis data exported successfully!')
     } catch (err: any) {
+      console.error('Export error:', err)
       toast.error('Failed to export analysis data: ' + err.message)
     }
   }
@@ -1072,8 +1231,113 @@ export function CustomAnalysisView() {
     setUploadedFiles(prev => ({ ...prev, [predictionType]: file }))
   }
 
-  // Multi-file upload handling
-  const handleMultipleFileUpload = (files: File[]) => {
+  // File type detection based on column headers
+  const detectFileTypeFromHeaders = async (file: File): Promise<'annual' | 'quarterly' | 'unknown'> => {
+    return new Promise((resolve) => {
+      const reader = new FileReader()
+
+      reader.onload = (e) => {
+        try {
+          const text = e.target?.result as string
+          let headers: string[] = []
+
+          if (file.name.toLowerCase().endsWith('.csv')) {
+            // For CSV files, read first line as headers
+            const firstLine = text.split('\n')[0]
+            headers = firstLine.split(',').map(h => h.trim().toLowerCase().replace(/"/g, ''))
+          } else {
+            // For Excel files, we'll use a simpler approach - look for key patterns in the text
+            const lowerText = text.toLowerCase()
+
+            // Check for annual-specific columns
+            const hasAnnualColumns = lowerText.includes('return_on_assets') ||
+              lowerText.includes('ebit_to_interest_expense') ||
+              (lowerText.includes('long_term_debt') && lowerText.includes('return_on_assets'))
+
+            // Check for quarterly-specific columns  
+            const hasQuarterlyColumns = lowerText.includes('sga_margin') ||
+              lowerText.includes('return_on_capital') ||
+              (lowerText.includes('sga') && lowerText.includes('return_on_capital'))
+
+            if (hasAnnualColumns && !hasQuarterlyColumns) {
+              resolve('annual')
+              return
+            }
+            if (hasQuarterlyColumns && !hasAnnualColumns) {
+              resolve('quarterly')
+              return
+            }
+          }
+
+          // For CSV, check actual headers
+          if (headers.length > 0) {
+            const hasAnnualCols = headers.some(h =>
+              h.includes('return_on_assets') ||
+              h.includes('ebit_to_interest_expense')
+            )
+            const hasQuarterlyCols = headers.some(h =>
+              h.includes('sga_margin') ||
+              h.includes('return_on_capital')
+            )
+
+            if (hasAnnualCols && !hasQuarterlyCols) {
+              resolve('annual')
+              return
+            }
+            if (hasQuarterlyCols && !hasAnnualCols) {
+              resolve('quarterly')
+              return
+            }
+          }
+
+          resolve('unknown')
+        } catch (error) {
+          console.error('Error reading file headers:', error)
+          resolve('unknown')
+        }
+      }
+
+      reader.onerror = () => resolve('unknown')
+
+      // Read as text to check headers
+      reader.readAsText(file.slice(0, 2048)) // Read first 2KB to get headers
+    })
+  }
+
+  // File type detection based on filename patterns (fallback)
+  const detectFileType = (fileName: string): 'annual' | 'quarterly' | 'unknown' => {
+    const lowerName = fileName.toLowerCase()
+
+    // Look for keywords in filename
+    if (lowerName.includes('annual') || lowerName.includes('yearly')) {
+      return 'annual'
+    }
+    if (lowerName.includes('quarter') || lowerName.includes('q1') || lowerName.includes('q2') ||
+      lowerName.includes('q3') || lowerName.includes('q4')) {
+      return 'quarterly'
+    }
+
+    return 'unknown'
+  }
+
+  // Show file type mismatch warning
+  const showFileTypeMismatch = (fileName: string, detectedType: string, currentTab: string) => {
+    const message = `The file "${fileName}" appears to be a ${detectedType} file, but you're currently in the ${currentTab} tab. Would you like to switch tabs or verify your file?`
+
+    toast.error(message, {
+      duration: 8000,
+      action: {
+        label: `Switch to ${detectedType}`,
+        onClick: () => {
+          setPredictionType(detectedType as 'annual' | 'quarterly')
+          toast.success(`Switched to ${detectedType} tab`)
+        }
+      }
+    })
+  }
+
+  // Multi-file upload handling with automatic header detection
+  const handleMultipleFileUpload = async (files: File[]) => {
     const validTypes = [
       'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
       'application/vnd.ms-excel',
@@ -1095,22 +1359,75 @@ export function CustomAnalysisView() {
 
     if (validFiles.length === 0) return
 
-    // Add files to upload queue
-    const newItems = validFiles.map(file => ({
-      id: `${file.name}-${Date.now()}-${Math.random()}`,
-      file,
-      progress: 0,
-      status: 'uploading' as const
-    }))
+    const file = validFiles[0] // We only take first file now
 
-    setUploadQueue(prev => [...prev, ...newItems])
+    // Show loading toast while detecting file type
+    toast.info('Analyzing file headers...', { id: 'file-analysis' })
 
-    // Simulate upload progress for each file
-    newItems.forEach((item, index) => {
-      simulateUploadProgress(item.id, index * 500) // Stagger uploads
-    })
+    try {
+      // Detect file type from headers first
+      const detectedFromHeaders = await detectFileTypeFromHeaders(file)
 
-    toast.success(`${validFiles.length} file(s) added to upload queue`)
+      // Fallback to filename detection if header detection fails
+      const detectedFromFilename = detectFileType(file.name)
+      const finalDetectedType = detectedFromHeaders !== 'unknown' ? detectedFromHeaders : detectedFromFilename
+
+      toast.dismiss('file-analysis')
+
+      // Auto-switch tab if we detected a different type
+      if (finalDetectedType !== 'unknown' && finalDetectedType !== predictionType) {
+        setPredictionType(finalDetectedType)
+
+        const detectionMethod = detectedFromHeaders !== 'unknown' ? 'file columns' : 'filename'
+        toast.success(`Auto-switched to ${finalDetectedType} model`, {
+          description: `Detected ${finalDetectedType} file based on ${detectionMethod}. The correct API will be used.`,
+          duration: 5000
+        })
+      } else if (finalDetectedType === 'unknown') {
+        toast.warning(`Could not auto-detect file type for "${file.name}"`, {
+          description: `Using current ${predictionType} model. If upload fails, try switching tabs manually.`,
+          duration: 6000
+        })
+      }
+
+      // Add files to upload queue
+      const newItems = validFiles.map(file => ({
+        id: `${file.name}-${Date.now()}-${Math.random()}`,
+        file,
+        progress: 0,
+        status: 'uploading' as const
+      }))
+
+      setUploadQueue(prev => [...prev, ...newItems])
+
+      // Simulate upload progress for each file
+      newItems.forEach((item, index) => {
+        simulateUploadProgress(item.id, index * 500) // Stagger uploads
+      })
+
+    } catch (error) {
+      toast.dismiss('file-analysis')
+      console.error('Error analyzing file:', error)
+
+      // Fallback to filename detection
+      const detectedType = detectFileType(file.name)
+      if (detectedType !== 'unknown' && detectedType !== predictionType) {
+        showFileTypeMismatch(file.name, detectedType, predictionType)
+      }
+
+      // Continue with upload anyway
+      const newItems = validFiles.map(file => ({
+        id: `${file.name}-${Date.now()}-${Math.random()}`,
+        file,
+        progress: 0,
+        status: 'uploading' as const
+      }))
+
+      setUploadQueue(prev => [...prev, ...newItems])
+      newItems.forEach((item, index) => {
+        simulateUploadProgress(item.id, index * 500)
+      })
+    }
   }
 
   const simulateUploadProgress = (itemId: string, delay = 0) => {
@@ -1153,7 +1470,6 @@ export function CustomAnalysisView() {
         company_symbol: 'AAPL',
         company_name: 'Apple Inc.',
         sector: 'Technology',
-        market_cap: 3000000,
         reporting_year: 2024,
         long_term_debt_to_total_capital: 18.75,
         total_debt_to_ebitda: 2.10,
@@ -1168,7 +1484,6 @@ export function CustomAnalysisView() {
         company_symbol: 'AAPL',
         company_name: 'Apple Inc.',
         sector: 'Technology',
-        market_cap: 3000000,
         reporting_year: 2024,
         reporting_quarter: 'Q1',
         long_term_debt_to_total_capital: 18.75,
@@ -1494,15 +1809,22 @@ export function CustomAnalysisView() {
                     </Tabs>
                   </div>
 
-                  {/* Template Download */}
-                  <Button
-                    variant="outline"
-                    onClick={() => downloadTemplate(predictionType)}
-                    className="border-blue-200 hover:bg-blue-50 hover:border-blue-300 text-blue-600 font-medium flex items-center gap-2 shadow-sm"
-                  >
-                    <Download className="h-4 w-4" />
-                    Download Template
-                  </Button>
+                  {/* Smart Detection Info */}
+                  <div className="flex items-center gap-4">
+                    {/* <div className="text-xs text-gray-600 dark:text-gray-400 bg-gradient-to-r from-green-50 to-blue-50 dark:from-green-900/20 dark:to-blue-900/20 px-3 py-1 rounded-md border border-green-200 dark:border-green-700">
+                      <span className="font-medium">✨ Smart Detection:</span> File type will be auto-detected from headers
+                    </div> */}
+
+                    {/* Template Download */}
+                    <Button
+                      variant="outline"
+                      onClick={() => downloadTemplate(predictionType)}
+                      className="border-blue-200 hover:bg-blue-50 hover:border-blue-300 text-blue-600 font-medium flex items-center gap-2 shadow-sm"
+                    >
+                      <Download className="h-4 w-4" />
+                      Download Template
+                    </Button>
+                  </div>
                 </div>
               </div>
 
@@ -1519,17 +1841,29 @@ export function CustomAnalysisView() {
                       onDrop={(e) => {
                         e.preventDefault()
                         const files = Array.from(e.dataTransfer.files)
-                        if (files[0]) handleMultipleFileUpload(files)
+                        if (files[0]) {
+                          const existingFile = getCurrentUploadedFile()
+                          if (existingFile) {
+                            toast.info(`🔄 Replacing "${existingFile.name}" with "${files[0].name}"...`)
+                          }
+                          handleMultipleFileUpload([files[0]]) // Only take first file
+                        }
                       }}
                     >
                       <input
                         id="file-upload"
                         type="file"
                         accept=".csv,.xlsx,.xls"
-                        multiple
                         onChange={(e) => {
                           const files = Array.from(e.target.files || [])
-                          if (files.length > 0) handleMultipleFileUpload(files)
+                          if (files.length > 0) {
+                            const existingFile = getCurrentUploadedFile()
+                            if (existingFile && files[0]) {
+                              toast.info(`🔄 Changing file from "${existingFile.name}" to "${files[0].name}"...`)
+                            }
+                            handleMultipleFileUpload([files[0]]) // Only take first file
+                            e.target.value = '' // Clear input to allow selecting same file again
+                          }
                         }}
                         className="hidden"
                       />
@@ -1542,10 +1876,10 @@ export function CustomAnalysisView() {
                             Upload {predictionType} file
                           </h4>
                           <p className="text-gray-600 dark:text-gray-400">
-                            Drop files here or <span className="text-blue-500 font-medium">click to browse</span>
+                            Drop your file here or <span className="text-blue-500 font-medium">click to browse</span>
                           </p>
                           <p className="text-sm text-gray-500 dark:text-gray-400 mt-2">
-                            Supports CSV, XLSX files (Max 10MB each)
+                            Supports CSV, XLSX files (Max 10MB) • One file at a time
                           </p>
                         </div>
                       </div>
@@ -1580,10 +1914,25 @@ export function CustomAnalysisView() {
                                         {((item.file.size || 0) / 1024 / 1024).toFixed(2)} MB
                                       </span>
                                       {item.status === 'completed' && (
-                                        <div className="w-5 h-5 bg-green-100 dark:bg-green-800 rounded-full flex items-center justify-center">
-                                          <svg className="w-3 h-3 text-green-600 dark:text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                                          </svg>
+                                        <div className="flex items-center gap-1">
+                                          <div className="w-5 h-5 bg-green-100 dark:bg-green-800 rounded-full flex items-center justify-center">
+                                            <svg className="w-3 h-3 text-green-600 dark:text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                                            </svg>
+                                          </div>
+                                          <button
+                                            onClick={() => {
+                                              removeFromUploadQueue(item.id)
+                                              toast.success(`🗑️ File removed`, {
+                                                description: `"${item.file.name}" has been removed from queue.`,
+                                                duration: 3000
+                                              })
+                                            }}
+                                            className="w-5 h-5 bg-gray-100 dark:bg-gray-700 rounded-full flex items-center justify-center hover:bg-red-100 dark:hover:bg-red-800 transition-colors"
+                                            title="Remove this file"
+                                          >
+                                            <X className="w-3 h-3 text-gray-500 hover:text-red-600 dark:text-gray-400 dark:hover:text-red-400" />
+                                          </button>
                                         </div>
                                       )}
                                       {item.status === 'error' && (
@@ -1623,33 +1972,11 @@ export function CustomAnalysisView() {
                             </div>
                           ))}
 
-                          {/* Add more files button */}
-                          <button
-                            onClick={() => document.getElementById('file-upload-additional')?.click()}
-                            className="w-full border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-lg p-4 text-center hover:border-blue-400 hover:bg-blue-50/30 dark:hover:bg-blue-900/10 transition-all"
-                          >
-                            <input
-                              id="file-upload-additional"
-                              type="file"
-                              accept=".csv,.xlsx,.xls"
-                              multiple
-                              onChange={(e) => {
-                                const files = Array.from(e.target.files || [])
-                                if (files.length > 0) handleMultipleFileUpload(files)
-                              }}
-                              className="hidden"
-                            />
-                            <div className="flex items-center justify-center gap-2">
-                              <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
-                              </svg>
-                              <span className="text-sm text-gray-600 dark:text-gray-400">Add more files</span>
-                            </div>
-                          </button>
+
                         </div>
                       )}
 
-                      {/* Single file selected state (legacy) */}
+                      {/* Single file selected state (enhanced with file management) */}
                       {getCurrentUploadedFile() && uploadQueue.length === 0 && (
                         <div className="bg-gradient-to-r from-green-50 to-emerald-50 dark:from-green-900/20 dark:to-emerald-900/20 border border-green-200 dark:border-green-700 rounded-xl p-6">
                           <div className="flex items-start gap-4">
@@ -1658,49 +1985,83 @@ export function CustomAnalysisView() {
                             </div>
                             <div className="flex-1 min-w-0">
                               <h4 className="font-semibold text-green-900 dark:text-green-100">
-                                {getCurrentUploadedFile()?.name}
+                                ✅ {getCurrentUploadedFile()?.name}
                               </h4>
                               <p className="text-sm text-green-700 dark:text-green-300 mt-1">
                                 {((getCurrentUploadedFile()?.size || 0) / 1024 / 1024).toFixed(2)} MB • Ready for {predictionType} analysis
                               </p>
+                              <p className="text-xs text-blue-600 dark:text-blue-400 mt-2">
+                                💡 Need to use a different file? Use the buttons below to change or remove
+                              </p>
                             </div>
+                          </div>
+
+                          {/* File Management Actions */}
+                          <div className="flex items-center gap-3 mt-4 pt-4 border-t border-green-200 dark:border-green-600">
                             <Button
-                              variant="ghost"
+                              variant="outline"
                               size="sm"
-                              onClick={() => setCurrentUploadedFile(null)}
-                              className="text-green-600 hover:text-green-800 hover:bg-green-100 dark:text-green-400 dark:hover:text-green-300"
+                              onClick={() => {
+                                // Trigger file input to change file
+                                document.getElementById('file-upload')?.click()
+                              }}
+                              className="flex items-center gap-2 hover:bg-blue-50 hover:text-blue-600 hover:border-blue-300"
+                            >
+                              <FileSpreadsheet className="h-4 w-4" />
+                              Change File
+                            </Button>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => {
+                                const fileName = getCurrentUploadedFile()?.name || 'file'
+                                setCurrentUploadedFile(null)
+                                toast.success(`🗑️ File removed`, {
+                                  description: `"${fileName}" has been removed. You can now upload a different file.`,
+                                  duration: 3000
+                                })
+                              }}
+                              className="flex items-center gap-2 text-red-600 hover:text-red-700 hover:bg-red-50 hover:border-red-300"
                             >
                               <X className="h-4 w-4" />
+                              Remove File
                             </Button>
+                            <div className="flex-1 text-right">
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => {
+                                  // Click the drop zone to add another file
+                                  document.getElementById('file-upload')?.click()
+                                }}
+                                className="text-gray-500 hover:text-gray-700 text-xs"
+                              >
+                                Or drag & drop a new file to replace
+                              </Button>
+                            </div>
                           </div>
                         </div>
                       )}
                     </div>
                   )}                  {/* Action Buttons */}
-                  <div className="flex items-center justify-between pt-4 border-t border-gray-200 dark:border-gray-700">
-                    {/* <Button
-                      variant="outline"
-                      onClick={() => {
-                        setShowUploadModal(false)
-                        setUploadQueue([])
-                      }}
-                      className="px-6"
-                    >
-                      Cancel
-                    </Button> */}
-
+                  <div className="flex items-center justify-end pt-4 border-t border-gray-200 dark:border-gray-700">
                     {(getCurrentUploadedFile() || uploadQueue.some(f => f.status === 'completed')) && (
-                      <div className="flex items-center gap-3">
+                      <>
                         {uploadQueue.length > 0 && (
                           <Button
-                            onClick={() => {
-                              // Process all completed files
-                              const completedFiles = uploadQueue.filter(f => f.status === 'completed')
-                              completedFiles.forEach(item => {
-                                handleBulkUpload(item.file)
-                              })
-                              setShowUploadModal(false)
-                              setUploadQueue([])
+                            onClick={async () => {
+                              // Process the first completed file only
+                              const completedFile = uploadQueue.find(f => f.status === 'completed')
+                              if (completedFile) {
+                                try {
+                                  await handleBulkUpload(completedFile.file)
+                                  setShowUploadModal(false)
+                                  setUploadQueue([])
+                                } catch (error) {
+                                  // Error is already handled in handleBulkUpload, but keep modal open for retry
+                                  console.log('Upload failed - keeping modal open for retry')
+                                }
+                              }
                             }}
                             disabled={bulkUploadMutation.isPending || uploadQueue.every(f => f.status !== 'completed')}
                             className="bg-blue-600 hover:bg-blue-700 text-white px-8 py-2.5 font-medium shadow-lg hover:shadow-xl transition-all"
@@ -1708,12 +2069,12 @@ export function CustomAnalysisView() {
                             {bulkUploadMutation.isPending ? (
                               <div className="flex items-center gap-2">
                                 <Loader2 className="h-4 w-4 animate-spin" />
-                                Processing {uploadQueue.filter(f => f.status === 'completed').length} files...
+                                Processing File...
                               </div>
                             ) : (
                               <div className="flex items-center gap-2">
                                 <Download className="h-4 w-4" />
-                                Process {uploadQueue.filter(f => f.status === 'completed').length} Files
+                                Process File
                               </div>
                             )}
                           </Button>
@@ -1721,9 +2082,14 @@ export function CustomAnalysisView() {
 
                         {getCurrentUploadedFile() && uploadQueue.length === 0 && (
                           <Button
-                            onClick={() => {
-                              handleBulkUpload(getCurrentUploadedFile()!)
-                              setShowUploadModal(false)
+                            onClick={async () => {
+                              try {
+                                await handleBulkUpload(getCurrentUploadedFile()!)
+                                setShowUploadModal(false)
+                              } catch (error) {
+                                // Error is already handled in handleBulkUpload, but keep modal open for retry
+                                console.log('Upload failed - keeping modal open for retry')
+                              }
                             }}
                             disabled={bulkUploadMutation.isPending}
                             className="bg-blue-600 hover:bg-blue-700 text-white px-8 py-2.5 font-medium shadow-lg hover:shadow-xl transition-all"
@@ -1736,12 +2102,12 @@ export function CustomAnalysisView() {
                             ) : (
                               <div className="flex items-center gap-2">
                                 <Download className="h-4 w-4" />
-                                Run Analysis
+                                Process File
                               </div>
                             )}
                           </Button>
                         )}
-                      </div>
+                      </>
                     )}
                   </div>
                 </div>

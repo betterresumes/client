@@ -86,71 +86,156 @@ export function JobResultsDialog({
     try {
       setDownloading(true)
 
-      // Create CSV content from results data
-      const headers = [
+      // Debug: Log the actual data structure
+      console.log('Job Summary:', results.job_summary)
+      console.log('Sample Prediction:', results.created_data?.predictions?.[0])
+      console.log('Sample Company:', (results.created_data?.predictions?.[0] as any)?.company)
+      console.log('Sample Financial Metrics:', results.created_data?.predictions?.[0]?.financial_metrics)
+      console.log('Sample Prediction Data:', (results.created_data?.predictions?.[0] as any)?.prediction)
+
+      // Determine if this is annual or quarterly based on job_type or presence of quarterly data
+      const isAnnual = results.job_summary.job_type === 'annual' ||
+        !results.created_data?.predictions?.some((p: any) => p.reporting_quarter)
+
+      // Create CSV headers based on file type - EXACTLY as specified
+      const headers = isAnnual ? [
         'Company Symbol',
         'Company Name',
         'Sector',
-        'Reporting Period',
-        'Probability (%)',
+        'Reporting Year',
+        'Reporting Quarter',
+        'Long Term Debt to Total Capital (%)',
+        'Total Debt to EBITDA',
+        'Net Income Margin (%)',
+        'EBIT to Interest Expense',
+        'Return on Assets (%)',
+        'Default Rate (%)',
         'Risk Level',
-        'Confidence (%)',
-        'Predicted At',
+        'Confidence (%)'
+      ] : [
+        'Company Symbol',
+        'Company Name',
+        'Sector',
+        'Reporting Year',
+        'Reporting Quarter',
         'Total Debt to EBITDA',
         'SGA Margin (%)',
         'Long Term Debt to Total Capital (%)',
         'Return on Capital (%)',
-        'Logistic Model Probability (%)',
-        'GBM Model Probability (%)'
+        'Logistic Probability (%)',
+        'Risk Level',
+        'Confidence (%)',
+        'GBM Probability (%)',
+        'Ensemble Probability (%)',
+        'Default Rate (%)'
       ]
 
       const rows: string[][] = []
 
-      // Add company and prediction data
+      // Process predictions data with STRICT column mapping
       if (results.created_data?.predictions) {
         results.created_data.predictions.forEach((prediction: any) => {
-          const company = prediction.company
-          const period = prediction.reporting_quarter
-            ? `${prediction.reporting_quarter} ${prediction.reporting_year}`
-            : `Annual ${prediction.reporting_year}`
-
-          // Get all financial metrics
+          const company = prediction.company || {}
           const financialMetrics = prediction.financial_metrics || {}
           const predictionData = prediction.prediction || {}
 
-          rows.push([
-            company?.symbol || 'N/A',
-            company?.name || 'N/A',
-            company?.sector || 'N/A',
-            period,
-            ((predictionData.ensemble_probability || predictionData.probability) * 100).toFixed(2),
-            predictionData.risk_level || 'N/A',
-            (predictionData.confidence * 100).toFixed(1),
-            new Date(predictionData.predicted_at).toLocaleDateString(),
-            // Add all financial metrics
-            financialMetrics.total_debt_to_ebitda?.toFixed(2) || 'N/A',
-            financialMetrics.sga_margin?.toFixed(2) || 'N/A',
-            financialMetrics.long_term_debt_to_total_capital?.toFixed(2) || 'N/A',
-            financialMetrics.return_on_capital?.toFixed(2) || 'N/A',
-            // Add prediction model details
-            (predictionData.logistic_probability * 100).toFixed(4) || 'N/A',
-            (predictionData.gbm_probability * 100).toFixed(4) || 'N/A'
-          ])
+          // Helper function to safely format numbers
+          const formatNumber = (value: any, decimals: number = 2) => {
+            if (value === null || value === undefined || isNaN(value)) return 'N/A'
+            return Number(value).toFixed(decimals)
+          }
+
+          const formatPercent = (value: any, decimals: number = 2) => {
+            if (value === null || value === undefined || isNaN(value)) return 'N/A'
+            return (Number(value) * 100).toFixed(decimals)
+          }
+
+          // Helper function for values that are already in percentage format
+          const formatPercentDirect = (value: any, decimals: number = 2) => {
+            if (value === null || value === undefined || isNaN(value)) return 'N/A'
+            return Number(value).toFixed(decimals)
+          }
+
+          if (isAnnual) {
+            // ANNUAL: Exactly 13 columns in this exact order matching headers
+            const row = [
+              company.symbol || 'N/A',                                         // Company Symbol
+              company.name || 'N/A',                                          // Company Name
+              company.sector || 'N/A',                                        // Sector
+              (prediction.reporting_year || 'N/A').toString(),               // Reporting Year
+              (prediction.reporting_quarter || 'N/A').toString(),            // Reporting Quarter
+              formatPercentDirect(financialMetrics.long_term_debt_to_total_capital), // Long Term Debt to Total Capital (%)
+              formatNumber(financialMetrics.total_debt_to_ebitda),          // Total Debt to EBITDA
+              formatPercentDirect(financialMetrics.net_income_margin),      // Net Income Margin (%)
+              formatNumber(financialMetrics.ebit_to_interest_expense),      // EBIT to Interest Expense
+              formatPercentDirect(financialMetrics.return_on_assets),       // Return on Assets (%)
+              formatPercent(predictionData.probability),                    // Default Rate (%)
+              predictionData.risk_level || 'N/A',                          // Risk Level
+              formatPercent(predictionData.confidence, 1)                   // Confidence (%)
+            ]
+            rows.push(row)
+          } else {
+            // QUARTERLY: Exactly 15 columns in this exact order matching headers
+            const row = [
+              company.symbol || 'N/A',                                         // Company Symbol
+              company.name || 'N/A',                                          // Company Name
+              company.sector || 'N/A',                                        // Sector
+              (prediction.reporting_year || 'N/A').toString(),               // Reporting Year
+              (prediction.reporting_quarter || 'N/A').toString(),            // Reporting Quarter
+              formatNumber(financialMetrics.total_debt_to_ebitda),          // Total Debt to EBITDA
+              formatPercentDirect(financialMetrics.sga_margin),             // SGA Margin (%)
+              formatPercentDirect(financialMetrics.long_term_debt_to_total_capital), // Long Term Debt to Total Capital (%)
+              formatPercentDirect(financialMetrics.return_on_capital),      // Return on Capital (%)
+              formatPercent(predictionData.logistic_probability),           // Logistic Probability (%)
+              predictionData.risk_level || 'N/A',                          // Risk Level
+              formatPercent(predictionData.confidence, 1),                  // Confidence (%)
+              formatPercent(predictionData.gbm_probability),                // GBM Probability (%)
+              formatPercent(predictionData.ensemble_probability),           // Ensemble Probability (%)
+              formatPercent(predictionData.logistic_probability)            // Default Rate (%) = Logistic Probability (%)
+            ]
+            rows.push(row)
+          }
         })
       }
 
-      // Create CSV content
+      // Validate column counts match headers
+      const expectedColumns = isAnnual ? 13 : 15
+      console.log(`Expected columns: ${expectedColumns}`)
+      console.log(`Headers count: ${headers.length}`)
+      console.log(`First row count: ${rows[0]?.length || 0}`)
+
+      if (headers.length !== expectedColumns) {
+        throw new Error(`Header count mismatch: expected ${expectedColumns}, got ${headers.length}`)
+      }
+
+      if (rows.length > 0 && rows[0].length !== expectedColumns) {
+        throw new Error(`Row column count mismatch: expected ${expectedColumns}, got ${rows[0].length}`)
+      }
+
+      // Create CSV content with explicit structure
       const csvContent = [
         headers.join(','),
-        ...rows.map(row => row.map((field: string) => `"${field}"`).join(','))
+        ...rows.map(row => {
+          if (row.length !== expectedColumns) {
+            console.warn(`Row has ${row.length} columns, expected ${expectedColumns}:`, row)
+          }
+          return row.map((field: string) => `"${field}"`).join(',')
+        })
       ].join('\n')
+
+      console.log('Generated CSV preview:', csvContent.split('\n').slice(0, 3))
+      console.log('File type:', isAnnual ? 'ANNUAL' : 'QUARTERLY')
+      console.log('Expected columns:', expectedColumns)
+      console.log('Actual headers:', headers)
+      console.log('Sample row:', rows[0])
 
       // Download the file
       const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' })
       const url = window.URL.createObjectURL(blob)
       const link = document.createElement('a')
       link.href = url
-      link.download = `analysis-results-${jobId?.substring(0, 8) || 'export'}.csv`
+      const jobType = isAnnual ? 'annual' : 'quarterly'
+      link.download = `${jobType}-predictions-${new Date().toISOString().slice(0, 10)}.csv`
       document.body.appendChild(link)
       link.click()
       document.body.removeChild(link)
@@ -214,7 +299,7 @@ export function JobResultsDialog({
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="max-w-6xl max-h-[95vh] overflow-hidden">
+      <DialogContent className="max-w-7xl max-h-[95vh] overflow-hidden">
         <DialogHeader className="flex flex-row items-center justify-between space-y-0 pb-4 border-b">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center">
@@ -334,58 +419,78 @@ export function JobResultsDialog({
                   </CardHeader>
                   <CardContent>
                     <div className="overflow-x-auto">
-                      <table className="w-full text-sm">
-                        <thead className="bg-gray-50 border-b">
-                          <tr>
-                            <th className="text-left p-3 font-medium">Company</th>
-                            <th className="text-left p-3 font-medium">Sector</th>
-                            <th className="text-left p-3 font-medium">Period</th>
-                            <th className="text-right p-3 font-medium">Probability</th>
-                            <th className="text-center p-3 font-medium">Risk Level</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {results.created_data.predictions.map((prediction: any) => {
-                            const company = prediction.company
-                            const predictionData = prediction.prediction || {}
-                            return (
-                              <tr key={prediction.id} className="border-b hover:bg-gray-50">
-                                <td className="p-3">
-                                  <div>
-                                    <div className="font-semibold">{company?.symbol || 'N/A'}</div>
-                                    <div className="text-xs text-gray-500 truncate max-w-32">{company?.name || 'N/A'}</div>
-                                  </div>
-                                </td>
-                                <td className="p-3 text-sm">{company?.sector || 'N/A'}</td>
-                                <td className="p-3">
-                                  {prediction.reporting_quarter ?
-                                    `${prediction.reporting_quarter} ${prediction.reporting_year}` :
-                                    `Annual ${prediction.reporting_year}`
-                                  }
-                                </td>
-                                <td className="p-3 text-right font-mono font-semibold">
-                                  {((predictionData.ensemble_probability || predictionData.probability) * 100).toFixed(2)}%
-                                </td>
-                                <td className="p-3 text-center">
-                                  <Badge className={getRiskColor(predictionData.risk_level)}>
-                                    {predictionData.risk_level}
-                                  </Badge>
-                                </td>
-                              </tr>
-                            )
-                          })}
-                        </tbody>
-                      </table>
-                      {results.created_data.predictions.length > 0 && (
-                        <p className="text-sm text-gray-500 mt-3 text-center">
-                          Showing all {results.created_data.predictions.length} predictions from {results.job_summary.total_rows} processed rows
-                          {results.created_data.predictions.length < results.job_summary.total_rows && (
-                            <span className="text-xs block mt-1">
-                              Some rows may have been deduplicated or filtered based on data quality
-                            </span>
-                          )}
-                        </p>
-                      )}
+                      {(() => {
+                        const isAnnual = results.job_summary.job_type === 'annual'
+                        const displayPredictions = results.created_data.predictions.slice(0, 100)
+
+                        return (
+                          <>
+                            <table className="w-full text-sm">
+                              <thead className="bg-gray-50 border-b">
+                                <tr>
+                                  <th className="text-left p-3 font-medium">Company Symbol</th>
+                                  <th className="text-left p-3 font-medium">Company Name</th>
+                                  <th className="text-left p-3 font-medium">Sector</th>
+                                  <th className="text-left p-3 font-medium">Year</th>
+                                  {!isAnnual && <th className="text-left p-3 font-medium">Quarter</th>}
+                                  <th className="text-right p-3 font-medium">Default Rate</th>
+                                  <th className="text-center p-3 font-medium">Risk Level</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {displayPredictions.map((prediction: any) => {
+                                  const company = prediction.company
+                                  const predictionData = prediction.prediction || {}
+
+                                  return (
+                                    <tr key={prediction.id} className="border-b hover:bg-gray-50">
+                                      <td className="p-3 font-semibold">{company?.symbol || 'N/A'}</td>
+                                      <td className="p-3">{company?.name || 'N/A'}</td>
+                                      <td className="p-3 text-sm">{company?.sector || 'N/A'}</td>
+                                      <td className="p-3">{prediction.reporting_year || 'N/A'}</td>
+                                      {!isAnnual && (
+                                        <td className="p-3">{prediction.reporting_quarter || 'N/A'}</td>
+                                      )}
+                                      <td className="p-3 text-right font-mono font-semibold">
+                                        {isAnnual
+                                          ? (predictionData.probability * 100).toFixed(2)
+                                          : (predictionData.logistic_probability * 100).toFixed(2)
+                                        }%
+                                      </td>
+                                      <td className="p-3 text-center">
+                                        <Badge className={getRiskColor(predictionData.risk_level)}>
+                                          {predictionData.risk_level}
+                                        </Badge>
+                                      </td>
+                                    </tr>
+                                  )
+                                })}
+                              </tbody>
+                            </table>
+                            <div className="mt-4 text-center">
+                              {results.created_data.predictions.length > 100 ? (
+                                <div className="space-y-2">
+                                  <p className="text-sm text-gray-500">
+                                    Showing first 100 of {results.created_data.predictions.length} predictions from {results.job_summary.total_rows} processed rows
+                                  </p>
+                                  <p className="text-sm text-blue-600 font-medium">
+                                    Download the complete file to view all results
+                                  </p>
+                                </div>
+                              ) : (
+                                <p className="text-sm text-gray-500">
+                                  Showing all {results.created_data.predictions.length} predictions from {results.job_summary.total_rows} processed rows
+                                  {results.created_data.predictions.length < results.job_summary.total_rows && (
+                                    <span className="text-xs block mt-1">
+                                      Some rows may have been deduplicated or filtered based on data quality
+                                    </span>
+                                  )}
+                                </p>
+                              )}
+                            </div>
+                          </>
+                        )
+                      })()}
                     </div>
                   </CardContent>
                 </Card>
@@ -402,7 +507,7 @@ export function JobResultsDialog({
                   </CardHeader>
                   <CardContent>
                     <div className="space-y-3 max-h-64 overflow-y-auto">
-                      {results.errors.error_details?.errors.map((error, index) => (
+                      {results.errors.error_details?.errors.slice(0, 100).map((error, index) => (
                         <div key={index} className="p-3 bg-red-50 border border-red-200 rounded-lg">
                           <div className="flex items-start justify-between">
                             <div>
@@ -413,6 +518,16 @@ export function JobResultsDialog({
                         </div>
                       ))}
                     </div>
+                    {results.errors.error_count > 100 && (
+                      <div className="mt-4 text-center">
+                        <p className="text-sm text-gray-500">
+                          Showing first 100 of {results.errors.error_count} errors
+                        </p>
+                        <p className="text-sm text-blue-600 font-medium">
+                          Download the complete file to view all error details
+                        </p>
+                      </div>
+                    )}
                   </CardContent>
                 </Card>
               )}

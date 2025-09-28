@@ -14,22 +14,62 @@ export function useCreatePredictionMutations() {
 
   const createAnnualPredictionMutation = useMutation({
     mutationFn: async (data: AnnualPredictionRequest) => {
+      console.log('📤 Making annual prediction API call with data:', data)
       const response = await predictionsApi.annual.createAnnualPrediction(data)
+      console.log('📥 Received API response:', response)
 
+      // If the response indicates an error, throw it with the exact API error structure
+      if (!response.success) {
+        console.log('❌ Annual API Error Response:', response.error)
+        console.log('❌ Error message:', response.error?.message)
+        console.log('❌ Error details:', response.error?.details)
+
+        // Try to get the most specific error message
+        const errorMessage = response.error?.message ||
+          response.error?.details?.detail ||
+          'Failed to create annual prediction'
+
+        console.log('❌ Using error message:', errorMessage)
+
+        const error = new Error(errorMessage)
+          // Preserve the exact API error structure - use message first as it contains the formatted detail
+          ; (error as any).response = {
+            data: {
+              detail: errorMessage
+            },
+            status: response.error?.code || 400
+          }
+        console.log('❌ Throwing annual error with structure:', (error as any).response)
+        throw error
+      }
+
+      console.log('✅ Annual prediction API call successful')
       return { response, tempId: `temp-${Date.now()}` }
     },
     onSuccess: ({ response, tempId }) => {
+      // Ensure we have valid response data
+      if (!response?.data) {
+        console.error('No data in response:', response)
+        return
+      }
+
       const prediction = response.data?.prediction || response.data
+
+      // Ensure prediction object exists and has required fields
+      if (!prediction || typeof prediction !== 'object') {
+        console.error('Invalid prediction data:', prediction)
+        return
+      }
 
       const realPrediction = {
         ...prediction,
-        default_probability: prediction.probability || prediction.default_probability || 0,
-        risk_category: prediction.risk_level,
-        reporting_year: prediction.reporting_year,
+        default_probability: prediction?.probability || prediction?.default_probability || 0,
+        risk_category: prediction?.risk_level,
+        reporting_year: prediction?.reporting_year,
         financial_ratios: {
-          ltdtc: prediction.long_term_debt_to_total_capital,
-          roa: prediction.return_on_assets,
-          ebitint: prediction.ebit_to_interest_expense
+          ltdtc: prediction?.long_term_debt_to_total_capital || 0,
+          roa: prediction?.return_on_assets || 0,
+          ebitint: prediction?.ebit_to_interest_expense || 0
         }
       }
 
@@ -46,47 +86,107 @@ export function useCreatePredictionMutations() {
       }
 
       return {
-        company: prediction.company_name,
-        symbol: prediction.company_symbol,
-        sector: prediction.sector || 'N/A',
-        defaultRate: `${((prediction.probability || prediction.default_probability || 0) * 100).toFixed(2)}%`,
-        riskLevel: prediction.risk_level || prediction.risk_category || 'MEDIUM',
-        modelConfidence: `${((prediction.confidence || 0) * 100).toFixed(1)}%`,
-        financialRatios: prediction.financial_ratios || {},
-        reportingPeriod: `Annual ${prediction.reporting_year}`,
-        marketCap: `$${prediction.market_cap || 0}M`
+        company: prediction?.company_name || 'Unknown',
+        symbol: prediction?.company_symbol || 'N/A',
+        sector: prediction?.sector || 'N/A',
+        defaultRate: `${((prediction?.probability || prediction?.default_probability || 0) * 100).toFixed(2)}%`,
+        riskLevel: prediction?.risk_level || prediction?.risk_category || 'MEDIUM',
+        modelConfidence: `${((prediction?.confidence || 0) * 100).toFixed(1)}%`,
+        financialRatios: prediction?.financial_ratios || {},
+        reportingPeriod: `Annual ${prediction?.reporting_year || 'Unknown'}`,
+        marketCap: `$${prediction?.market_cap || 0}M`
       }
     },
     onError: (error: any) => {
       console.error('Annual analysis failed:', error)
+      console.error('Full error object:', JSON.stringify(error, null, 2))
+      console.error('Error response:', error?.response)
+      console.error('Error response data:', error?.response?.data)
+      console.error('Error message detail:', error?.response?.data?.detail)
 
-      // Format user-friendly error messages
-      const formattedErrorMessage = formatApiError(error, 'Failed to create annual prediction')
+      // Get the API error message directly
+      let errorMessage = 'Failed to create annual prediction'
 
-      toast.error(formattedErrorMessage, {
-        description: 'Please try again'
-      })
+      if (error?.response?.data?.detail) {
+        errorMessage = error.response.data.detail
+        console.log('Using API detail message:', errorMessage)
+
+        // Only format if it contains "already exists" - make it user friendly
+        if (errorMessage.includes('already exists')) {
+          errorMessage = errorMessage
+            .replace('system scope', 'your predictions')
+            .replace('global scope', 'your predictions')
+            .replace('organization scope', 'your predictions')
+          console.log('Formatted message:', errorMessage)
+        }
+      } else if (error?.message) {
+        errorMessage = error.message
+        console.log('Using error message:', errorMessage)
+      }
+
+      console.log('Final toast message:', errorMessage)
+      toast.error(errorMessage)
     }
   })
 
   const createQuarterlyPredictionMutation = useMutation({
     mutationFn: async (data: QuarterlyPredictionRequest) => {
+      console.log('📤 Making quarterly prediction API call with data:', data)
       const response = await predictionsApi.quarterly.createQuarterlyPrediction(data)
+      console.log('📥 Received quarterly API response:', response)
 
+      // If the response indicates an error, throw it with the exact API error structure
+      if (!response.success) {
+        console.log('❌ Quarterly API Error Response:', response.error)
+        console.log('❌ Error message:', response.error?.message)
+        console.log('❌ Error details:', response.error?.details)
+
+        // Try to get the most specific error message
+        const errorMessage = response.error?.message ||
+          response.error?.details?.detail ||
+          'Failed to create quarterly prediction'
+
+        console.log('❌ Using error message:', errorMessage)
+
+        const error = new Error(errorMessage)
+          // Preserve the exact API error structure - use message first as it contains the formatted detail
+          ; (error as any).response = {
+            data: {
+              detail: errorMessage
+            },
+            status: response.error?.code || 400
+          }
+        console.log('❌ Throwing quarterly error with structure:', (error as any).response)
+        throw error
+      }
+
+      console.log('✅ Quarterly prediction API call successful')
       return { response, tempId: `temp-${Date.now()}` }
     },
     onSuccess: ({ response, tempId }) => {
+      // Ensure we have valid response data
+      if (!response?.data) {
+        console.error('No data in response:', response)
+        return
+      }
+
       const prediction = response.data?.prediction || response.data
+
+      // Ensure prediction object exists and has required fields
+      if (!prediction || typeof prediction !== 'object') {
+        console.error('Invalid prediction data:', prediction)
+        return
+      }
 
       const realPrediction = {
         ...prediction,
-        default_probability: prediction.ensemble_probability || prediction.logistic_probability || prediction.gbm_probability || 0,
-        risk_category: prediction.risk_level,
-        reporting_year: prediction.reporting_year,
+        default_probability: prediction?.ensemble_probability || prediction?.logistic_probability || prediction?.gbm_probability || 0,
+        risk_category: prediction?.risk_level,
+        reporting_year: prediction?.reporting_year,
         financial_ratios: {
-          ltdtc: prediction.long_term_debt_to_total_capital,
-          sga: prediction.sga_margin,
-          roc: prediction.return_on_capital
+          ltdtc: prediction?.long_term_debt_to_total_capital || 0,
+          sga: prediction?.sga_margin || 0,
+          roc: prediction?.return_on_capital || 0
         }
       }
 
@@ -105,26 +205,46 @@ export function useCreatePredictionMutations() {
       console.log('✅ Quarterly prediction created successfully and added to store')
 
       return {
-        company: prediction.company_name,
-        symbol: prediction.company_symbol,
-        sector: prediction.sector || 'N/A',
-        defaultRate: `${((prediction.ensemble_probability || prediction.logistic_probability || prediction.gbm_probability || 0) * 100).toFixed(2)}%`,
-        riskLevel: prediction.risk_level || prediction.risk_category || 'MEDIUM',
-        modelConfidence: `${((prediction.confidence || 0) * 100).toFixed(1)}%`,
-        financialRatios: prediction.financial_ratios || {},
-        reportingPeriod: `${prediction.reporting_quarter} ${prediction.reporting_year}`,
-        marketCap: `$${prediction.market_cap || 0}M`
+        company: prediction?.company_name || 'Unknown',
+        symbol: prediction?.company_symbol || 'N/A',
+        sector: prediction?.sector || 'N/A',
+        defaultRate: `${((prediction?.ensemble_probability || prediction?.logistic_probability || prediction?.gbm_probability || 0) * 100).toFixed(2)}%`,
+        riskLevel: prediction?.risk_level || prediction?.risk_category || 'MEDIUM',
+        modelConfidence: `${((prediction?.confidence || 0) * 100).toFixed(1)}%`,
+        financialRatios: prediction?.financial_ratios || {},
+        reportingPeriod: `${prediction?.reporting_quarter || 'Unknown'} ${prediction?.reporting_year || 'Unknown'}`,
+        marketCap: `$${prediction?.market_cap || 0}M`
       }
     },
     onError: (error: any) => {
       console.error('Quarterly analysis failed:', error)
+      console.error('Full error object:', JSON.stringify(error, null, 2))
+      console.error('Error response:', error?.response)
+      console.error('Error response data:', error?.response?.data)
+      console.error('Error message detail:', error?.response?.data?.detail)
 
-      // Format user-friendly error messages
-      const formattedErrorMessage = formatApiError(error, 'Failed to create quarterly prediction')
+      // Get the API error message directly
+      let errorMessage = 'Failed to create quarterly prediction'
 
-      toast.error(formattedErrorMessage, {
-        description: 'Please try again'
-      })
+      if (error?.response?.data?.detail) {
+        errorMessage = error.response.data.detail
+        console.log('Using API detail message:', errorMessage)
+
+        // Only format if it contains "already exists" - make it user friendly
+        if (errorMessage.includes('already exists')) {
+          errorMessage = errorMessage
+            .replace('system scope', 'your predictions')
+            .replace('global scope', 'your predictions')
+            .replace('organization scope', 'your predictions')
+          console.log('Formatted message:', errorMessage)
+        }
+      } else if (error?.message) {
+        errorMessage = error.message
+        console.log('Using error message:', errorMessage)
+      }
+
+      console.log('Final toast message:', errorMessage)
+      toast.error(errorMessage)
     }
   })
 

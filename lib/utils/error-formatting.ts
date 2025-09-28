@@ -8,24 +8,29 @@ export function formatPredictionErrorMessage(rawMessage: string): string {
   // Handle duplicate prediction errors (system, global, and organization scope)
   if (rawMessage.includes('already exists in your') && (rawMessage.includes('system scope') || rawMessage.includes('global scope') || rawMessage.includes('organization scope'))) {
     // Pattern for annual predictions: "Annual prediction for AAPL in 2024 Q4 already exists in your [system/global/organization] scope"
-    const annualMatch = rawMessage.match(/Annual prediction for (\w+) in (\d+) Q(\d+) already exists in your (?:system|global|organization) scope/)
+    const annualMatch = rawMessage.match(/Annual prediction for ([A-Z]+) in (\d{4}) Q(\d) already exists in your (?:system|global|organization) scope/)
     if (annualMatch) {
       const [, symbol, year, quarter] = annualMatch
       return `An annual prediction for ${symbol} already exists for ${year} Q${quarter}. Please try a different company or time period.`
     }
 
     // Pattern for quarterly predictions: "Quarterly prediction for AAPL in 2024 Q4 already exists in your [system/global/organization] scope"
-    const quarterlyMatch = rawMessage.match(/Quarterly prediction for (\w+) in (\d+) Q(\d+) already exists in your (?:system|global|organization) scope/)
+    const quarterlyMatch = rawMessage.match(/Quarterly prediction for ([A-Z]+) in (\d{4}) Q(\d) already exists in your (?:system|global|organization) scope/)
     if (quarterlyMatch) {
       const [, symbol, year, quarter] = quarterlyMatch
       return `A quarterly prediction for ${symbol} already exists for ${year} Q${quarter}. Please try a different company or time period.`
     }
 
     // Fallback for other duplicate prediction patterns
-    const generalMatch = rawMessage.match(/(\w+) prediction for (\w+) .* already exists/)
+    const generalMatch = rawMessage.match(/(\w+) prediction for ([A-Z]+) .* already exists/)
     if (generalMatch) {
       const [, type, symbol] = generalMatch
       return `A ${type.toLowerCase()} prediction for ${symbol} already exists. Please try a different company or time period.`
+    }
+
+    // Even more generic fallback for "already exists" messages
+    if (rawMessage.includes('already exists')) {
+      return 'This prediction already exists. Please try a different company or time period.'
     }
   }
 

@@ -18,6 +18,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { CompanyAnalysisTable } from './company-analysis-table'
+import { SECTORS } from '@/lib/config/sectors'
 import {
   TrendingUp,
   TrendingDown,
@@ -89,7 +90,7 @@ export function DashboardOverview() {
       // Invalidate dashboard stats cache to trigger refresh
       const statsStore = useDashboardStatsStore.getState()
       statsStore.invalidateCache()
-      
+
       // No need to manually fetch predictions - the store already has the new data
       // from the mutation's addPrediction call
     }
@@ -106,7 +107,7 @@ export function DashboardOverview() {
 
     if (typeof window !== 'undefined') {
       window.addEventListener('prediction-created', handlePredictionCreated as EventListener)
-      window.addEventListener('predictions-updated', handlePredictionsUpdated as EventListener)  
+      window.addEventListener('predictions-updated', handlePredictionsUpdated as EventListener)
       window.addEventListener('navigate-to-dashboard', handleNavigateToDashboard as EventListener)
 
       return () => {
@@ -459,11 +460,11 @@ export function DashboardOverview() {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All Sectors</SelectItem>
-                <SelectItem value="technology">Technology</SelectItem>
-                <SelectItem value="healthcare">Health Care</SelectItem>
-                <SelectItem value="financials">Financials</SelectItem>
-                <SelectItem value="energy">Energy</SelectItem>
-                <SelectItem value="consumer">Consumer Discretionary</SelectItem>
+                {SECTORS.map((sector) => (
+                  <SelectItem key={sector} value={sector.toLowerCase().replace(/\s+/g, '-')}>
+                    {sector}
+                  </SelectItem>
+                ))}
               </SelectContent>
             </Select>
             <Select value={selectedRiskLevel} onValueChange={setSelectedRiskLevel} disabled={isLoading}>

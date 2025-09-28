@@ -277,7 +277,7 @@ export function CompanyAnalysisPanel({
                         <Info className="w-4 h-4 text-gray-400" />
                         <span className="text-sm text-gray-700 font-bricolage">EBIT/Interest Expense</span>
                       </div>
-                      <span className="font-medium text-green-600 font-bricolage">
+                      <span className="font-semibold text-gray-900 dark:text-white font-bricolage">
                         {currentAnnualPrediction.ebit_to_interest_expense?.toFixed(2) || '15.80'}
                       </span>
                     </div>
@@ -289,7 +289,7 @@ export function CompanyAnalysisPanel({
                         <Info className="w-4 h-4 text-gray-400" />
                         <span className="text-sm text-gray-700 font-bricolage">Total Debt/EBITDA</span>
                       </div>
-                      <span className="font-medium text-purple-600 font-bricolage">
+                      <span className="font-semibold text-gray-900 dark:text-white font-bricolage">
                         {currentAnnualPrediction.total_debt_to_ebitda?.toFixed(2) || '2.10'}
                       </span>
                     </div>
@@ -301,7 +301,7 @@ export function CompanyAnalysisPanel({
                         <Info className="w-4 h-4 text-gray-400" />
                         <span className="text-sm text-gray-700 font-bricolage">Return on Assets</span>
                       </div>
-                      <span className="font-medium text-gray-900 dark:text-white font-bricolage">
+                      <span className="font-semibold text-gray-900 dark:text-white font-bricolage">
                         {(currentAnnualPrediction.return_on_assets || 1.2).toFixed(2)}%
                       </span>
                     </div>
@@ -313,7 +313,7 @@ export function CompanyAnalysisPanel({
                         <Info className="w-4 h-4 text-gray-400" />
                         <span className="text-sm text-gray-700 font-bricolage">Net Income Margin</span>
                       </div>
-                      <span className="font-medium text-gray-900 dark:text-white font-bricolage">
+                      <span className="font-semibold text-gray-900 dark:text-white font-bricolage">
                         {(currentAnnualPrediction.net_income_margin || 1.8).toFixed(2)}%
                       </span>
                     </div>
@@ -325,7 +325,7 @@ export function CompanyAnalysisPanel({
                         <Info className="w-4 h-4 text-gray-400" />
                         <span className="text-sm text-gray-700 font-bricolage">Long-term Debt/Total Capital</span>
                       </div>
-                      <span className="font-medium text-orange-600 font-bricolage">
+                      <span className="font-semibold text-gray-900 dark:text-white font-bricolage">
                         {(currentAnnualPrediction.long_term_debt_to_total_capital || 2.6).toFixed(2)}%
                       </span>
                     </div>
@@ -422,7 +422,7 @@ export function CompanyAnalysisPanel({
                         <Info className="w-4 h-4 text-gray-400" />
                         <span className="text-sm text-gray-700 font-bricolage">Total Debt/EBITDA</span>
                       </div>
-                      <span className="font-medium text-purple-600 font-bricolage">
+                      <span className="font-semibold text-gray-900 dark:text-white font-bricolage">
                         {currentQuarterlyPrediction.total_debt_to_ebitda?.toFixed(2) || '2.10'}
                       </span>
                     </div>
@@ -434,7 +434,7 @@ export function CompanyAnalysisPanel({
                         <Info className="w-4 h-4 text-gray-400" />
                         <span className="text-sm text-gray-700 font-bricolage">SG&A Magarin</span>
                       </div>
-                      <span className="font-medium text-gray-900 dark:text-white font-bricolage">
+                      <span className="font-semibold text-gray-900 dark:text-white font-bricolage">
                         {(currentQuarterlyPrediction.sga_margin || 1.2).toFixed(2)}%
                       </span>
                     </div>
@@ -446,7 +446,7 @@ export function CompanyAnalysisPanel({
                         <Info className="w-4 h-4 text-gray-400" />
                         <span className="text-sm text-gray-700 font-bricolage">Return on Capital</span>
                       </div>
-                      <span className="font-medium text-gray-900 dark:text-white font-bricolage">
+                      <span className="font-semibold text-gray-900 dark:text-white font-bricolage">
                         {(currentQuarterlyPrediction.return_on_capital || 1.8).toFixed(2)}%
                       </span>
                     </div>
@@ -458,7 +458,7 @@ export function CompanyAnalysisPanel({
                         <Info className="w-4 h-4 text-gray-400" />
                         <span className="text-sm text-gray-700 font-bricolage">Long-term Debt/Total Capital</span>
                       </div>
-                      <span className="font-medium text-orange-600 font-bricolage">
+                      <span className="font-semibold text-gray-900 dark:text-white font-bricolage">
                         {(currentQuarterlyPrediction.long_term_debt_to_total_capital || 2.6).toFixed(2)}%
                       </span>
                     </div>

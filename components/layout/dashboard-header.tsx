@@ -18,6 +18,7 @@ import { Badge } from '@/components/ui/badge'
 
 import { useAuthStore } from '@/lib/stores/auth-store'
 import { useManualTokenRefresh } from '@/lib/hooks/use-token-refresh'
+import Image from 'next/image'
 
 export function DashboardHeader() {
   const router = useRouter()
@@ -111,25 +112,26 @@ export function DashboardHeader() {
   }
 
   return (
-    <header className="bg-white my-3">
-      <div className="max-w-7xl mx-auto">
-        <div className="flex items-center justify-between h-16 px-4 sm:px-6 lg:px-8">
+    <header className="bg-white border-b border-gray-200">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        {/* Top row: Logo, Brand Name, and User Profile */}
+        <div className="flex items-center justify-between py-4">
           <div className="flex items-center space-x-3">
-            <div className="w-8 h-8 bg-black rounded flex items-center justify-center">
-              <TrendingUp className="w-5 h-5 text-white" />
+            <div className="w-12 h-12 rounded flex items-center justify-center">
+              <Image src="/logo.svg" alt="AccuNode Logo" width={40} height={40} />
             </div>
             <div>
-              <h1 className="text-xl font-bricolage font-bold text-gray-900 dark:text-white">
+              <h1 className="text-xl font-bricolage font-bold text-gray-900">
                 Credit Risk Assessment Platform
               </h1>
-              <p className="text-sm text-gray-600 dark:text-gray-400">
+              <p className="text-sm text-gray-600">
                 Machine Learning-powered default rate analysis for S&P 500 and custom companies
               </p>
             </div>
             {isManualRefreshing && (
               <div className="flex items-center space-x-2 text-sm text-blue-600 ml-4">
                 <RefreshCw className="h-4 w-4 animate-spin" />
-                <span>Refreshing session...</span>
+                <span>Refreshing...</span>
               </div>
             )}
           </div>
@@ -137,7 +139,7 @@ export function DashboardHeader() {
           <div className="flex items-center space-x-4">
             {/* User Organization/Tenant Info next to profile */}
             {shouldShowOrgInfo() && (
-              <div className="flex items-center space-x-2 px-3 py-1 bg-gray-100 rounded-md">
+              <div className="flex items-center space-x-2 px-3 py-1 bg-gray-50 rounded-md">
                 <Building2 className="h-4 w-4 text-gray-600" />
                 <span className="text-sm font-medium text-gray-800">{getOrganizationDisplayName()}</span>
               </div>

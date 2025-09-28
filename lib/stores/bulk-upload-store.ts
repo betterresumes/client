@@ -119,8 +119,26 @@ export const useBulkUploadStore = create<BulkUploadStore>()(
           })
 
           if (!response.success || !response.data) {
-            const errorMsg = typeof response.error === 'string' ? response.error : 'Upload failed'
-            console.error('❌ Bulk upload failed:', errorMsg)
+            // Extract detailed error message from API response
+            let errorMsg = 'Upload failed'
+
+            if (response.error) {
+              // Check for specific API error details
+              if (typeof response.error === 'object') {
+                errorMsg = response.error.message ||
+                  response.error.details?.detail ||
+                  response.error.details?.message ||
+                  (typeof response.error.details === 'string' ? response.error.details : 'Upload failed')
+              } else if (typeof response.error === 'string') {
+                errorMsg = response.error
+              }
+            }
+
+            console.error('❌ Bulk upload failed:', {
+              originalError: response.error,
+              extractedMessage: errorMsg,
+              fullResponse: response
+            })
 
             // Remove temporary job and show error
             set(state => ({
@@ -222,14 +240,34 @@ export const useBulkUploadStore = create<BulkUploadStore>()(
         } catch (error: any) {
           console.error('❌ Bulk upload failed:', error)
 
+          // Extract detailed error message
+          let errorMsg = 'Upload failed'
+
+          if (error.message) {
+            errorMsg = error.message
+          } else if (error.response?.data?.detail) {
+            errorMsg = error.response.data.detail
+          } else if (error.response?.data?.message) {
+            errorMsg = error.response.data.message
+          } else if (typeof error === 'string') {
+            errorMsg = error
+          }
+
           // Remove temporary job on error
           set(state => ({
             jobs: state.jobs.filter(j => j.id !== tempJobId),
             activeJob: null,
             isUploading: false,
-            error: error.message || 'Upload failed'
+            error: errorMsg
           }))
-          return null
+
+          // Throw error with detailed message for handleBulkUpload to catch
+          const detailedError = new Error(errorMsg)
+          if (error.response?.data) {
+            (detailedError as any).response = error.response
+              (detailedError as any).detail = error.response.data.detail
+          }
+          throw detailedError
         }
       },
 

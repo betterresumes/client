@@ -175,9 +175,9 @@ export function CompanyAnalysisTable({
         item.company_symbol?.toLowerCase().includes(searchTerm.toLowerCase()) ||
         item.company_name?.toLowerCase().includes(searchTerm.toLowerCase())
 
-      // Sector filter
+      // Sector filter - handle normalized sector values (e.g., "financial-services" -> "Financial Services")
       const sectorMatch = selectedSector === 'all' ||
-        item.sector?.toLowerCase() === selectedSector.toLowerCase()
+        item.sector?.toLowerCase().replace(/\s+/g, '-') === selectedSector.toLowerCase()
 
       // Risk level filter
       const riskMatch = selectedRiskLevel === 'all' ||

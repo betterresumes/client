@@ -50,7 +50,9 @@ class ApiClient {
           }
         }
 
-        return Promise.reject(this.formatError(error))
+        // For non-401 errors, let the API methods handle the formatting
+        // This allows proper error handling in mutations
+        return Promise.reject(error)
       }
     )
   }

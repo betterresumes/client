@@ -29,6 +29,7 @@ export interface UserUpdate {
   organization_id?: string
   tenant_id?: string
   is_active?: boolean
+  sector?: string
 }
 
 export type UpdateProfileRequest = UserUpdate
@@ -57,6 +58,7 @@ export interface UserResponse {
   is_active: boolean
   created_at: string
   last_login?: string
+  sector?: string
 
   organization?: {
     id: string
@@ -96,6 +98,7 @@ export interface JoinOrganizationResponse {
 export interface UserUpdate {
   username?: string
   full_name?: string
+  sector?: string
 }
 
 export interface UserRoleUpdate {
