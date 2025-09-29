@@ -51,6 +51,8 @@ interface CompanyAnalysisTableProps {
   searchTerm: string
   selectedSector: string
   selectedRiskLevel: string
+  selectedYear: string
+  customYear: string
   isLoading: boolean
   onRefetch: () => void
 }
@@ -64,6 +66,8 @@ export function CompanyAnalysisTable({
   searchTerm,
   selectedSector,
   selectedRiskLevel,
+  selectedYear,
+  customYear,
   isLoading,
   onRefetch
 }: CompanyAnalysisTableProps) {
@@ -122,41 +126,15 @@ export function CompanyAnalysisTable({
 
   const { navigateToCompanyDetails, navigateToCustomAnalysisWithData, setActiveTab } = useDashboardStore()
 
-  // Smart pagination state - connects to API when needed  
+  // Simple pagination state - all data loaded upfront
   const [pageSize, setPageSize] = useState(10)
   const [sortField, setSortField] = useState<SortField>('company')
   const [sortDirection, setSortDirection] = useState<SortDirection>('asc')
-  const [currentPage, setCurrentPage] = useState(1)  // Use local state for pagination
-  const [isLoadingBatch, setIsLoadingBatch] = useState(false) // Prevent simultaneous API calls
-  const [loadedBatches, setLoadedBatches] = useState<Set<number>>(new Set()) // Track which batches have been loaded
+  const [currentPage, setCurrentPage] = useState(1)
 
-  // Get total predictions from dashboard stats for smart pagination - FIXED for annual/quarterly
-  const getTotalPredictionsFromStats = (predictionType: 'annual' | 'quarterly') => {
-    if (!dashboardStats) return data.length
-
-    // Get the appropriate total based on prediction type and user scope
-    if (activeDataFilter === 'system' && dashboardStats.platform_statistics) {
-      return predictionType === 'annual'
-        ? dashboardStats.platform_statistics.annual_predictions || data.length
-        : dashboardStats.platform_statistics.quarterly_predictions || data.length
-    } else if (activeDataFilter === 'user' && dashboardStats.user_dashboard) {
-      return predictionType === 'annual'
-        ? dashboardStats.user_dashboard.annual_predictions || data.length
-        : dashboardStats.user_dashboard.quarterly_predictions || data.length
-    }
-
-    // Fallback to main dashboard stats
-    return predictionType === 'annual'
-      ? dashboardStats.annual_predictions || data.length
-      : dashboardStats.quarterly_predictions || data.length
-  }
-
-  const totalPredictionsInDB = getTotalPredictionsFromStats(type)
-
-  // FIXED: Use filtered predictions instead of raw store data
-  const storeData = getFilteredPredictions(type) // Use filtered data instead of raw store data
-  const actualData = storeData || data // Fallback to prop data if store is empty
-  const totalLoadedPredictions = actualData.length
+  // FIXED: Use filtered predictions from store - all data is now loaded upfront
+  const storeData = getFilteredPredictions(type)
+  const actualData = storeData.length > 0 ? storeData : data // Use store data if available, fallback to props
 
   console.log(`🔧 FIXED - Using filtered predictions:`, {
     type,
@@ -164,7 +142,7 @@ export function CompanyAnalysisTable({
     propDataLength: data.length,
     filteredDataLength: storeData.length,
     actualDataUsed: actualData.length,
-    totalInDB: totalPredictionsInDB
+    message: 'All data loaded upfront - no batch loading needed'
   })
 
   // Filter and sort data (client-side) - now using store data!
@@ -183,7 +161,21 @@ export function CompanyAnalysisTable({
       const riskMatch = selectedRiskLevel === 'all' ||
         (item.risk_level || item.risk_category)?.toLowerCase() === selectedRiskLevel.toLowerCase()
 
-      return searchMatch && sectorMatch && riskMatch
+      // Year filter
+      const getItemYear = (item: any) => {
+        if (type === 'annual') {
+          return item.reporting_year?.toString()
+        } else {
+          // For quarterly, extract year from reporting_year or created_at
+          return item.reporting_year?.toString() || new Date(item.created_at).getFullYear().toString()
+        }
+      }
+
+      const yearMatch = selectedYear === 'all' ||
+        (selectedYear === 'custom' && customYear && getItemYear(item) === customYear) ||
+        (selectedYear !== 'custom' && getItemYear(item) === selectedYear)
+
+      return searchMatch && sectorMatch && riskMatch && yearMatch
     })
 
     // Sort data
@@ -233,7 +225,7 @@ export function CompanyAnalysisTable({
     })
 
     return filtered
-  }, [actualData, searchTerm, selectedSector, selectedRiskLevel, sortField, sortDirection, getPredictionProbability, formatPredictionDate, formatMarketCap])
+  }, [actualData, searchTerm, selectedSector, selectedRiskLevel, selectedYear, customYear, sortField, sortDirection, getPredictionProbability, formatPredictionDate, formatMarketCap, type])
 
   // Get paginated data - only show items for current page
   const paginatedData = useMemo(() => {
@@ -242,23 +234,17 @@ export function CompanyAnalysisTable({
     return filteredAndSortedData.slice(startIndex, endIndex)
   }, [filteredAndSortedData, currentPage, pageSize])
 
-  // Smart pagination - calculate total pages from database total, not just loaded data
-  const realTotalPages = Math.ceil(totalPredictionsInDB / pageSize) // Based on actual DB total
-  const loadedPages = Math.ceil(totalLoadedPredictions / pageSize) // Based on loaded data
-  const totalPages = Math.max(realTotalPages, loadedPages) // Use the higher value
+  // Simple pagination - calculate total pages based on filtered results (all data loaded)
+  const totalPages = Math.ceil(filteredAndSortedData.length / pageSize)
 
-  console.log(`📊 Smart Pagination for ${type}:`, {
-    totalLoadedPredictions,
-    totalPredictionsInDB,
+  console.log(`📊 Simple Pagination for ${type}:`, {
+    allDataLength: actualData.length,
     filteredDataLength: filteredAndSortedData.length,
-    realTotalPages,
-    loadedPages,
     totalPages,
     currentPage,
     pageSize,
-    'PAGINATION_SOURCE': 'local calculation',
-    'STORE_CURRENT_PAGE': pagination?.currentPage,
-    'STORE_TOTAL_PAGES': pagination?.totalPages
+    'PAGINATION_SOURCE': 'client-side filtering of all loaded data',
+    'FILTER_STATES': { selectedYear, customYear, searchTerm, selectedSector, selectedRiskLevel }
   })
 
   // Use paginated data for display
@@ -271,42 +257,9 @@ export function CompanyAnalysisTable({
   // Reset to first page when filters change
   useEffect(() => {
     setCurrentPage(1) // Use local state
-  }, [searchTerm, selectedSector, selectedRiskLevel])
+  }, [searchTerm, selectedSector, selectedRiskLevel, selectedYear, customYear])
 
-  // Simple batch loading - trigger only at pages 6, 16, 26, etc.
-  useEffect(() => {
-    // Don't trigger if already loading or fetching  
-    if (isLoadingBatch || isLoading || isFetching) return
-
-    // Only trigger at specific threshold pages (6, 16, 26, etc.)
-    const isTriggerPage = currentPage % 10 === 6
-    if (!isTriggerPage) return
-
-    const currentBatch = Math.floor((currentPage - 1) / 10) + 1
-
-    // Don't load if this batch has already been loaded
-    if (loadedBatches.has(currentBatch)) {
-      console.log(`📦 Batch ${currentBatch} already loaded for ${type} - skipping`)
-      return
-    }
-
-    const currentlyLoaded = actualData.length
-    const totalAvailable = totalPredictionsInDB
-    const expectedDataForBatch = currentBatch * 100
-    const needsThisBatch = currentlyLoaded < expectedDataForBatch && currentlyLoaded < totalAvailable
-
-    if (needsThisBatch) {
-      console.log(`🚀 BATCH ${currentBatch}: Loading 100 ${type} predictions at page ${currentPage}`)
-      setIsLoadingBatch(true)
-
-      // Mark this batch as being loaded
-      setLoadedBatches(prev => new Set([...prev, currentBatch]))
-
-      // Use fetchPredictions to refresh data
-      fetchPredictions(true)
-        .finally(() => setIsLoadingBatch(false))
-    }
-  }, [currentPage, type, totalPredictionsInDB, isLoadingBatch, isLoading, isFetching, fetchPredictions, loadedBatches])
+  // No batch loading needed - all data is loaded upfront
 
   const handleSort = (field: SortField) => {
     if (sortField === field) {
@@ -317,16 +270,12 @@ export function CompanyAnalysisTable({
     }
   }
 
-  // Smart page change handler - simplified to just change pages
+  // Simple page change handler - all data already loaded
   const handlePageChange = (page: number) => {
-    if (page < 1 || page > totalPages || isLoadingBatch) return
+    if (page < 1 || page > totalPages) return
 
     console.log(`📄 Page change for ${type}: ${currentPage} → ${page}`)
-
-    // Update local pagination state
     setCurrentPage(page)
-
-    // Note: Batch loading is handled by the threshold useEffect (pages 6, 16, 26, etc.)
   }
 
   // Keyboard navigation
@@ -362,14 +311,14 @@ export function CompanyAnalysisTable({
     const maxVisiblePages = 7
     const halfVisible = Math.floor(maxVisiblePages / 2)
 
-    if (pagination.totalPages <= maxVisiblePages) {
+    if (totalPages <= maxVisiblePages) {
       // Show all pages if total is small
-      for (let i = 1; i <= pagination.totalPages; i++) {
+      for (let i = 1; i <= totalPages; i++) {
         pages.push(i)
       }
     } else {
-      let start = Math.max(1, pagination.currentPage - halfVisible)
-      let end = Math.min(pagination.totalPages, start + maxVisiblePages - 1)
+      let start = Math.max(1, currentPage - halfVisible)
+      let end = Math.min(totalPages, start + maxVisiblePages - 1)
 
       // Adjust start if we're near the end
       if (end - start < maxVisiblePages - 1) {
@@ -388,9 +337,9 @@ export function CompanyAnalysisTable({
       }
 
       // Add ellipsis and last page if needed
-      if (end < pagination.totalPages) {
-        if (end < pagination.totalPages - 1) pages.push('...')
-        pages.push(pagination.totalPages)
+      if (end < totalPages) {
+        if (end < totalPages - 1) pages.push('...')
+        pages.push(totalPages)
       }
     }
 
@@ -456,9 +405,7 @@ export function CompanyAnalysisTable({
             <p className="text-sm text-gray-600 dark:text-gray-400 font-bricolage">
               {isLoading
                 ? "Loading predictions..."
-                : totalLoadedPredictions < totalPredictionsInDB
-                  ? `${filteredAndSortedData.length} filtered from ${totalLoadedPredictions} loaded (${totalPredictionsInDB} total ${type} predictions)`
-                  : `${filteredAndSortedData.length} of ${totalLoadedPredictions} ${type} predictions`
+                : `${filteredAndSortedData.length} of ${actualData.length} ${type} predictions`
               }
             </p>
           </div>
@@ -535,7 +482,7 @@ export function CompanyAnalysisTable({
                         onClick={() => handleSort('reportingPeriod')}
                         className="h-auto p-0 font-semibold flex items-center space-x-1 group font-bricolage"
                       >
-                        <span>{type === 'annual' ? 'Period' : 'Quarter'}</span>
+                        <span>{type === 'annual' ? 'Year' : 'Quarter'}</span>
                         {getSortIcon('reportingPeriod')}
                       </Button>
                     )}
@@ -616,8 +563,8 @@ export function CompanyAnalysisTable({
                         </Badge>
                       </TableCell>
                       <TableCell>
-                        <Badge variant="outline" className="text-blue-600 font-bricolage text-xs">
-                          {formatPredictionDate(item)}
+                        <Badge variant="outline" className="text-black font-bricolage text-xs">
+                          {type === 'annual' ? (item.reporting_year || 'Unknown') : formatPredictionDate(item)}
                         </Badge>
                       </TableCell>
                       {/* <TableCell className="font-bricolage text-sm">
@@ -682,7 +629,7 @@ export function CompanyAnalysisTable({
             </Table>
           </div>
         ) : (
-          <div className="text-center py-8">
+          <div className="text-center py-8 border rounded-xl px-8">
             <div className="text-gray-500 mb-4">
               <BarChart3 className="h-12 w-12 mx-auto" />
             </div>
@@ -738,7 +685,7 @@ export function CompanyAnalysisTable({
                       console.log(`🎯 Clicking page ${page}, current: ${currentPage}`)
                       handlePageChange(page)
                     }}
-                    disabled={isLoadingBatch}
+                    disabled={false}
                     className="font-bricolage w-8 h-8 p-0"
                   >
                     {page}
@@ -752,10 +699,10 @@ export function CompanyAnalysisTable({
                     console.log(`🎯 Clicking Next, current: ${currentPage}, total: ${totalPages}`)
                     handlePageChange(currentPage + 1)
                   }}
-                  disabled={currentPage >= totalPages || isLoadingBatch}
+                  disabled={currentPage >= totalPages}
                   className="font-bricolage ml-2"
                 >
-                  {isLoadingBatch ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : null}
+
                   Next
                 </Button>
               </div>

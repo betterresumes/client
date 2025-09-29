@@ -85,6 +85,7 @@ if (typeof window !== 'undefined') {
   // Listen for prediction events that should invalidate dashboard stats
   const events = [
     'prediction-created',
+    'prediction-created-stay-here', // For custom analysis predictions
     'prediction-updated',
     'prediction-deleted',
     'predictions-updated'

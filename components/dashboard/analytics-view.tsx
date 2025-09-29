@@ -23,7 +23,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
-import { TrendingUp, PieChart as PieChartIcon, BarChart3, ChartScatter, RefreshCw } from 'lucide-react'
+import { TrendingUp, PieChart as PieChartIcon, BarChart3, ChartScatter, RefreshCw, AlertTriangle, Building2 } from 'lucide-react'
 import { CompanyAnalysisTable } from './company-analysis-table'
 
 export function AnalyticsView() {
@@ -77,7 +77,7 @@ export function AnalyticsView() {
       window.addEventListener('data-filter-changed', handleDataFilterChanged as EventListener)
       window.addEventListener('prediction-created', handlePredictionCreated as EventListener)
       window.addEventListener('predictions-updated', handlePredictionsUpdated as EventListener)
-      
+
       return () => {
         window.removeEventListener('data-filter-changed', handleDataFilterChanged as EventListener)
         window.removeEventListener('prediction-created', handlePredictionCreated as EventListener)
@@ -100,7 +100,7 @@ export function AnalyticsView() {
     })
     return filtered
   }, [getFilteredPredictions, forceRefresh, annualPredictions, systemAnnualPredictions, activeDataFilter])
-  
+
   const filteredQuarterlyPredictions = useMemo(() => {
     const filtered = getFilteredPredictions('quarterly')
     console.log('📊 Analytics - Quarterly predictions filtered:', {
@@ -147,6 +147,62 @@ export function AnalyticsView() {
     reportingYear?: string;
     confidence?: number;
   }
+
+  // Calculate Risk Insights
+  const riskInsights = useMemo(() => {
+    const allPredictions = [...filteredAnnualPredictions, ...filteredQuarterlyPredictions]
+
+    if (!allPredictions.length) {
+      return {
+        highRiskCompanies: [],
+        topPerformingCompanies: []
+      }
+    }
+
+    // High risk companies (only risk category is high/critical)
+    const highRiskCompanies = allPredictions
+      .filter((pred: any) => {
+        const riskCategory = (pred.risk_category || pred.risk_level || '').toLowerCase()
+        return riskCategory === 'high' || riskCategory === 'critical'
+      })
+      .sort((a: any, b: any) => {
+        const rateA = (a.default_probability || a.probability || 0) * 100
+        const rateB = (b.default_probability || b.probability || 0) * 100
+        return rateB - rateA // Descending order
+      })
+      .slice(0, 5)
+      .map((pred: any) => ({
+        company_symbol: pred.company_symbol,
+        company_name: pred.company_name,
+        default_probability: pred.default_probability || pred.probability || 0,
+        risk_category: pred.risk_category || pred.risk_level || 'High'
+      }))
+
+    // Top performing companies (lowest default rates with high confidence)
+    const topPerformingCompanies = allPredictions
+      .filter((pred: any) => {
+        const defaultRate = (pred.default_probability || pred.probability || 0) * 100
+        const confidence = pred.confidence || 0.9 // Default confidence if not available
+        return defaultRate < 2 && confidence > 0.8 // Low risk and high confidence
+      })
+      .sort((a: any, b: any) => {
+        const rateA = (a.default_probability || a.probability || 0) * 100
+        const rateB = (b.default_probability || b.probability || 0) * 100
+        return rateA - rateB // Ascending order (lowest first)
+      })
+      .slice(0, 5)
+      .map((pred: any) => ({
+        company_symbol: pred.company_symbol,
+        company_name: pred.company_name,
+        default_probability: pred.default_probability || pred.probability || 0,
+        confidence: pred.confidence || 0.9
+      }))
+
+    return {
+      highRiskCompanies,
+      topPerformingCompanies
+    }
+  }, [filteredAnnualPredictions, filteredQuarterlyPredictions, forceRefresh])
 
   const getAnalyticsData = (dataset: AnalyticsDataItem[]) => {
     if (!dataset.length) return {
@@ -634,6 +690,114 @@ export function AnalyticsView() {
               </ChartContainer>
             </CardContent>
           </Card>
+        </div>
+
+        {/* Risk Insights Section */}
+        <div className="space-y-6">
+          <div>
+            <h2 className="text-2xl font-bold text-gray-900 dark:text-white font-bricolage">
+              Risk Insights
+            </h2>
+            <p className="text-gray-600 dark:text-gray-400 mt-1 font-bricolage">
+              Deep dive into high-risk companies and top performers
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {/* High Risk S&P 500 Companies */}
+            <Card className="p-6">
+              <div className="flex items-center space-x-3 mb-4">
+                <AlertTriangle className="h-6 w-6 text-red-500" />
+                <h3 className="text-lg font-semibold text-gray-900 dark:text-white font-bricolage">
+                  High Risk S&P 500 Companies
+                </h3>
+              </div>
+
+              {riskInsights.highRiskCompanies.length > 0 ? (
+                <div className="space-y-4">
+                  {riskInsights.highRiskCompanies.map((company: any, index: number) => (
+                    <div key={index} className="flex items-center justify-between p-3 bg-red-50 dark:bg-red-900/20 rounded-lg">
+                      <div className="flex items-center space-x-3">
+                        <Building2 className="h-5 w-5 text-red-600" />
+                        <div>
+                          <div className="font-medium text-gray-900 dark:text-white font-bricolage">
+                            {company.company_symbol}
+                          </div>
+                          <div className="text-sm text-gray-600 dark:text-gray-400">
+                            {company.company_name}
+                          </div>
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <Badge className="bg-red-100 text-red-800">
+                          {((company.default_probability || 0) * 100).toFixed(2)}%
+                        </Badge>
+                        <div className="text-xs text-gray-500 mt-1">
+                          {company.risk_category}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="text-center py-8">
+                  <div className="text-gray-500 mb-2">
+                    <AlertTriangle className="h-12 w-12 mx-auto opacity-50" />
+                  </div>
+                  <p className="text-gray-600 dark:text-gray-400 font-bricolage">
+                    No high-risk companies found
+                  </p>
+                </div>
+              )}
+            </Card>
+
+            {/* Top Performing Companies */}
+            <Card className="p-6">
+              <div className="flex items-center space-x-3 mb-4">
+                <TrendingUp className="h-6 w-6 text-green-500" />
+                <h3 className="text-lg font-semibold text-gray-900 dark:text-white font-bricolage">
+                  Top Performing Companies
+                </h3>
+              </div>
+
+              {riskInsights.topPerformingCompanies.length > 0 ? (
+                <div className="space-y-4">
+                  {riskInsights.topPerformingCompanies.map((company: any, index: number) => (
+                    <div key={index} className="flex items-center justify-between p-3 bg-green-50 dark:bg-green-900/20 rounded-lg">
+                      <div className="flex items-center space-x-3">
+                        <Building2 className="h-5 w-5 text-green-600" />
+                        <div>
+                          <div className="font-medium text-gray-900 dark:text-white font-bricolage">
+                            {company.company_symbol}
+                          </div>
+                          <div className="text-sm text-gray-600 dark:text-gray-400">
+                            {company.company_name}
+                          </div>
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <Badge className="bg-green-100 text-green-800">
+                          {(company.default_probability * 100).toFixed(2)}%
+                        </Badge>
+                        <div className="text-xs text-gray-500 mt-1">
+                          {(company.confidence * 100).toFixed(1)}% confidence
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="text-center py-8">
+                  <div className="text-gray-500 mb-2">
+                    <TrendingUp className="h-12 w-12 mx-auto opacity-50" />
+                  </div>
+                  <p className="text-gray-600 dark:text-gray-400 font-bricolage">
+                    No top performing companies found
+                  </p>
+                </div>
+              )}
+            </Card>
+          </div>
         </div>
       </div>
     )

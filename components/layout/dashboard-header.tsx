@@ -112,16 +112,16 @@ export function DashboardHeader() {
   }
 
   return (
-    <header className="bg-white border-b border-gray-200">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+    <header className="bg-white">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 border-b">
         {/* Top row: Logo, Brand Name, and User Profile */}
         <div className="flex items-center justify-between py-4">
           <div className="flex items-center space-x-3">
-            <div className="w-12 h-12 rounded flex items-center justify-center">
-              <Image src="/logo.svg" alt="AccuNode Logo" width={40} height={40} />
+            <div className="w-16 h-16 rounded flex items-center justify-center">
+              <Image src="/logo.svg" alt="AccuNode Logo" width={50} height={50} />
             </div>
             <div>
-              <h1 className="text-xl font-bricolage font-bold text-gray-900">
+              <h1 className="text-3xl font-bricolage font-bold text-gray-900">
                 Credit Risk Assessment Platform
               </h1>
               <p className="text-sm text-gray-600">

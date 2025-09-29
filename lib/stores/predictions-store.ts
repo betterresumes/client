@@ -71,6 +71,7 @@ interface PredictionsState {
   isLoading: boolean
   error: string | null
   lastFetched: number | null
+  lastDataUpdated: number | null
   isInitialized: boolean
   isFetching: boolean
 
@@ -142,6 +143,7 @@ type PredictionsStore = PredictionsState & {
   getRiskBadgeColor: (riskLevel: string | undefined | null) => string
   formatPredictionDate: (prediction: Prediction) => string
   getFilteredPredictions: (type: 'annual' | 'quarterly') => Prediction[]
+  getLatestDataTimestamp: (predictions: Prediction[]) => number | null
 }
 
 export const usePredictionsStore = create<PredictionsStore>()(
@@ -164,6 +166,7 @@ export const usePredictionsStore = create<PredictionsStore>()(
         isLoading: false,
         error: null,
         lastFetched: null,
+        lastDataUpdated: null,
         isInitialized: false,
         isFetching: false,
         activeDataFilter: 'personal', // Initial filter (updated based on user role after login)
@@ -255,12 +258,12 @@ export const usePredictionsStore = create<PredictionsStore>()(
                 systemQuarterlyResponse
               ] = await Promise.all([
                 predictionsApi.annual.getSystemAnnualPredictions({
-                  page: systemAnnualPagination.currentPage,
-                  size: systemAnnualPagination.pageSize
+                  page: 1,
+                  size: 1000 // Fetch all data in one go
                 }),
                 predictionsApi.quarterly.getSystemQuarterlyPredictions({
-                  page: systemQuarterlyPagination.currentPage,
-                  size: systemQuarterlyPagination.pageSize
+                  page: 1,
+                  size: 1000 // Fetch all data in one go
                 })
               ])
 
@@ -321,6 +324,10 @@ export const usePredictionsStore = create<PredictionsStore>()(
                 probability: p.default_probability
               })))
 
+              // Calculate most recent data update timestamp
+              const allSystemData = [...transformedSystemAnnual, ...transformedSystemQuarterly]
+              const latestDataTimestamp = get().getLatestDataTimestamp(allSystemData)
+
               set({
                 // Super admin gets NO user data
                 annualPredictions: [],
@@ -331,6 +338,7 @@ export const usePredictionsStore = create<PredictionsStore>()(
                 isLoading: false,
                 error: null,
                 lastFetched: Date.now(),
+                lastDataUpdated: latestDataTimestamp,
                 isInitialized: true,
                 isFetching: false,
                 activeDataFilter: 'system', // Force system filter for super admin
@@ -368,21 +376,21 @@ export const usePredictionsStore = create<PredictionsStore>()(
               ] = await Promise.all([
                 // User role-based predictions (excludes system data)
                 predictionsApi.annual.getAnnualPredictions({
-                  page: annualPagination.currentPage,
-                  size: annualPagination.pageSize
+                  page: 1,
+                  size: 1000 // Fetch all data in one go
                 }),
                 predictionsApi.quarterly.getQuarterlyPredictions({
-                  page: quarterlyPagination.currentPage,
-                  size: quarterlyPagination.pageSize
+                  page: 1,
+                  size: 1000 // Fetch all data in one go
                 }),
                 // System predictions (platform-wide data)
                 predictionsApi.annual.getSystemAnnualPredictions({
-                  page: systemAnnualPagination.currentPage,
-                  size: systemAnnualPagination.pageSize
+                  page: 1,
+                  size: 1000 // Fetch all data in one go
                 }),
                 predictionsApi.quarterly.getSystemQuarterlyPredictions({
-                  page: systemQuarterlyPagination.currentPage,
-                  size: systemQuarterlyPagination.pageSize
+                  page: 1,
+                  size: 1000 // Fetch all data in one go
                 })
               ])
 
@@ -397,6 +405,10 @@ export const usePredictionsStore = create<PredictionsStore>()(
               // Set initial data filter based on user role
               const initialFilter = get().getDefaultFilterForUser(user)
 
+              // Calculate most recent data update timestamp from all loaded data
+              const allLoadedData = [...transformedUserAnnual, ...transformedUserQuarterly, ...transformedSystemAnnual, ...transformedSystemQuarterly]
+              const latestDataTimestamp = get().getLatestDataTimestamp(allLoadedData)
+
               set({
                 annualPredictions: transformedUserAnnual,
                 quarterlyPredictions: transformedUserQuarterly,
@@ -405,6 +417,7 @@ export const usePredictionsStore = create<PredictionsStore>()(
                 isLoading: false,
                 error: null,
                 lastFetched: Date.now(),
+                lastDataUpdated: latestDataTimestamp,
                 isInitialized: true,
                 isFetching: false,
                 activeDataFilter: initialFilter,
@@ -701,28 +714,33 @@ export const usePredictionsStore = create<PredictionsStore>()(
         // Add prediction to the appropriate store when user creates new prediction
         addPrediction: (prediction: Prediction, type: 'annual' | 'quarterly') => {
           const state = get()
+          const now = Date.now()
           console.log(`➕ Adding new ${type} prediction to cache:`, prediction.company_symbol)
 
           if (prediction.organization_access === 'system') {
             // Add to system predictions
             if (type === 'annual') {
               set({
-                systemAnnualPredictions: [prediction, ...state.systemAnnualPredictions]
+                systemAnnualPredictions: [prediction, ...state.systemAnnualPredictions],
+                lastDataUpdated: now
               })
             } else {
               set({
-                systemQuarterlyPredictions: [prediction, ...state.systemQuarterlyPredictions]
+                systemQuarterlyPredictions: [prediction, ...state.systemQuarterlyPredictions],
+                lastDataUpdated: now
               })
             }
           } else {
             // Add to user predictions
             if (type === 'annual') {
               set({
-                annualPredictions: [prediction, ...state.annualPredictions]
+                annualPredictions: [prediction, ...state.annualPredictions],
+                lastDataUpdated: now
               })
             } else {
               set({
-                quarterlyPredictions: [prediction, ...state.quarterlyPredictions]
+                quarterlyPredictions: [prediction, ...state.quarterlyPredictions],
+                lastDataUpdated: now
               })
             }
           }
@@ -731,6 +749,7 @@ export const usePredictionsStore = create<PredictionsStore>()(
         // Replace prediction when editing
         replacePrediction: (prediction: Prediction, type: 'annual' | 'quarterly', tempId: string) => {
           const state = get()
+          const now = Date.now()
 
           if (prediction.organization_access === 'system') {
             // Replace in system predictions
@@ -738,13 +757,15 @@ export const usePredictionsStore = create<PredictionsStore>()(
               set({
                 systemAnnualPredictions: state.systemAnnualPredictions.map(p =>
                   p.id === tempId ? prediction : p
-                )
+                ),
+                lastDataUpdated: now
               })
             } else {
               set({
                 systemQuarterlyPredictions: state.systemQuarterlyPredictions.map(p =>
                   p.id === tempId ? prediction : p
-                )
+                ),
+                lastDataUpdated: now
               })
             }
           } else {
@@ -753,13 +774,15 @@ export const usePredictionsStore = create<PredictionsStore>()(
               set({
                 annualPredictions: state.annualPredictions.map(p =>
                   p.id === tempId ? prediction : p
-                )
+                ),
+                lastDataUpdated: now
               })
             } else {
               set({
                 quarterlyPredictions: state.quarterlyPredictions.map(p =>
                   p.id === tempId ? prediction : p
-                )
+                ),
+                lastDataUpdated: now
               })
             }
           }
@@ -811,6 +834,15 @@ export const usePredictionsStore = create<PredictionsStore>()(
             return `${prediction.reporting_quarter} ${prediction.reporting_year}`
           }
           return prediction.reporting_year || 'Unknown'
+        },
+
+        // Helper function to calculate the latest data timestamp from predictions
+        getLatestDataTimestamp: (allPredictions: Prediction[]) => {
+          if (!allPredictions || allPredictions.length === 0) return null
+          return allPredictions.reduce((latest, pred) => {
+            const predTimestamp = pred.created_at ? new Date(pred.created_at).getTime() : 0
+            return Math.max(latest, predTimestamp)
+          }, 0)
         },
 
         refetchPredictions: async () => {
@@ -980,6 +1012,7 @@ export const usePredictionsStore = create<PredictionsStore>()(
           isLoading: false,
           error: null,
           lastFetched: null,
+          lastDataUpdated: null,
           isInitialized: false,
           isFetching: false,
           activeDataFilter: 'personal', // Reset to initial state (updated on next login)

@@ -1,5 +1,10 @@
 import { apiClient } from './client'
 
+export interface LastUpdatedTimes {
+  user_last_updated?: string
+  system_last_updated?: string
+}
+
 export interface DashboardStats {
   scope: string
   data_scope: string
@@ -16,6 +21,7 @@ export interface DashboardStats {
   tenants_breakdown?: TenantBreakdown[]
   user_dashboard?: UserDashboardData
   platform_statistics?: PlatformStatistics
+  last_updated_times?: LastUpdatedTimes
 }
 
 export interface UserDashboardData {
@@ -30,6 +36,7 @@ export interface UserDashboardData {
   high_risk_companies: number
   sectors_covered: number
   data_scope: string
+  last_updated_times?: LastUpdatedTimes
 }
 
 export interface OrganizationBreakdown {
@@ -62,6 +69,7 @@ export interface PlatformStatistics {
   total_tenants: number
   annual_predictions: number
   quarterly_predictions: number
+  last_updated_times?: LastUpdatedTimes
 }
 
 export const dashboardApi = {
@@ -93,7 +101,8 @@ export const dashboardApi = {
       organizations_breakdown: data.organizations_breakdown || userDashboard.organizations_breakdown,
       tenants_breakdown: data.tenants_breakdown || userDashboard.tenants_breakdown,
       user_dashboard: data.user_dashboard,
-      platform_statistics: data.platform_statistics
+      platform_statistics: data.platform_statistics,
+      last_updated_times: data.last_updated_times || userDashboard.last_updated_times
     }
 
     return dashboardStats

@@ -38,53 +38,51 @@ export default function DashboardPage() {
   }, [isAuthenticated, user])
 
   return (
-    <div className="space-y-6">
-      {/* Header with tabs and org/tenant info */}
-      <div className="flex items-center justify-between">
-        <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1">
-          <TabsList className="inline-flex rounded-lg p-1 bg-gray-100 dark:bg-gray-800">
+    <div className="">
+      {/* Tabs taking full width */}
+      <div>
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+          <TabsList className="flex w-full rounded-lg p-1 bg-gray-100 dark:bg-gray-800">
             <TabsTrigger
               value="dashboard"
-              className="data-[state=active]:bg-white data-[state=active]:shadow-sm rounded-md flex items-center space-x-2 px-4 py-2"
+              className="data-[state=active]:bg-white data-[state=active]:shadow-sm rounded-md flex items-center space-x-2 px-4 py-2 flex-1"
             >
-              <span>Dashboard</span>
+              <span>Summary</span>
             </TabsTrigger>
             <TabsTrigger
               value="analytics"
-              className="data-[state=active]:bg-white data-[state=active]:shadow-sm rounded-md flex items-center space-x-2 px-4 py-2"
+              className="data-[state=active]:bg-white data-[state=active]:shadow-sm rounded-md flex items-center space-x-2 px-4 py-2 flex-1"
             >
               <span>Analytics</span>
             </TabsTrigger>
             <TabsTrigger
               value="company-details"
-              className="data-[state=active]:bg-white data-[state=active]:shadow-sm rounded-md flex items-center space-x-2 px-4 py-2"
+              className="data-[state=active]:bg-white data-[state=active]:shadow-sm rounded-md flex items-center space-x-2 px-4 py-2 flex-1"
             >
               <span>Company Details</span>
             </TabsTrigger>
             <TabsTrigger
               value="custom-analysis"
-              className="data-[state=active]:bg-white data-[state=active]:shadow-sm rounded-md flex items-center space-x-2 px-4 py-2"
+              className="data-[state=active]:bg-white data-[state=active]:shadow-sm rounded-md flex items-center space-x-2 px-4 py-2 flex-1"
             >
               <span>Custom Analysis</span>
             </TabsTrigger>
             <TabsTrigger
               value="risk-insights"
-              className="data-[state=active]:bg-white data-[state=active]:shadow-sm rounded-md flex items-center space-x-2 px-4 py-2"
+              className="data-[state=active]:bg-white data-[state=active]:shadow-sm rounded-md flex items-center space-x-2 px-4 py-2 flex-1"
             >
-              <span>Risk Insights</span>
+              <span>About</span>
             </TabsTrigger>
           </TabsList>
         </Tabs>
+      </div>
 
-        {/* Data Source Tabs and Controls on the right side */}
-        <div className="flex items-center space-x-3 ml-4">
+      {/* Data Source Tabs and Controls on the right side only */}
+      <div className="flex flex-col items-end mt-2">
+        <div className="flex items-center space-x-3">
           <DataSourceTabs />
           <RefreshButton />
         </div>
-      </div>
-
-      {/* Last updated info below header */}
-      <div className="flex justify-end">
         <LastUpdatedInfo />
       </div>
 
@@ -93,23 +91,23 @@ export default function DashboardPage() {
 
       {/* Tab Contents - All tabs enabled */}
       <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-        <TabsContent value="dashboard" className="mt-6 animate-in fade-in-0 duration-300">
+        <TabsContent value="dashboard" className="mt-1 animate-in fade-in-0 duration-300">
           <DashboardOverview />
         </TabsContent>
 
-        <TabsContent value="analytics" className="mt-6 animate-in fade-in-0 duration-300">
+        <TabsContent value="analytics" className="mt-1 animate-in fade-in-0 duration-300">
           <AnalyticsView />
         </TabsContent>
 
-        <TabsContent value="company-details" className="mt-6 animate-in fade-in-0 duration-300">
+        <TabsContent value="company-details" className="mt-1 animate-in fade-in-0 duration-300">
           <CompanyDetailsView />
         </TabsContent>
 
-        <TabsContent value="custom-analysis" className="mt-6 animate-in fade-in-0 duration-300">
+        <TabsContent value="custom-analysis" className="mt-1 animate-in fade-in-0 duration-300">
           <CustomAnalysisView />
         </TabsContent>
 
-        <TabsContent value="risk-insights" className="mt-6 animate-in fade-in-0 duration-300">
+        <TabsContent value="risk-insights" className="mt-1 animate-in fade-in-0 duration-300">
           <RiskInsightsView />
         </TabsContent>
       </Tabs>

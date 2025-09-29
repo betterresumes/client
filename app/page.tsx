@@ -84,11 +84,6 @@ export default function Home() {
                 <ArrowRight className="ml-2 h-5 w-5" />
               </Button>
             </Link>
-            <Link href="/login">
-              <Button size="lg" variant="outline" className="px-8 py-3 text-lg border-gray-300">
-                View Demo
-              </Button>
-            </Link>
           </div>
         </div>
       </section>

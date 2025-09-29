@@ -71,6 +71,8 @@ export function DashboardOverview() {
   const [searchTerm, setSearchTerm] = useState('')
   const [selectedSector, setSelectedSector] = useState('all')
   const [selectedRiskLevel, setSelectedRiskLevel] = useState('all')
+  const [selectedYear, setSelectedYear] = useState('all')
+  const [customYear, setCustomYear] = useState('')
   const [currentPage, setCurrentPage] = useState(1)
   const [activeAnalysisType, setActiveAnalysisType] = useState('annual')
   const [isClient, setIsClient] = useState(false)
@@ -230,8 +232,8 @@ export function DashboardOverview() {
       <div className="space-y-6 font-bricolage">
         {/* Header */}
         <div>
-          <h1 className="text-3xl font-bold text-gray-900 dark:text-white">
-            S&P 500 Default Rate Analysis
+          <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
+            Default Rate Analysis
           </h1>
           <p className="text-gray-600 dark:text-gray-400 mt-1">
             ML-powered default rate predictions based on annual financial ratios
@@ -263,8 +265,8 @@ export function DashboardOverview() {
     <div className="space-y-6 font-bricolage">
       {/* S&P 500 Default Rate Analysis Header */}
       <div>
-        <h1 className="text-3xl font-bold text-gray-900 dark:text-white">
-          S&P 500 Default Rate Analysis
+        <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
+          Default Rate Analysis
         </h1>
         <p className="text-gray-600 dark:text-gray-400 mt-1">
           ML-powered default rate predictions based on annual financial ratios
@@ -478,6 +480,37 @@ export function DashboardOverview() {
                 <SelectItem value="high">High Risk</SelectItem>
               </SelectContent>
             </Select>
+            <Select value={selectedYear} onValueChange={setSelectedYear} disabled={isLoading}>
+              <SelectTrigger className="w-[200px]">
+                <SelectValue placeholder="All Years" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Years</SelectItem>
+                {/* Recent years (6-8 years) */}
+                <SelectItem value="2024">2024</SelectItem>
+                <SelectItem value="2023">2023</SelectItem>
+                <SelectItem value="2022">2022</SelectItem>
+                <SelectItem value="2021">2021</SelectItem>
+                <SelectItem value="2020">2020</SelectItem>
+                <SelectItem value="2019">2019</SelectItem>
+                <SelectItem value="2018">2018</SelectItem>
+                <SelectItem value="2017">2017</SelectItem>
+                <SelectItem value="custom">Custom Year</SelectItem>
+              </SelectContent>
+            </Select>
+            {/* Custom Year Input */}
+            {selectedYear === 'custom' && (
+              <Input
+                placeholder="Enter year (e.g., 2016)"
+                value={customYear}
+                onChange={(e) => setCustomYear(e.target.value)}
+                className="w-[150px]"
+                disabled={isLoading}
+                type="number"
+                min="1900"
+                max="2030"
+              />
+            )}
           </div>
 
           {/* Annual/Quarterly Tabs moved here with gap */}
@@ -509,6 +542,8 @@ export function DashboardOverview() {
               searchTerm={searchTerm}
               selectedSector={selectedSector}
               selectedRiskLevel={selectedRiskLevel}
+              selectedYear={selectedYear}
+              customYear={customYear}
               isLoading={isLoading}
               onRefetch={refetchPredictions}
             />
@@ -521,6 +556,8 @@ export function DashboardOverview() {
               searchTerm={searchTerm}
               selectedSector={selectedSector}
               selectedRiskLevel={selectedRiskLevel}
+              selectedYear={selectedYear}
+              customYear={customYear}
               isLoading={isLoading}
               onRefetch={refetchPredictions}
             />

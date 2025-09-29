@@ -2,6 +2,7 @@
 
 import { useAuthStore } from '@/lib/stores/auth-store'
 import { usePredictionsStore } from '@/lib/stores/predictions-store'
+import { useDashboardStatsStore } from '@/lib/stores/dashboard-stats-store'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Button } from '@/components/ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -176,25 +177,66 @@ export function RefreshButton() {
 }
 
 export function LastUpdatedInfo() {
-  const { lastFetched } = usePredictionsStore()
+  const { activeDataFilter } = usePredictionsStore()
+  const { stats, fetchStats } = useDashboardStatsStore()
 
-  const formatLastUpdated = () => {
-    if (!lastFetched) return 'Never'
-    const now = new Date()
-    const updated = new Date(lastFetched)
-    const diffInMinutes = Math.floor((now.getTime() - updated.getTime()) / (1000 * 60))
+  // Fetch dashboard stats when data filter changes
+  useEffect(() => {
+    fetchStats()
+  }, [activeDataFilter, fetchStats])
 
-    if (diffInMinutes < 1) return 'Just now'
-    if (diffInMinutes < 60) return `${diffInMinutes}m ago`
-    const diffInHours = Math.floor(diffInMinutes / 60)
-    if (diffInHours < 24) return `${diffInHours}h ago`
-    const diffInDays = Math.floor(diffInHours / 24)
-    return `${diffInDays}d ago`
+  const formatLastDataUpdated = () => {
+    if (!stats) {
+      return 'Loading...'
+    }
+
+    let timestamp: string | undefined
+
+    // Based on activeDataFilter, choose the appropriate timestamp
+    switch (activeDataFilter) {
+      case 'personal':
+        // Use user_last_updated for personal data
+        timestamp = stats.user_dashboard?.last_updated_times?.user_last_updated ||
+          stats.last_updated_times?.user_last_updated
+        break
+      case 'organization':
+        // Use user_last_updated for organization data (same as personal for now)
+        timestamp = stats.user_dashboard?.last_updated_times?.user_last_updated ||
+          stats.last_updated_times?.user_last_updated
+        break
+      case 'system':
+        // Use system_last_updated for platform/system data
+        timestamp = stats.platform_statistics?.last_updated_times?.system_last_updated ||
+          stats.last_updated_times?.system_last_updated
+        break
+      default:
+        // Default to user timestamp
+        timestamp = stats.user_dashboard?.last_updated_times?.user_last_updated ||
+          stats.last_updated_times?.user_last_updated
+    }
+
+    if (!timestamp) {
+      return 'No timestamp available'
+    }
+
+    const updated = new Date(timestamp)
+
+    // Format as full date and time for better visibility with UTC indicator
+    const formattedTime = updated.toLocaleString('en-US', {
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit',
+      hour12: true
+    })
+
+    return `${formattedTime} UTC`
   }
 
   return (
-    <span className="text-xs text-gray-500">
-      Updated: {formatLastUpdated()}
+    <span className="text-xs text-gray-500 mt-2">
+      Data Updated: {formatLastDataUpdated()}
     </span>
   )
 }

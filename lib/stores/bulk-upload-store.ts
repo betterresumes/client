@@ -457,6 +457,13 @@ export const useBulkUploadStore = create<BulkUploadStore>()(
           }))
 
           console.log(`✅ Updated job status for ${jobId}:`, jobStatus.status)
+
+          // Dispatch events when job completes successfully
+          if (jobStatus.status === 'completed' && typeof window !== 'undefined') {
+            console.log(`🎯 Bulk upload job completed successfully, dispatching prediction events for ${jobId}`)
+            window.dispatchEvent(new CustomEvent('prediction-created'))
+            window.dispatchEvent(new CustomEvent('predictions-updated'))
+          }
         } catch (error) {
           console.error(`❌ Error refreshing job status for ${jobId}:`, error)
 

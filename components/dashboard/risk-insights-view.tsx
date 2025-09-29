@@ -108,67 +108,16 @@ export function RiskInsightsView() {
         <div className="flex items-center justify-between">
           <div>
             <h2 className="text-2xl font-bricolage font-bold text-gray-900 dark:text-white">
-              Risk Insights
+              About
             </h2>
             <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
-              Deep dive into risk patterns and model performance metrics
+              Deep dive into model performance metrics
             </p>
           </div>
           <Skeleton className="h-9 w-32" />
         </div>
 
-        {/* High Risk & Top Performing Companies Skeleton */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {/* High Risk Companies Skeleton */}
-          <Card className="p-6">
-            <div className="flex items-center space-x-3 mb-4">
-              <Skeleton className="h-6 w-6 rounded-full" />
-              <Skeleton className="h-6 w-48" />
-            </div>
-            <div className="space-y-4">
-              {[...Array(3)].map((_, index) => (
-                <div key={index} className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-800/50 rounded-lg">
-                  <div className="flex items-center space-x-3">
-                    <Skeleton className="h-5 w-5 rounded-full" />
-                    <div>
-                      <Skeleton className="h-4 w-16 mb-1" />
-                      <Skeleton className="h-3 w-32" />
-                    </div>
-                  </div>
-                  <div className="text-right">
-                    <Skeleton className="h-5 w-12 mb-1" />
-                    <Skeleton className="h-3 w-16" />
-                  </div>
-                </div>
-              ))}
-            </div>
-          </Card>
 
-          {/* Top Performing Companies Skeleton */}
-          <Card className="p-6">
-            <div className="flex items-center space-x-3 mb-4">
-              <Skeleton className="h-6 w-6 rounded-full" />
-              <Skeleton className="h-6 w-48" />
-            </div>
-            <div className="space-y-4">
-              {[...Array(3)].map((_, index) => (
-                <div key={index} className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-800/50 rounded-lg">
-                  <div className="flex items-center space-x-3">
-                    <Skeleton className="h-5 w-5 rounded-full" />
-                    <div>
-                      <Skeleton className="h-4 w-16 mb-1" />
-                      <Skeleton className="h-3 w-32" />
-                    </div>
-                  </div>
-                  <div className="text-right">
-                    <Skeleton className="h-5 w-12 mb-1" />
-                    <Skeleton className="h-3 w-20" />
-                  </div>
-                </div>
-              ))}
-            </div>
-          </Card>
-        </div>
 
         {/* Model Performance Skeleton */}
         <Card className="p-6">
@@ -218,10 +167,10 @@ export function RiskInsightsView() {
       <div className="space-y-6 font-bricolage">
         <div>
           <h1 className="text-3xl font-bold text-gray-900 dark:text-white">
-            Risk Insights
+            About
           </h1>
           <p className="text-gray-600 dark:text-gray-400 mt-1">
-            Deep dive into risk patterns and model performance metrics
+            Deep dive into model performance metrics
           </p>
         </div>
 
@@ -248,110 +197,15 @@ export function RiskInsightsView() {
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-2xl font-bricolage font-bold text-gray-900 dark:text-white">
-            Risk Insights
+            About
           </h2>
           <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
-            Deep dive into risk patterns and model performance metrics
+            Deep dive into model performance metrics
           </p>
         </div>
       </div>
 
-      {/* High Risk & Top Performing Companies */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* High Risk S&P 500 Companies */}
-        <Card className="p-6">
-          <div className="flex items-center space-x-3 mb-4">
-            <AlertTriangle className="h-6 w-6 text-red-500" />
-            <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
-              High Risk S&P 500 Companies
-            </h3>
-          </div>
 
-          {riskInsights.highRiskCompanies.length > 0 ? (
-            <div className="space-y-4">
-              {riskInsights.highRiskCompanies.map((company: any, index: number) => (
-                <div key={index} className="flex items-center justify-between p-3 bg-red-50 dark:bg-red-900/20 rounded-lg">
-                  <div className="flex items-center space-x-3">
-                    <Building2 className="h-5 w-5 text-red-600" />
-                    <div>
-                      <div className="font-medium text-gray-900 dark:text-white">
-                        {company.company_symbol}
-                      </div>
-                      <div className="text-sm text-gray-600 dark:text-gray-400">
-                        {company.company_name}
-                      </div>
-                    </div>
-                  </div>
-                  <div className="text-right">
-                    <Badge className="bg-red-100 text-red-800">
-                      {((company.default_probability || 0) * 100).toFixed(2)}%
-                    </Badge>
-                    <div className="text-xs text-gray-500 mt-1">
-                      {company.risk_category}
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <div className="text-center py-8">
-              <div className="text-gray-500 mb-2">
-                <AlertTriangle className="h-12 w-12 mx-auto opacity-50" />
-              </div>
-              <p className="text-gray-600 dark:text-gray-400">
-                No high-risk companies found
-              </p>
-            </div>
-          )}
-        </Card>
-
-        {/* Top Performing Companies */}
-        <Card className="p-6">
-          <div className="flex items-center space-x-3 mb-4">
-            <TrendingUp className="h-6 w-6 text-green-500" />
-            <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
-              Top Performing Companies
-            </h3>
-          </div>
-
-          {riskInsights.topPerformingCompanies.length > 0 ? (
-            <div className="space-y-4">
-              {riskInsights.topPerformingCompanies.map((company: any, index: number) => (
-                <div key={index} className="flex items-center justify-between p-3 bg-green-50 dark:bg-green-900/20 rounded-lg">
-                  <div className="flex items-center space-x-3">
-                    <Building2 className="h-5 w-5 text-green-600" />
-                    <div>
-                      <div className="font-medium text-gray-900 dark:text-white">
-                        {company.company_symbol}
-                      </div>
-                      <div className="text-sm text-gray-600 dark:text-gray-400">
-                        {company.company_name}
-                      </div>
-                    </div>
-                  </div>
-                  <div className="text-right">
-                    <Badge className="bg-green-100 text-green-800">
-                      {(company.default_probability * 100).toFixed(2)}%
-                    </Badge>
-                    <div className="text-xs text-gray-500 mt-1">
-                      {(company.confidence * 100).toFixed(1)}% confidence
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <div className="text-center py-8">
-              <div className="text-gray-500 mb-2">
-                <TrendingUp className="h-12 w-12 mx-auto opacity-50" />
-              </div>
-              <p className="text-gray-600 dark:text-gray-400">
-                No top performing companies found
-              </p>
-            </div>
-          )}
-        </Card>
-      </div>
 
       {/* Model Performance & Features */}
       <Card className="p-6">
