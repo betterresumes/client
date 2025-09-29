@@ -229,12 +229,17 @@ export function CompanyAnalysisPanel({
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      {annualPredictions.map((prediction, index) => (
-                        console.log(prediction.reporting_year, prediction.reporting_quarter),
-                        <SelectItem key={index} value={index.toString()}>
-                          {prediction.reporting_year} {prediction.reporting_quarter}
-                        </SelectItem>
-                      ))}
+                      {annualPredictions.map((prediction, index) => {
+                        // Format the display text properly
+                        const year = prediction.reporting_year || '2024'
+                        const quarter = prediction.reporting_quarter || 'Annual'
+                        
+                        return (
+                          <SelectItem key={index} value={index.toString()}>
+                            {year} {quarter}
+                          </SelectItem>
+                        )
+                      })}
                     </SelectContent>
                   </Select>
                 </div>
@@ -375,11 +380,20 @@ export function CompanyAnalysisPanel({
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      {quarterlyPredictions.map((prediction, index) => (
-                        <SelectItem key={index} value={index.toString()}>
-                          {prediction.period || prediction.quarter || prediction.date || `Q${4 - index} 2024`}
-                        </SelectItem>
-                      ))}
+                      {quarterlyPredictions.map((prediction, index) => {
+                        // Format the display text properly
+                        const year = prediction.reporting_year || '2024'
+                        const quarter = prediction.reporting_quarter || 
+                                       prediction.period || 
+                                       prediction.quarter || 
+                                       `Q${index + 1}`
+                        
+                        return (
+                          <SelectItem key={index} value={index.toString()}>
+                            {year} {quarter}
+                          </SelectItem>
+                        )
+                      })}
                     </SelectContent>
                   </Select>
                 </div>

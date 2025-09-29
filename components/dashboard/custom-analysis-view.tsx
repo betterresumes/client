@@ -275,6 +275,18 @@ function JobCard({
                 <Download className="h-3 w-3" />
               </Button>
             )}
+            {/* Cancel Job Icon - for processing jobs */}
+            {job.status === 'processing' && (
+              <Button
+                onClick={() => onCancel(job.id, job.original_filename)}
+                variant="ghost"
+                size="sm"
+                className="h-6 w-6 p-0 text-gray-400 hover:text-red-600 hover:bg-red-50"
+                title="Cancel Job"
+              >
+                <X className="h-3 w-3" />
+              </Button>
+            )}
             {/* Delete Job Icon */}
             {canDelete(job) && (
               <Button
@@ -616,7 +628,7 @@ export function CustomAnalysisView() {
               setProcessingStep(0)
 
               // IMMEDIATE: Trigger dashboard refresh events (but don't switch tabs)
-              console.log('🎯 Annual prediction created - dashboard will update automatically')
+
 
               // Just trigger the refresh events, user can switch tabs when they want
               window.dispatchEvent(new CustomEvent('prediction-created-stay-here'))
@@ -674,16 +686,7 @@ export function CustomAnalysisView() {
               return
             }
 
-            // Log the enhanced response
-            console.log('✅ Enhanced Quarterly Prediction Update Response:', {
-              basicInfo: {
-                id: predictionData.id,
-                symbol: predictionData.company_symbol,
-                updated: predictionData.updated_at
-              },
-              inputData: predictionData.input_data,
-              outputData: predictionData.output_data
-            })
+
 
             // Format the API response for CompanyAnalysisPanel
             const formattedResults = {
@@ -775,7 +778,7 @@ export function CustomAnalysisView() {
               setProcessingStep(0)
 
               // IMMEDIATE: Trigger dashboard refresh events (but don't switch tabs)
-              console.log('🎯 Quarterly prediction created - dashboard will update automatically')
+
 
               // Just trigger the refresh events, user can switch tabs when they want
               window.dispatchEvent(new CustomEvent('prediction-created-stay-here'))
@@ -833,7 +836,7 @@ export function CustomAnalysisView() {
           const text = e.target?.result as string
           const lines = text.split('\n').filter(line => line.trim().length > 0)
           const actualCount = Math.max(1, lines.length - 1) // Subtract header row
-          console.log(`Detected ${actualCount} companies in CSV file`)
+
         } catch (error) {
           console.warn('Could not parse CSV for count estimation:', error)
         }
@@ -863,7 +866,7 @@ export function CustomAnalysisView() {
       // This ensures proper job management and immediate UI feedback
       const { uploadFile } = useBulkUploadStore.getState()
 
-      console.log(`📤 Using bulk upload store for ${predictionType} file:`, fileToUse.name)
+
       const jobId = await uploadFile(fileToUse, predictionType)
 
       // Dismiss loading toast
@@ -893,7 +896,7 @@ export function CustomAnalysisView() {
         [predictionType]: null
       }))
 
-      console.log(`✅ Bulk upload completed successfully with job ID: ${jobId}`)
+
 
     } catch (error: any) {
       // Dismiss loading toast on error
@@ -1034,12 +1037,7 @@ export function CustomAnalysisView() {
         return
       }
 
-      // Debug: Log the actual data structure - same as job-results-dialog.tsx
-      console.log('Job Summary:', results.job_summary)
-      console.log('Sample Prediction:', results.created_data?.predictions?.[0])
-      console.log('Sample Company:', (results.created_data?.predictions?.[0] as any)?.company)
-      console.log('Sample Financial Metrics:', results.created_data?.predictions?.[0]?.financial_metrics)
-      console.log('Sample Prediction Data:', (results.created_data?.predictions?.[0] as any)?.prediction)
+
 
       // Determine if this is annual or quarterly based on job_type or presence of quarterly data - EXACTLY as job-results-dialog.tsx
       const isAnnual = results.job_summary.job_type === 'annual' ||
@@ -1148,9 +1146,7 @@ export function CustomAnalysisView() {
 
       // Validate column counts match headers - EXACTLY as job-results-dialog.tsx
       const expectedColumns = isAnnual ? 13 : 15
-      console.log(`Expected columns: ${expectedColumns}`)
-      console.log(`Headers count: ${headers.length}`)
-      console.log(`First row count: ${rows[0]?.length || 0}`)
+
 
       if (headers.length !== expectedColumns) {
         throw new Error(`Header count mismatch: expected ${expectedColumns}, got ${headers.length}`)
@@ -1165,17 +1161,13 @@ export function CustomAnalysisView() {
         headers.join(','),
         ...rows.map(row => {
           if (row.length !== expectedColumns) {
-            console.warn(`Row has ${row.length} columns, expected ${expectedColumns}:`, row)
+            // Row length mismatch detected
           }
           return row.map((field: string) => `"${field}"`).join(',')
         })
       ].join('\n')
 
-      console.log('Generated CSV preview:', csvContent.split('\n').slice(0, 3))
-      console.log('File type:', isAnnual ? 'ANNUAL' : 'QUARTERLY')
-      console.log('Expected columns:', expectedColumns)
-      console.log('Actual headers:', headers)
-      console.log('Sample row:', rows[0])
+
 
       // Download the file - EXACTLY as job-results-dialog.tsx
       const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' })
@@ -2059,7 +2051,7 @@ export function CustomAnalysisView() {
                                   setUploadQueue([])
                                 } catch (error) {
                                   // Error is already handled in handleBulkUpload, but keep modal open for retry
-                                  console.log('Upload failed - keeping modal open for retry')
+
                                 }
                               }
                             }}
@@ -2088,7 +2080,7 @@ export function CustomAnalysisView() {
                                 setShowUploadModal(false)
                               } catch (error) {
                                 // Error is already handled in handleBulkUpload, but keep modal open for retry
-                                console.log('Upload failed - keeping modal open for retry')
+
                               }
                             }}
                             disabled={bulkUploadMutation.isPending}
