@@ -46,6 +46,7 @@ interface BulkUploadStore extends BulkUploadState {
   fetchAllJobs: () => Promise<void>
   clearError: () => void
   reset: () => void
+  cleanup: () => void
 
   // Job management
   deleteJob: (jobId: string) => Promise<boolean>
@@ -271,53 +272,118 @@ export const useBulkUploadStore = create<BulkUploadStore>()(
         }
       },
 
+      // 🚀 OPTIMIZED POLLING SYSTEM - Issue #2 Fix
       startJobPolling: async (jobId: string) => {
         const state = get()
 
-        // Don't start polling if already polling
-        if (state.isPolling) {
+        // Prevent multiple polling instances
+        if (state.isPolling && state.pollingIntervalId) {
+          console.log('⚡ Polling already active for job:', jobId)
           return
         }
 
+        // Clean up any existing polling first
+        get().stopJobPolling()
+
+        console.log('🔄 Starting smart polling for job:', jobId)
         set({ isPolling: true })
 
-        const poll = async () => {
+        let pollCount = 0
+        const maxPolls = 240 // Maximum 10 minutes (240 * 2.5s avg interval)
+        let backoffMultiplier = 1
+
+        const smartPoll = async () => {
           try {
+            pollCount++
+
+            // Safety break: Stop after max polls to prevent infinite loops
+            if (pollCount > maxPolls) {
+              console.warn('⚠️ Polling stopped - maximum attempts reached')
+              get().stopJobPolling()
+              return
+            }
+
             await get().refreshJobStatus(jobId)
 
             const currentState = get()
             const job = currentState.jobs.find(j => j.id === jobId)
 
-            // Stop polling if job is complete or failed
-            if (!job || job.status === 'completed' || job.status === 'failed') {
+            // Stop polling if job is complete, failed, or not found
+            if (!job || ['completed', 'failed'].includes(job.status)) {
+              console.log(`✅ Polling stopped - Job ${job?.status || 'not found'}:`, jobId)
               get().stopJobPolling()
               return
             }
 
-            // Continue polling more aggressively for active jobs
-            const intervalId = setTimeout(poll, 1500) // Poll every 1.5 seconds for better responsiveness
+            // Adaptive polling interval based on job progress and attempts
+            let interval = 2000 // Base: 2 seconds
+
+            if (job.progress_percentage > 50) {
+              interval = 1500 // Faster when >50% complete
+            } else if (pollCount > 60) { // After 2+ minutes
+              interval = 3000 * backoffMultiplier // Gradually increase interval
+              backoffMultiplier = Math.min(backoffMultiplier * 1.1, 3) // Max 3x backoff
+            }
+
+            // Schedule next poll with adaptive interval
+            const intervalId = setTimeout(() => {
+              // Double-check we're still supposed to be polling
+              const latestState = get()
+              if (latestState.isPolling) {
+                smartPoll()
+              }
+            }, interval)
+
             set({ pollingIntervalId: intervalId })
+
+            console.log(`🔄 Poll ${pollCount}: Job ${job.status} (${job.progress_percentage}%) - next in ${interval}ms`)
+
           } catch (error) {
-            console.error('❌ Job polling error:', error)
-            get().stopJobPolling()
+            console.error('❌ Smart polling error:', error)
+
+            // Implement exponential backoff on errors
+            if (pollCount < maxPolls / 2) { // Retry for first half of max attempts
+              const retryInterval = Math.min(5000 * Math.pow(2, backoffMultiplier), 30000) // Max 30s
+              console.log(`🔄 Retrying poll in ${retryInterval}ms due to error`)
+
+              const retryId = setTimeout(() => {
+                const latestState = get()
+                if (latestState.isPolling) {
+                  smartPoll()
+                }
+              }, retryInterval)
+
+              set({ pollingIntervalId: retryId })
+              backoffMultiplier++
+            } else {
+              console.error('❌ Too many polling errors - stopping polling')
+              get().stopJobPolling()
+            }
           }
         }
 
         // Start first poll immediately
-        poll()
+        smartPoll()
       },
 
+      // 🚀 ENHANCED CLEANUP - Issue #2 Fix
       stopJobPolling: () => {
         const state = get()
 
+        console.log('🛑 Stopping job polling...')
+
+        // Clear any active timeout
         if (state.pollingIntervalId) {
           clearTimeout(state.pollingIntervalId)
         }
 
+        // Force cleanup state
         set({
           isPolling: false,
           pollingIntervalId: null
         })
+
+        console.log('✅ Job polling stopped and cleaned up')
       },
 
       refreshJobStatus: async (jobId: string) => {
@@ -545,8 +611,25 @@ export const useBulkUploadStore = create<BulkUploadStore>()(
       },
 
       reset: () => {
-        get().stopJobPolling()
+        get().cleanup()
         set(initialState)
+      },
+
+      // 🚀 MEMORY LEAK PREVENTION - Issue #2 Fix
+      cleanup: () => {
+        console.log('🧹 Cleaning up bulk upload store...')
+
+        const state = get()
+
+        // Stop any active polling
+        get().stopJobPolling()
+
+        // Clear any remaining timeouts (defensive cleanup)
+        if (state.pollingIntervalId) {
+          clearTimeout(state.pollingIntervalId)
+        }
+
+        console.log('✅ Bulk upload store cleanup completed')
       },
 
       // Helper methods
@@ -772,3 +855,24 @@ export const useBulkUploadStore = create<BulkUploadStore>()(
     }
   )
 )
+
+// 🚀 AUTOMATIC CLEANUP - Issue #2 Fix
+// Prevent memory leaks when user navigates away or closes the browser
+if (typeof window !== 'undefined') {
+  const cleanup = () => {
+    const store = useBulkUploadStore.getState()
+    store.cleanup()
+  }
+
+  // Cleanup on page unload
+  window.addEventListener('beforeunload', cleanup)
+
+  // Cleanup on page visibility change (mobile apps, tab switching)
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') {
+      cleanup()
+    }
+  })
+
+  console.log('✅ Bulk upload store cleanup listeners registered')
+}

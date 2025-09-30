@@ -7,6 +7,18 @@ import { dashboardApi } from '@/lib/api/dashboard'
 import { organizationsApi } from '@/lib/api/organizations'
 import { useAuthStore } from '@/lib/stores/auth-store'
 
+// 🚀 DECOUPLING HELPER - Issue #3 Fix
+// Create a centralized auth access that can be mocked/injected for testing
+const getAuthUser = () => {
+  try {
+    const authStore = useAuthStore.getState()
+    return authStore.user
+  } catch (error) {
+    console.warn('⚠️ Auth store not available:', error)
+    return null
+  }
+}
+
 interface Prediction {
   // Core identification
   id: string
@@ -108,6 +120,20 @@ interface PredictionsState {
 
   // Data access filter state  
   activeDataFilter: string // 'personal', 'organization', 'system', or 'all' for viewing
+
+  // 🚀 CACHE MANAGEMENT - Issue #4 Fix
+  cache: {
+    version: number // Cache version for invalidation
+    checksums: {
+      annual: string | null
+      quarterly: string | null
+      systemAnnual: string | null
+      systemQuarterly: string | null
+    }
+    lastSync: number | null
+    isDirty: boolean // True if local changes need sync
+  }
+
 }
 
 type PredictionsStore = PredictionsState & {
@@ -117,12 +143,27 @@ type PredictionsStore = PredictionsState & {
   loadMorePredictions: () => Promise<boolean>
   clearError: () => void
   reset: () => void
-  invalidateCache: () => void
   addPrediction: (prediction: Prediction, type: 'annual' | 'quarterly') => void
   replacePrediction: (prediction: Prediction, type: 'annual' | 'quarterly', tempId: string) => void
   removePrediction: (predictionId: string, type: 'annual' | 'quarterly') => void
   setDataFilter: (filter: string) => void
   getDefaultFilterForUser: (user: any) => string
+
+  // Optimized API strategies
+  fetchPredictionsIntelligently: (forceRefresh?: boolean, user?: any) => Promise<void>
+  batchFetchPredictions: (endpoints: Array<{ type: string; priority: number; fetch: () => Promise<any> }>) => Promise<any[]>
+
+  // 🚀 DECOUPLED METHODS - Issue #3 Fix
+  fetchPredictionsWithUser: (user: any, forceRefresh?: boolean) => Promise<void>
+  validateUserAccess: (user: any) => { hasSystemAccess: boolean; defaultFilter: string }
+  processUserPredictions: (responses: any[], user: any) => Promise<void>
+
+  // 🚀 CACHE MANAGEMENT - Issue #4 Fix
+  generateCacheChecksum: (predictions: Prediction[]) => string
+  validateCache: () => boolean
+  markCacheDirty: () => void
+  syncCache: () => Promise<void>
+  invalidateCache: () => void
 
   // Helper method for processing predictions data  
   processAllPredictionsData: (
@@ -170,6 +211,19 @@ export const usePredictionsStore = create<PredictionsStore>()(
         isInitialized: false,
         isFetching: false,
         activeDataFilter: 'personal', // Initial filter (updated based on user role after login)
+
+        // 🚀 CACHE MANAGEMENT - Issue #4 Fix
+        cache: {
+          version: 1,
+          checksums: {
+            annual: null,
+            quarterly: null,
+            systemAnnual: null,
+            systemQuarterly: null,
+          },
+          lastSync: null,
+          isDirty: false,
+        },
 
         // Legacy server-side pagination
         // User data pagination - fetch larger amounts to handle big datasets
@@ -752,6 +806,9 @@ export const usePredictionsStore = create<PredictionsStore>()(
               })
             }
           }
+
+          // 🚀 AUTO CACHE INVALIDATION - Issue #4 Fix
+          get().markCacheDirty()
         },
 
         // Replace prediction when editing
@@ -794,6 +851,9 @@ export const usePredictionsStore = create<PredictionsStore>()(
               })
             }
           }
+
+          // 🚀 AUTO CACHE INVALIDATION - Issue #4 Fix
+          get().markCacheDirty()
         },
 
         // Remove prediction from both stores
@@ -811,6 +871,9 @@ export const usePredictionsStore = create<PredictionsStore>()(
               systemQuarterlyPredictions: state.systemQuarterlyPredictions.filter(p => p.id !== predictionId)
             })
           }
+
+          // 🚀 AUTO CACHE INVALIDATION - Issue #4 Fix
+          get().markCacheDirty()
         },
 
         // Utility functions (unchanged)
@@ -1003,12 +1066,7 @@ export const usePredictionsStore = create<PredictionsStore>()(
           }
         },
 
-        invalidateCache: () => {
-          set({
-            lastFetched: null,
-            isInitialized: false
-          })
-        },
+
 
         clearError: () => set({ error: null }),
 
@@ -1024,6 +1082,19 @@ export const usePredictionsStore = create<PredictionsStore>()(
           isInitialized: false,
           isFetching: false,
           activeDataFilter: 'personal', // Reset to initial state (updated on next login)
+
+          // 🚀 CACHE RESET - Issue #4 Fix
+          cache: {
+            version: 1,
+            checksums: {
+              annual: null,
+              quarterly: null,
+              systemAnnual: null,
+              systemQuarterly: null,
+            },
+            lastSync: null,
+            isDirty: false,
+          },
 
           annualPagination: {
             currentPage: 1,
@@ -1053,7 +1124,308 @@ export const usePredictionsStore = create<PredictionsStore>()(
             pageSize: 100,
             hasMore: false
           }
-        })
+        }),
+
+        // 🚀 OPTIMIZED API STRATEGY - Issue #1 Fix
+        fetchPredictionsIntelligently: async (forceRefresh = false, providedUser = null) => {
+          const state = get()
+          const now = Date.now()
+
+          // Skip if recently fetched and not forced
+          if (!forceRefresh && state.lastFetched && (now - state.lastFetched) < 30000) {
+            console.log('⚡ Skipping fetch - data is fresh')
+            return
+          }
+
+          // Use provided user or fallback to auth store (for backward compatibility)
+          let user = providedUser
+          if (!user) {
+            const authStore = useAuthStore.getState()
+            user = authStore.user
+          }
+
+          if (!user) {
+            console.log('❌ No user found, skipping prediction fetch')
+            return
+          }
+
+          console.log('🎯 Smart prediction fetch starting...', {
+            role: user.role,
+            forceRefresh,
+            lastFetched: state.lastFetched
+          })
+
+          set({ isLoading: true, isFetching: true, error: null })
+
+          try {
+            // Smart endpoint selection based on user role
+            const endpoints: Array<{ type: string; priority: number; fetch: () => Promise<any> }> = []
+
+            // Always fetch user data first (priority 1)
+            endpoints.push(
+              { type: 'user_annual', priority: 1, fetch: () => predictionsApi.annual.getAnnualPredictions({ page: 1, size: 100 }) },
+              { type: 'user_quarterly', priority: 1, fetch: () => predictionsApi.quarterly.getQuarterlyPredictions({ page: 1, size: 100 }) }
+            )
+
+            // Only fetch system data if user role allows (priority 2)
+            if (['super_admin', 'tenant_admin'].includes(user.role)) {
+              endpoints.push(
+                { type: 'system_annual', priority: 2, fetch: () => predictionsApi.annual.getSystemAnnualPredictions({ page: 1, size: 100 }) },
+                { type: 'system_quarterly', priority: 2, fetch: () => predictionsApi.quarterly.getSystemQuarterlyPredictions({ page: 1, size: 100 }) }
+              )
+            }
+
+            // Execute in priority batches to avoid overwhelming the server
+            const results = await get().batchFetchPredictions(endpoints)
+
+            // Process and update state
+            await get().processAllPredictionsData(
+              results[0]?.data || { predictions: [], total_count: 0 }, // user annual
+              results[1]?.data || { predictions: [], total_count: 0 }, // user quarterly  
+              results[2]?.data || { predictions: [], total_count: 0 }, // system annual
+              results[3]?.data || { predictions: [], total_count: 0 }, // system quarterly
+              user
+            )
+
+            const allData = [
+              ...results[0]?.data?.predictions || [],
+              ...results[1]?.data?.predictions || [],
+              ...results[2]?.data?.predictions || [],
+              ...results[3]?.data?.predictions || []
+            ]
+
+            set({
+              isLoading: false,
+              isFetching: false,
+              lastFetched: now,
+              lastDataUpdated: get().getLatestDataTimestamp(allData),
+              isInitialized: true,
+              activeDataFilter: get().getDefaultFilterForUser(user)
+            })
+
+            console.log('✅ Smart prediction fetch completed', {
+              userAnnual: results[0]?.data?.predictions?.length || 0,
+              userQuarterly: results[1]?.data?.predictions?.length || 0,
+              systemAnnual: results[2]?.data?.predictions?.length || 0,
+              systemQuarterly: results[3]?.data?.predictions?.length || 0
+            })
+
+            // 🚀 AUTO CACHE SYNC - Issue #4 Fix
+            await get().syncCache()
+
+          } catch (error) {
+            console.error('❌ Smart prediction fetch failed:', error)
+            set({
+              isLoading: false,
+              isFetching: false,
+              error: error instanceof Error ? error.message : 'Failed to fetch predictions'
+            })
+          }
+        },
+
+        // 🚀 BATCH API STRATEGY - Issue #1 Fix
+        batchFetchPredictions: async (endpoints: Array<{ type: string; priority: number; fetch: () => Promise<any> }>) => {
+          console.log('📦 Batch fetching predictions...', { count: endpoints.length })
+
+          // Sort by priority for optimal loading
+          const sortedEndpoints = [...endpoints].sort((a, b) => a.priority - b.priority)
+
+          // Execute in controlled batches to prevent server overload
+          const batchSize = 2
+          const results = []
+
+          for (let i = 0; i < sortedEndpoints.length; i += batchSize) {
+            const batch = sortedEndpoints.slice(i, i + batchSize)
+            console.log(`🔄 Processing batch ${Math.floor(i / batchSize) + 1}/${Math.ceil(sortedEndpoints.length / batchSize)}`)
+
+            const batchPromises = batch.map(async (endpoint) => {
+              try {
+                console.log(`  📡 Fetching ${endpoint.type}...`)
+                const startTime = performance.now()
+                const result = await endpoint.fetch()
+                const duration = performance.now() - startTime
+                console.log(`  ✅ ${endpoint.type} completed in ${duration.toFixed(2)}ms`)
+                return result
+              } catch (error) {
+                console.error(`  ❌ ${endpoint.type} failed:`, error)
+                return { data: { predictions: [], total_count: 0 } }
+              }
+            })
+
+            const batchResults = await Promise.all(batchPromises)
+            results.push(...batchResults)
+
+            // Small delay between batches to be nice to the server
+            if (i + batchSize < sortedEndpoints.length) {
+              await new Promise(resolve => setTimeout(resolve, 100))
+            }
+          }
+
+          console.log('✅ Batch fetch completed')
+          return results
+        },
+
+        // 🚀 DECOUPLED STORE METHODS - Issue #3 Fix
+        fetchPredictionsWithUser: async (user: any, forceRefresh = false) => {
+          if (!user) {
+            console.error('❌ User is required for decoupled fetch')
+            set({ error: 'User authentication required' })
+            return
+          }
+
+          console.log('🔄 Decoupled prediction fetch with user:', {
+            userId: user.id,
+            role: user.role,
+            forceRefresh
+          })
+
+          // Use the intelligent fetch method with provided user
+          return await get().fetchPredictionsIntelligently(forceRefresh, user)
+        },
+
+        // 🚀 USER ACCESS VALIDATION - Issue #3 Fix  
+        validateUserAccess: (user: any) => {
+          if (!user) {
+            return { hasSystemAccess: false, defaultFilter: 'personal' }
+          }
+
+          const hasSystemAccess = ['super_admin', 'tenant_admin'].includes(user.role)
+
+          let defaultFilter = 'personal'
+          if (user.role === 'super_admin') {
+            defaultFilter = 'system'
+          } else if (user.role === 'tenant_admin') {
+            defaultFilter = 'organization'
+          } else if (user.role === 'org_admin' || user.role === 'org_member') {
+            defaultFilter = 'organization'
+          }
+
+          return { hasSystemAccess, defaultFilter }
+        },
+
+        // 🚀 DECOUPLED DATA PROCESSING - Issue #3 Fix
+        processUserPredictions: async (responses: any[], user: any) => {
+          if (!user) {
+            console.error('❌ User is required for processing predictions')
+            return
+          }
+
+          console.log('📊 Processing predictions for user:', {
+            userId: user.id,
+            role: user.role,
+            responseCount: responses.length
+          })
+
+          // Use the existing processAllPredictionsData method with provided responses and user
+          const [userAnnual, userQuarterly, systemAnnual, systemQuarterly] = responses
+
+          await get().processAllPredictionsData(
+            userAnnual?.data || { predictions: [], total_count: 0 },
+            userQuarterly?.data || { predictions: [], total_count: 0 },
+            systemAnnual?.data || { predictions: [], total_count: 0 },
+            systemQuarterly?.data || { predictions: [], total_count: 0 },
+            user
+          )
+        },
+
+        // 🚀 CACHE MANAGEMENT METHODS - Issue #4 Fix
+        generateCacheChecksum: (predictions: Prediction[]) => {
+          if (!predictions || predictions.length === 0) {
+            return ''
+          }
+
+          // Create a checksum based on prediction IDs, update times, and key fields
+          const checksum = predictions
+            .map(p => `${p.id}-${p.created_at}-${p.default_probability || p.probability}`)
+            .sort()
+            .join('|')
+
+          // Simple hash function
+          let hash = 0
+          for (let i = 0; i < checksum.length; i++) {
+            const char = checksum.charCodeAt(i)
+            hash = ((hash << 5) - hash) + char
+            hash = hash & hash // Convert to 32-bit integer
+          }
+
+          return hash.toString(36)
+        },
+
+        validateCache: () => {
+          const state = get()
+
+          // Generate current checksums
+          const currentChecksums = {
+            annual: get().generateCacheChecksum(state.annualPredictions),
+            quarterly: get().generateCacheChecksum(state.quarterlyPredictions),
+            systemAnnual: get().generateCacheChecksum(state.systemAnnualPredictions),
+            systemQuarterly: get().generateCacheChecksum(state.systemQuarterlyPredictions),
+          }
+
+          // Check if any checksum has changed
+          const isValid = Object.entries(currentChecksums).every(([key, checksum]) =>
+            state.cache.checksums[key as keyof typeof state.cache.checksums] === checksum
+          )
+
+          console.log('🔍 Cache validation:', { isValid, currentChecksums, cachedChecksums: state.cache.checksums })
+          return isValid
+        },
+
+        markCacheDirty: () => {
+          console.log('💾 Marking cache as dirty')
+          set((state) => ({
+            ...state,
+            cache: {
+              ...state.cache,
+              isDirty: true,
+              version: state.cache.version + 1,
+            }
+          }))
+        },
+
+        syncCache: async () => {
+          console.log('🔄 Syncing cache...')
+          const state = get()
+
+          // Generate new checksums
+          const newChecksums = {
+            annual: get().generateCacheChecksum(state.annualPredictions),
+            quarterly: get().generateCacheChecksum(state.quarterlyPredictions),
+            systemAnnual: get().generateCacheChecksum(state.systemAnnualPredictions),
+            systemQuarterly: get().generateCacheChecksum(state.systemQuarterlyPredictions),
+          }
+
+          // Update cache state
+          set((state) => ({
+            ...state,
+            cache: {
+              ...state.cache,
+              checksums: newChecksums,
+              lastSync: Date.now(),
+              isDirty: false,
+            }
+          }))
+
+          console.log('✅ Cache synced', { checksums: newChecksums })
+        },
+
+        invalidateCache: () => {
+          console.log('🗑️ Invalidating cache')
+          set((state) => ({
+            ...state,
+            cache: {
+              version: state.cache.version + 1,
+              checksums: {
+                annual: null,
+                quarterly: null,
+                systemAnnual: null,
+                systemQuarterly: null,
+              },
+              lastSync: null,
+              isDirty: true,
+            }
+          }))
+        }
       }
     },
     {
