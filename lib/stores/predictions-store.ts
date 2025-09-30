@@ -707,8 +707,16 @@ export const usePredictionsStore = create<PredictionsStore>()(
         },
 
         setDataFilter: (filter: string) => {
-          console.log(`🔄 Switching data filter from "${get().activeDataFilter}" to "${filter}"`)
+          const currentFilter = get().activeDataFilter
+          console.log(`🔄 Switching data filter from "${currentFilter}" to "${filter}"`)
           set({ activeDataFilter: filter })
+
+          // Dispatch custom event to notify components of filter change
+          if (typeof window !== 'undefined' && currentFilter !== filter) {
+            window.dispatchEvent(new CustomEvent('data-filter-changed', {
+              detail: { from: currentFilter, to: filter }
+            }))
+          }
         },
 
         // Add prediction to the appropriate store when user creates new prediction

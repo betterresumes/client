@@ -11,6 +11,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { CompanyAnalysisPanel } from './company-analysis-panel'
+import { ScrollableCompanyList } from './scrollable-company-list'
 import {
   Building2,
   TrendingUp,
@@ -30,11 +31,7 @@ export function CompanyDetailsView() {
   const { stats: dashboardStats, fetchStats } = useDashboardStatsStore()
   const [activeTab, setActiveTab] = useState<'annual' | 'quarterly'>('annual')
   const [forceRefresh, setForceRefresh] = useState(0)
-  const [searchQuery, setSearchQuery] = useState('')
   const [hasAttemptedLoad, setHasAttemptedLoad] = useState(false)
-
-  // Show any 5 companies by default, but allow search through all
-  const DEFAULT_COMPANIES_TO_SHOW = 5
 
   const {
     annualPredictions,
@@ -169,8 +166,6 @@ export function CompanyDetailsView() {
     }
   }, [])
 
-  const currentCompany = companies.find((comp: any) => comp.id === selectedCompany)
-
   // Get all predictions for selected company (can be multiple for each type)
   const currentAnnualPredictions = safePredictions.filter((pred: any) =>
     (pred.company_symbol || pred.id) === selectedCompany
@@ -178,6 +173,31 @@ export function CompanyDetailsView() {
   const currentQuarterlyPredictions = safeQuarterlyPredictions.filter((pred: any) =>
     (pred.company_symbol || pred.id) === selectedCompany
   )
+
+  // Build current company object from predictions or companies list
+  const currentCompany = useMemo(() => {
+    if (!selectedCompany) return null
+
+    // First check if we have it in our companies list
+    const companyFromList = companies.find((comp: any) => comp.id === selectedCompany)
+    if (companyFromList) return companyFromList
+
+    // Otherwise build from predictions
+    const allCurrentPredictions = [...currentAnnualPredictions, ...currentQuarterlyPredictions]
+    if (allCurrentPredictions.length > 0) {
+      const pred = allCurrentPredictions[0]
+      return {
+        id: selectedCompany,
+        name: pred.company_symbol || pred.company_name,
+        subtitle: pred.company_name || pred.company_symbol,
+        sector: pred.sector || 'Unknown',
+        defaultRate: `${((pred.default_probability || 0) * 100).toFixed(2)}%`,
+        riskCategory: pred.risk_category || 'MEDIUM'
+      }
+    }
+
+    return null
+  }, [selectedCompany, companies, currentAnnualPredictions, currentQuarterlyPredictions])
 
   // Determine which data is available for the selected company
   const hasAnnualData = currentAnnualPredictions.length > 0
@@ -198,35 +218,11 @@ export function CompanyDetailsView() {
     }
   }, [selectedCompany, hasAnnualData, hasQuarterlyData, activeTab])
 
-  // Search and filter companies
-  const filteredCompanies = useMemo(() => {
-    let filtered = companies
-
-    // Apply search filter
-    if (searchQuery.trim()) {
-      const query = searchQuery.toLowerCase()
-      filtered = companies.filter((company: any) =>
-        company.name?.toLowerCase().includes(query) ||
-        company.subtitle?.toLowerCase().includes(query) ||
-        company.id?.toLowerCase().includes(query)
-      )
-    }
-
-    // If no search, show first 5 companies by default
-    if (!searchQuery.trim()) {
-      return filtered.slice(0, DEFAULT_COMPANIES_TO_SHOW)
-    }
-
-    // If searching, show all matching results
-    return filtered
-  }, [companies, searchQuery])
-
-  console.log('🔍 Company Search Results:', {
+  console.log('🔍 Company Analysis Data:', {
     totalCompanies: companies.length,
-    searchQuery,
-    filteredCount: filteredCompanies.length,
     annualPredictions: safePredictions.length,
-    quarterlyPredictions: safeQuarterlyPredictions.length
+    quarterlyPredictions: safeQuarterlyPredictions.length,
+    selectedCompany
   })
 
   // Load more data if needed when we don't have enough companies for search
@@ -249,11 +245,6 @@ export function CompanyDetailsView() {
       }
     }
   }, [companies.length, annualPagination.hasMore, quarterlyPagination.hasMore, systemAnnualPagination.hasMore, systemQuarterlyPagination.hasMore, isPredictionsLoading, fetchPredictions])
-
-  // Handle clearing search
-  const handleClearSearch = () => {
-    setSearchQuery('')
-  }
 
   const getRiskColor = (riskCategory: string) => {
     switch (riskCategory) {
@@ -495,145 +486,11 @@ export function CompanyDetailsView() {
         ) : (
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 font-bricolage">
             {/* Left Panel - Company Search and Selection */}
-            <div className="h-[600px]">
-              <Card className="p-4 h-full flex flex-col">
-                <div className="mb-4">
-                  <div className="flex items-center justify-between mb-3">
-                    <h3 className="text-lg font-semibold text-gray-900 dark:text-white font-bricolage">
-                      S&P 500 Companies
-                    </h3>
-                    <div className="flex items-center gap-2">
-                      {annualPagination.hasMore || quarterlyPagination.hasMore || systemAnnualPagination.hasMore || systemQuarterlyPagination.hasMore ? (
-                        !isPredictionsLoading && (
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => {
-                              const store = usePredictionsStore.getState()
-                              if (store.loadMorePredictions) {
-                                store.loadMorePredictions()
-                              } else {
-                                fetchPredictions()
-                              }
-                            }}
-                            className="h-6 px-2 text-xs font-bricolage"
-                          >
-                            Load More
-                          </Button>
-                        )
-                      ) : null}
-                      {isPredictionsLoading && (
-                        <Loader2 className="h-4 w-4 animate-spin" />
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Search Input */}
-                  <div className="relative">
-                    <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
-                    <Input
-                      placeholder="Search companies..."
-                      value={searchQuery}
-                      onChange={(e) => setSearchQuery(e.target.value)}
-                      className="pl-10 pr-10 h-9 text-sm font-bricolage"
-                    />
-                    {searchQuery && (
-                      <button
-                        onClick={handleClearSearch}
-                        className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
-                      >
-                        <X className="h-4 w-4" />
-                      </button>
-                    )}
-                  </div>
-
-                  {/* Search Results Info */}
-                  <div className="mt-2 text-xs text-gray-500 font-bricolage">
-                    {searchQuery.trim() ? (
-                      `Found ${filteredCompanies.length} companies matching "${searchQuery}"`
-                    ) : (
-                      `Showing all companies`
-                    )}
-                  </div>
-                </div>
-
-                {isPredictionsLoading ? (
-                  <div className="space-y-2 flex-1">
-                    {/* Company list skeleton */}
-                    {Array.from({ length: 4 }).map((_, index) => (
-                      <div key={index} className="p-3 rounded-lg border border-gray-200 dark:border-gray-700">
-                        <div className="flex items-center justify-between">
-                          <div className="flex-1">
-                            <Skeleton className="h-4 w-20 mb-1" />
-                            <Skeleton className="h-3 w-32" />
-                          </div>
-                          <div className="text-right">
-                            <Skeleton className="h-4 w-12 mb-1" />
-                            <Skeleton className="h-5 w-16" />
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                ) : companies.length === 0 ? (
-                  <div className="flex-1 flex flex-col items-center justify-center text-center"></div>
-                ) : (
-                  <>
-                    {/* Company List */}
-                    <div className="space-y-2 flex-1 overflow-y-auto">
-                      {filteredCompanies.map((company: any) => (
-                        <div
-                          key={company.id}
-                          className={`p-3 rounded-lg cursor-pointer transition-all duration-300 ease-in-out border font-bricolage ${selectedCompany === company.id
-                            ? 'bg-slate-900 text-white border-slate-900'
-                            : 'border-gray-200 dark:border-gray-700'
-                            }`}
-                          onClick={() => setSelectedCompany(company.id)}
-                        >
-                          <div className="flex items-center justify-between">
-                            <div>
-                              <div className="font-semibold text-sm">{company.name}</div>
-                              <div className="text-xs text-gray-500 dark:text-gray-400">
-                                {company.subtitle}
-                              </div>
-                            </div>
-                            <div className="text-right">
-                              <div className="font-semibold text-sm">{company.defaultRate}</div>
-                              <Badge
-                                variant="secondary"
-                                className={`text-xs ${company.riskCategory === 'LOW' ? 'bg-green-100 text-green-800' :
-                                  company.riskCategory === 'MEDIUM' ? 'bg-yellow-100 text-yellow-800' :
-                                    'bg-red-100 text-red-800'
-                                  }`}
-                              >
-                                {company.riskCategory}
-                              </Badge>
-                            </div>
-                          </div>
-                        </div>
-                      ))}
-
-                      {/* No search results */}
-                      {filteredCompanies.length === 0 && searchQuery.trim() && (
-                        <div className="text-center py-8">
-                          <Search className="h-8 w-8 text-gray-400 mx-auto mb-3" />
-                          <p className="text-sm text-gray-500 font-bricolage">
-                            No companies found matching "{searchQuery}"
-                          </p>
-                          <button
-                            onClick={handleClearSearch}
-                            className="text-xs text-blue-600 hover:text-blue-700 mt-2 font-bricolage"
-                          >
-                            Clear search
-                          </button>
-                        </div>
-                      )}
-                    </div>
-
-                  </>
-                )}
-              </Card>
-            </div>
+            <ScrollableCompanyList
+              onCompanySelect={setSelectedCompany}
+              selectedCompanyId={selectedCompany}
+              className="h-[600px]"
+            />
 
             {/* Right Panel - Company Analysis */}
             {currentCompany && (

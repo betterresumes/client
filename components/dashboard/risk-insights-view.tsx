@@ -162,37 +162,9 @@ export function RiskInsightsView() {
     )
   }
 
-  if (!riskInsights) {
-    return (
-      <div className="space-y-6 font-bricolage">
-        <div>
-          <h1 className="text-3xl font-bold text-gray-900 dark:text-white">
-            About
-          </h1>
-          <p className="text-gray-600 dark:text-gray-400 mt-1">
-            Deep dive into model performance metrics
-          </p>
-        </div>
-
-        {/* Empty state in Card */}
-        <Card className="border border-gray-200 dark:border-gray-700 shadow-sm">
-          <div className="text-center py-16 px-6">
-            <div className="mx-auto flex items-center justify-center h-16 w-16 rounded-full bg-gray-100 dark:bg-gray-800 mb-6">
-              <TrendingUp className="h-8 w-8 text-gray-400" />
-            </div>
-            <h3 className="text-xl font-semibold text-gray-900 dark:text-white mb-3">
-              No Risk Data Available
-            </h3>
-            <p className="text-gray-600 dark:text-gray-400 mb-6 max-w-md mx-auto">
-              No prediction data is available for risk analysis with your current data source selection. Risk insights will appear once data is available.
-            </p>
-          </div>
-        </Card>
-      </div>
-    )
-  }
+  // Always show static content regardless of data availability
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 font-bricolage">
       {/* Risk Insights Header */}
       <div className="flex items-center justify-between">
         <div>
@@ -200,7 +172,7 @@ export function RiskInsightsView() {
             About
           </h2>
           <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
-            Deep dive into model performance metrics
+            Deep dive into model performance metrics and system capabilities
           </p>
         </div>
       </div>
