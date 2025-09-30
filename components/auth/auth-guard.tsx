@@ -27,11 +27,39 @@ export function AuthGuard({
     setIsClient(true)
   }, [])
 
+  // Listen for logout events for immediate redirect
+  useEffect(() => {
+    const handleLogout = () => {
+      console.log('🚪 Logout event detected, redirecting to login')
+      router.replace('/login')
+    }
+
+    if (typeof window !== 'undefined') {
+      window.addEventListener('auth-logout', handleLogout)
+      return () => window.removeEventListener('auth-logout', handleLogout)
+    }
+  }, [router])
+
   useEffect(() => {
     if (!isClient) return
 
     const checkAuth = async () => {
-      console.log('🔐 AuthGuard checking auth:', { isAuthenticated, hasUser: !!user, requireAuth })
+      console.log('🔐 AuthGuard checking auth:', {
+        isAuthenticated,
+        hasUser: !!user,
+        requireAuth,
+        pathname,
+        hasAccessToken: !!accessToken
+      })
+
+      // If user is authenticated and on login page, redirect to dashboard immediately
+      if (isAuthenticated && user && pathname === '/login') {
+        console.log('✅ Authenticated user on login page, redirecting to dashboard')
+        const redirectTo = sessionStorage.getItem('redirectAfterLogin') || '/dashboard'
+        sessionStorage.removeItem('redirectAfterLogin')
+        router.replace(redirectTo)
+        return
+      }
 
       // If we have a stored token but need to refresh, do it
       if (accessToken && shouldRefreshToken()) {
@@ -84,8 +112,24 @@ export function AuthGuard({
       setIsLoading(false)
     }
 
+    // Run checkAuth immediately without delay
     checkAuth()
   }, [isAuthenticated, user, requireAuth, allowedRoles, router, pathname, isAdmin, isTenantAdmin, isOrgAdmin, isClient, accessToken, shouldRefreshToken, refreshAccessToken])
+
+  // Fast-track for obvious cases to prevent unnecessary loading states
+  useEffect(() => {
+    if (!isClient) return
+
+    // If user is clearly authenticated and not on login page, stop loading immediately
+    if (isAuthenticated && user && pathname !== '/login' && !requireAuth) {
+      setIsLoading(false)
+    }
+
+    // If on login page and not requiring auth, stop loading immediately  
+    if (pathname === '/login' && !requireAuth) {
+      setIsLoading(false)
+    }
+  }, [isAuthenticated, user, pathname, requireAuth, isClient])
 
   // Show loading spinner while checking auth to prevent flash
   if (!isClient || isLoading) {

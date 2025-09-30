@@ -7,6 +7,9 @@ import { useAuthStore } from '@/lib/stores/auth-store'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { Textarea } from '@/components/ui/textarea'
 import {
   Shield,
   BarChart3,
@@ -14,14 +17,25 @@ import {
   Zap,
   ArrowRight,
   Building2,
-  TrendingUp
+  TrendingUp,
+  Mail,
+  User,
+  MessageSquare,
+  Send
 } from 'lucide-react'
 import Image from 'next/image'
+import { toast } from 'sonner'
 
 export default function Home() {
   const router = useRouter()
   const { isAuthenticated } = useAuthStore()
   const [isClient, setIsClient] = useState(false)
+  const [isSubmitting, setIsSubmitting] = useState(false)
+  const [formData, setFormData] = useState({
+    name: '',
+    email: '',
+    message: ''
+  })
 
   useEffect(() => {
     setIsClient(true)
@@ -34,6 +48,40 @@ export default function Home() {
       router.replace('/dashboard')
     }
   }, [isAuthenticated, router, isClient])
+
+  const handleContactSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+
+    if (!formData.name.trim() || !formData.email.trim() || !formData.message.trim()) {
+      toast.error('Please fill in all fields')
+      return
+    }
+
+    setIsSubmitting(true)
+
+    try {
+      // Simulate API call - replace with actual API endpoint
+      await new Promise(resolve => setTimeout(resolve, 1000))
+
+      toast.success('Message sent successfully!', {
+        description: 'Thank you for your interest. We\'ll get back to you soon.'
+      })
+
+      // Reset form
+      setFormData({ name: '', email: '', message: '' })
+    } catch (error) {
+      toast.error('Failed to send message', {
+        description: 'Please try again or contact us directly.'
+      })
+    } finally {
+      setIsSubmitting(false)
+    }
+  }
+
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+    const { name, value } = e.target
+    setFormData(prev => ({ ...prev, [name]: value }))
+  }
 
   if (!isClient) {
     return null
@@ -58,11 +106,15 @@ export default function Home() {
                   Login
                 </Button>
               </Link>
-              <Link href="/register">
-                <Button className="bg-blue-600 hover:bg-blue-700 text-white">
-                  Sign Up
-                </Button>
-              </Link>
+              <Button
+                className="bg-blue-600 hover:bg-blue-700 text-white"
+                onClick={() => {
+                  const contactSection = document.getElementById('contact-form')
+                  contactSection?.scrollIntoView({ behavior: 'smooth' })
+                }}
+              >
+                Start Free Trial
+              </Button>
             </div>
           </div>
         </div>
@@ -78,12 +130,17 @@ export default function Home() {
             with 94% accuracy. Make informed investment decisions with confidence.
           </p>
           <div className="flex flex-col sm:flex-row gap-4 justify-center">
-            <Link href="/register">
-              <Button size="lg" className="bg-blue-600 hover:bg-blue-700 text-white px-8 py-3 text-lg">
-                Start Free Trial
-                <ArrowRight className="ml-2 h-5 w-5" />
-              </Button>
-            </Link>
+            <Button
+              size="lg"
+              className="bg-blue-600 hover:bg-blue-700 text-white px-8 py-3 text-lg"
+              onClick={() => {
+                const contactSection = document.getElementById('contact-form')
+                contactSection?.scrollIntoView({ behavior: 'smooth' })
+              }}
+            >
+              Start Free Trial
+              <ArrowRight className="ml-2 h-5 w-5" />
+            </Button>
           </div>
         </div>
       </section>
@@ -144,7 +201,7 @@ export default function Home() {
                 <Building2 className="h-6 w-6 text-orange-600" />
               </div>
               <h3 className="text-xl font-semibold text-gray-900 mb-3">
-                Multi-tenant SaaS
+                Multi-tenant
               </h3>
               <p className="text-gray-600 leading-relaxed">
                 Enterprise-grade platform with complete data isolation, role-based access,
@@ -183,7 +240,7 @@ export default function Home() {
 
       <section className="py-20 bg-white">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="grid md:grid-cols-4 gap-8 text-center">
+          <div className="grid md:grid-cols-3 gap-8 text-center">
             <div>
               <div className="text-4xl font-bold text-blue-600 mb-2">94%</div>
               <div className="text-gray-600">Prediction Accuracy</div>
@@ -193,13 +250,99 @@ export default function Home() {
               <div className="text-gray-600">Predictions per Hour</div>
             </div>
             <div>
-              <div className="text-4xl font-bold text-blue-600 mb-2">2500</div>
-              <div className="text-gray-600">Requests per Second</div>
-            </div>
-            <div>
               <div className="text-4xl font-bold text-blue-600 mb-2">99.9%</div>
               <div className="text-gray-600">System Uptime</div>
             </div>
+          </div>
+        </div>
+      </section>
+
+      {/* Contact Form Section */}
+      <section id="contact-form" className="py-20 bg-gray-50">
+        <div className="max-w-2xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="text-center mb-16">
+            <h2 className="text-4xl md:text-5xl font-bold text-gray-900 mb-6">
+              Contact Us
+            </h2>
+            <p className="text-lg text-gray-600">
+              Drop us a line!
+            </p>
+          </div>
+
+          <div className="p-8 md:p-12">
+            <form onSubmit={handleContactSubmit} className="space-y-8">
+              <div className="space-y-6">
+                <div>
+                  <Label htmlFor="name" className="text-gray-900 font-medium mb-3 block text-base">
+                    Name
+                  </Label>
+                  <Input
+                    id="name"
+                    name="name"
+                    type="text"
+                    placeholder=""
+                    value={formData.name}
+                    onChange={handleInputChange}
+                    disabled={isSubmitting}
+                    className="h-14 text-base border-0 border-b border-b-gray-400 rounded-none bg-transparent px-0 focus-visible:ring-0 focus-visible:border-b-gray-600 focus:outline-none shadow-none placeholder-gray-400"
+                    required
+                  />
+                </div>
+
+                <div>
+                  <Label htmlFor="email" className="text-gray-900 font-medium mb-3 block text-base">
+                    Email*
+                  </Label>
+                  <Input
+                    id="email"
+                    name="email"
+                    type="email"
+                    placeholder=""
+                    value={formData.email}
+                    onChange={handleInputChange}
+                    disabled={isSubmitting}
+                    className="h-14 text-base border-0 border-b border-b-gray-400 rounded-none bg-transparent px-0 focus-visible:ring-0 focus-visible:border-b-gray-600 focus:outline-none shadow-none placeholder-gray-400"
+                    required
+                  />
+                </div>
+
+                <div>
+                  <Label htmlFor="message" className="text-gray-900 font-medium mb-3 block text-base">
+                    Message
+                  </Label>
+                  <Textarea
+                    id="message"
+                    name="message"
+                    placeholder=""
+                    value={formData.message}
+                    onChange={handleInputChange}
+                    disabled={isSubmitting}
+                    rows={4}
+                    className="text-base border-0 border-b border-b-gray-400 rounded-none bg-transparent px-0 focus-visible:ring-0 focus-visible:border-b-gray-600 focus:outline-none shadow-none resize-none placeholder-gray-400"
+                    required
+                  />
+                </div>
+              </div>
+
+              <div className="text-center pt-8">
+                <Button
+                  type="submit"
+                  className="bg-blue-600 hover:bg-blue-700 text-white px-12 py-4 text-base font-semibold rounded-full border-0 min-w-[140px]"
+                  disabled={isSubmitting}
+                >
+                  {isSubmitting ? (
+                    <>
+                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                      SENDING...
+                    </>
+                  ) : (
+                    'SEND'
+                  )}
+                </Button>
+              </div>
+
+
+            </form>
           </div>
         </div>
       </section>

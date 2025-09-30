@@ -52,7 +52,7 @@ export const useAuthStore = create<AuthState>()(
 
         apiClient.setAuthToken(accessToken, refreshToken)
 
-        const expiresAt = Date.now() + (expiresIn * 1000) 
+        const expiresAt = Date.now() + (expiresIn * 1000)
 
         set({
           isAuthenticated: true,
@@ -61,7 +61,7 @@ export const useAuthStore = create<AuthState>()(
           user,
           tokenExpiresAt: expiresAt,
           isRefreshing: false,
-          profileCacheTime: Date.now(), 
+          profileCacheTime: Date.now(),
         })
 
         if (typeof window !== 'undefined') {
@@ -142,9 +142,8 @@ export const useAuthStore = create<AuthState>()(
         })
 
         if (typeof window !== 'undefined') {
-          setTimeout(() => {
-            window.dispatchEvent(new CustomEvent('auth-logout'))
-          }, 50)
+          // Dispatch immediately without delay
+          window.dispatchEvent(new CustomEvent('auth-logout'))
         }
       },
 

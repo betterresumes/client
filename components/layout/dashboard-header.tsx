@@ -25,9 +25,11 @@ export function DashboardHeader() {
   const { user, clearAuth, isAdmin, isTenantAdmin, isOrgAdmin } = useAuthStore()
   const { refresh, isRefreshing: isManualRefreshing } = useManualTokenRefresh()
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    // Clear auth immediately
     clearAuth()
-    router.push('/login')
+    // Immediate redirect without waiting
+    router.replace('/login')
   }
   const getInitials = (firstName: string, lastName: string) => {
     return ((firstName?.[0] || '') + (lastName?.[0] || '')).toUpperCase()
