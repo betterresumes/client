@@ -74,8 +74,17 @@ const initialState: BulkUploadState = {
 
 export const useBulkUploadStore = create<BulkUploadStore>()(
   persist(
-    (set, get) => ({
-      ...initialState,
+    (set, get) => {
+      // Listen for logout to clear bulk upload data
+      if (typeof window !== 'undefined') {
+        window.addEventListener('auth-logout', () => {
+          console.log('🔓 Logout detected - clearing bulk upload data')
+          get().reset()
+        })
+      }
+
+      return {
+        ...initialState,
 
       uploadFile: async (file: File, type: 'annual' | 'quarterly') => {
         set({ isUploading: true, error: null })
@@ -307,12 +316,12 @@ export const useBulkUploadStore = create<BulkUploadStore>()(
         poll()
       },
 
-      stopJobPolling: () => {
-        const state = get()
+    stopJobPolling: () => {
+      const state = get()
 
-        if (state.pollingIntervalId) {
-          clearTimeout(state.pollingIntervalId)
-        }
+      if (state.pollingIntervalId) {
+        clearTimeout(state.pollingIntervalId)
+      }
 
         set({
           isPolling: false,
@@ -762,7 +771,8 @@ export const useBulkUploadStore = create<BulkUploadStore>()(
         console.log(`📋 Current job state after list refresh:`, job)
         return job
       }
-    }),
+      }
+    },
     {
       name: 'bulk-upload-store',
       partialize: (state) => ({

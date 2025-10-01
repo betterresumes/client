@@ -4,6 +4,8 @@ import { useState, useEffect, useMemo } from 'react'
 import { useAuthStore } from '@/lib/stores/auth-store'
 import { useDashboardStatsStore } from '@/lib/stores/dashboard-stats-store'
 import { usePredictionsStore } from '@/lib/stores/predictions-store'
+import { useCachedPredictions } from '@/lib/hooks/use-cached-predictions'
+import { useOptimizedPredictionMutations } from '@/lib/hooks/use-optimized-prediction-mutations'
 import { Card } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -50,23 +52,31 @@ export function DashboardOverview() {
     clearError: clearStatsError
   } = useDashboardStatsStore()
 
-  // Predictions Store (for table data with pagination)
+  // Predictions Store (for methods and state)
   const {
+    fetchPredictions,
+    getPredictionProbability,
+    getRiskBadgeColor,
+    formatPredictionDate
+  } = usePredictionsStore()
+
+  // Cached predictions data (no API calls, uses store data)
+  const {
+    data: allPredictions,
     annualPredictions,
     quarterlyPredictions,
     systemAnnualPredictions,
     systemQuarterlyPredictions,
     isLoading: isPredictionsLoading,
     error: predictionsError,
-    fetchPredictions,
-    refetchPredictions,
-    getPredictionProbability,
-    getRiskBadgeColor,
-    formatPredictionDate,
-    getFilteredPredictions,
     lastFetched,
-    activeDataFilter
-  } = usePredictionsStore()
+    activeDataFilter,
+    hasData,
+    counts
+  } = useCachedPredictions('both')
+
+  // Optimized mutations (replaces React Query hooks)
+  const { refreshPredictions } = useOptimizedPredictionMutations()
 
   const [searchTerm, setSearchTerm] = useState('')
   const [selectedSector, setSelectedSector] = useState('all')
@@ -107,15 +117,24 @@ export function DashboardOverview() {
       fetchStats(true) // Only refresh stats, not predictions
     }
 
+    const handleRefreshDashboardStats = () => {
+      console.log('🔄 Manual refresh triggered - refreshing dashboard stats')
+      fetchStats(true) // Force refresh dashboard stats
+      // Also refresh view counter
+      setForceRefresh(prev => prev + 1)
+    }
+
     if (typeof window !== 'undefined') {
       window.addEventListener('prediction-created', handlePredictionCreated as EventListener)
       window.addEventListener('predictions-updated', handlePredictionsUpdated as EventListener)
       window.addEventListener('navigate-to-dashboard', handleNavigateToDashboard as EventListener)
+      window.addEventListener('refresh-dashboard-stats', handleRefreshDashboardStats as EventListener)
 
       return () => {
         window.removeEventListener('prediction-created', handlePredictionCreated as EventListener)
         window.removeEventListener('predictions-updated', handlePredictionsUpdated as EventListener)
         window.removeEventListener('navigate-to-dashboard', handleNavigateToDashboard as EventListener)
+        window.removeEventListener('refresh-dashboard-stats', handleRefreshDashboardStats as EventListener)
       }
     }
   }, [fetchStats])
@@ -128,28 +147,36 @@ export function DashboardOverview() {
       hasUser: !!user,
       userRole: user?.role,
       annualCount: annualPredictions.length,
-      quarterlyCount: quarterlyPredictions.length
+      quarterlyCount: quarterlyPredictions.length,
+      systemAnnualCount: systemAnnualPredictions.length,
+      systemQuarterlyCount: systemQuarterlyPredictions.length
     })
 
     if (isClient && isAuthenticated && user) {
-      console.log('📊 Dashboard mounted - making exactly 3 API calls')
+      console.log('📊 Dashboard mounted - fetching initial data')
 
-      // 1. Fetch dashboard stats (summary statistics) - /predictions/dashboard
+      // 1. Fetch dashboard stats (summary statistics) - always fetch for fresh stats
       fetchStats()
 
-      // 2 & 3. Fetch predictions only if we don't have any data
-      // /predictions/annual?page=1&size=20 and /predictions/quarterly?page=1&size=20
-      if (annualPredictions.length === 0 && quarterlyPredictions.length === 0) {
-        console.log('📊 Fetching predictions (page 1, size 20)...')
+      // 2. Fetch predictions only if we don't have any data at all
+      const hasAnyPredictionData = annualPredictions.length > 0 ||
+        quarterlyPredictions.length > 0 ||
+        systemAnnualPredictions.length > 0 ||
+        systemQuarterlyPredictions.length > 0
+
+      if (!hasAnyPredictionData) {
+        console.log('📊 No prediction data found - fetching from API')
         fetchPredictions()
       } else {
-        console.log('📊 Skipping predictions fetch - already have data:', {
+        console.log('📊 Using cached prediction data:', {
           annual: annualPredictions.length,
-          quarterly: quarterlyPredictions.length
+          quarterly: quarterlyPredictions.length,
+          systemAnnual: systemAnnualPredictions.length,
+          systemQuarterly: systemQuarterlyPredictions.length
         })
       }
     }
-  }, [isClient, isAuthenticated, user]) // Only depend on auth state - no other dependencies
+  }, [isClient, isAuthenticated, user?.id]) // Only depend on auth state and user ID
 
   // Removed excessive useEffects to prevent too many API calls
 
@@ -157,38 +184,36 @@ export function DashboardOverview() {
   const safeAnnualPredictions = Array.isArray(annualPredictions) ? annualPredictions : []
   const safeQuarterlyPredictions = Array.isArray(quarterlyPredictions) ? quarterlyPredictions : []
 
-  // Get filtered predictions based on data access settings (include forceRefresh to trigger re-evaluation)
+  // Use filtered predictions from the cached hook (no need for additional memos)
   const filteredAnnualPredictions = useMemo(() => {
-    const filtered = getFilteredPredictions('annual')
-    console.log('🔄 Dashboard - Filtered annual predictions:', {
-      count: filtered.length,
+    console.log('🔄 Dashboard - Using cached annual predictions:', {
+      count: annualPredictions.length,
       activeFilter: activeDataFilter,
       forceRefresh,
       userRole: user?.role,
-      sample: filtered.slice(0, 3).map(p => ({
+      sample: annualPredictions.slice(0, 3).map((p: any) => ({
         company: p.company_symbol,
         access: p.organization_access,
         id: p.id
       }))
     })
-    return filtered
-  }, [getFilteredPredictions, forceRefresh, annualPredictions, systemAnnualPredictions, activeDataFilter, lastFetched])
+    return annualPredictions
+  }, [annualPredictions, activeDataFilter, forceRefresh, user?.role])
 
   const filteredQuarterlyPredictions = useMemo(() => {
-    const filtered = getFilteredPredictions('quarterly')
-    console.log('🔄 Dashboard - Filtered quarterly predictions:', {
-      count: filtered.length,
+    console.log('🔄 Dashboard - Using cached quarterly predictions:', {
+      count: quarterlyPredictions.length,
       activeFilter: activeDataFilter,
       forceRefresh,
       userRole: user?.role,
-      sample: filtered.slice(0, 3).map(p => ({
+      sample: quarterlyPredictions.slice(0, 3).map((p: any) => ({
         company: p.company_symbol,
         access: p.organization_access,
         id: p.id
       }))
     })
-    return filtered
-  }, [getFilteredPredictions, forceRefresh, quarterlyPredictions, systemQuarterlyPredictions, activeDataFilter, lastFetched])
+    return quarterlyPredictions
+  }, [quarterlyPredictions, activeDataFilter, forceRefresh, user?.role])
 
   console.log('Annual Predictions:', safeAnnualPredictions)
 
@@ -545,7 +570,7 @@ export function DashboardOverview() {
               selectedYear={selectedYear}
               customYear={customYear}
               isLoading={isLoading}
-              onRefetch={refetchPredictions}
+              onRefetch={refreshPredictions}
             />
           </TabsContent>
 
@@ -559,7 +584,7 @@ export function DashboardOverview() {
               selectedYear={selectedYear}
               customYear={customYear}
               isLoading={isLoading}
-              onRefetch={refetchPredictions}
+              onRefetch={refreshPredictions}
             />
           </TabsContent>
         </Tabs>

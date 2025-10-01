@@ -6,6 +6,7 @@ import { predictionsApi } from '@/lib/api/predictions'
 import { dashboardApi } from '@/lib/api/dashboard'
 import { organizationsApi } from '@/lib/api/organizations'
 import { useAuthStore } from '@/lib/stores/auth-store'
+import { LocalStorageManager } from '@/lib/utils/storage-manager'
 
 interface Prediction {
   // Core identification
@@ -224,10 +225,18 @@ export const usePredictionsStore = create<PredictionsStore>()(
             return
           }
 
-          // Don't fetch if we already have recent data and app is initialized, unless forcing refresh
-          if (!forceRefresh && state.isInitialized && state.lastFetched && Date.now() - state.lastFetched < 30 * 60 * 1000) {
-            console.log('📋 Using cached predictions data (less than 30 min old) - no API call needed')
-            return
+          // IMPROVED CACHING LOGIC: Only fetch if no data exists OR force refresh is requested
+          if (!forceRefresh && state.isInitialized) {
+            // Check if we have meaningful data already
+            const hasAnyData = state.annualPredictions.length > 0 ||
+              state.quarterlyPredictions.length > 0 ||
+              state.systemAnnualPredictions.length > 0 ||
+              state.systemQuarterlyPredictions.length > 0
+
+            if (hasAnyData) {
+              console.log('📋 Using cached predictions data - no API call needed')
+              return
+            }
           }
 
           // Get current user from auth store
@@ -1058,17 +1067,46 @@ export const usePredictionsStore = create<PredictionsStore>()(
     },
     {
       name: 'predictions-storage',
-      partialize: (state) => ({
-        // Only persist data, not loading states
-        annualPredictions: state.annualPredictions,
-        quarterlyPredictions: state.quarterlyPredictions,
-        systemAnnualPredictions: state.systemAnnualPredictions,
-        systemQuarterlyPredictions: state.systemQuarterlyPredictions,
-        lastFetched: state.lastFetched,
-        isInitialized: state.isInitialized,
-        activeDataFilter: state.activeDataFilter,
-        // Don't persist pagination as it can be recalculated
-      }),
+      partialize: (state) => {
+        // For large datasets (5000+ records), only persist metadata and small datasets
+        const totalRecords =
+          state.annualPredictions.length +
+          state.quarterlyPredictions.length +
+          state.systemAnnualPredictions.length +
+          state.systemQuarterlyPredictions.length;
+
+        console.log('📦 Persistence check - Total records:', totalRecords);
+
+        // Check localStorage capacity before persisting
+        LocalStorageManager.monitorStorage();
+
+        // If dataset is large OR localStorage is near capacity, only persist essential metadata
+        if (totalRecords > 1000 || LocalStorageManager.isStorageNearCapacity()) {
+          console.log('⚠️ Large dataset or storage capacity issue detected, minimal persistence mode');
+          return {
+            lastFetched: state.lastFetched,
+            isInitialized: false, // Force fresh fetch for large datasets
+            activeDataFilter: state.activeDataFilter,
+            // Don't persist large data arrays to localStorage
+            annualPredictions: [],
+            quarterlyPredictions: [],
+            systemAnnualPredictions: [],
+            systemQuarterlyPredictions: []
+          };
+        }
+
+        // For smaller datasets, persist normally but with limits
+        return {
+          // Only persist first 500 records of each type to prevent localStorage bloat
+          annualPredictions: state.annualPredictions.slice(0, 500),
+          quarterlyPredictions: state.quarterlyPredictions.slice(0, 500),
+          systemAnnualPredictions: state.systemAnnualPredictions.slice(0, 500),
+          systemQuarterlyPredictions: state.systemQuarterlyPredictions.slice(0, 500),
+          lastFetched: state.lastFetched,
+          isInitialized: state.isInitialized,
+          activeDataFilter: state.activeDataFilter,
+        };
+      },
       // Clear persisted data when no user is authenticated
       onRehydrateStorage: () => (state) => {
         if (state) {

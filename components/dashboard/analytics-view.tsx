@@ -3,6 +3,7 @@
 import { useState, useMemo, useEffect } from 'react'
 import { usePredictionsStore } from '@/lib/stores/predictions-store'
 import { useAuthStore } from '@/lib/stores/auth-store'
+import { useCachedPredictions } from '@/lib/hooks/use-cached-predictions'
 import { Bar, BarChart, CartesianGrid, XAxis, YAxis, PieChart, Pie, Cell, ScatterChart, Scatter } from "recharts"
 import {
   Card,
@@ -28,6 +29,15 @@ import { CompanyAnalysisTable } from './company-analysis-table'
 
 export function AnalyticsView() {
   const { isAuthenticated, user } = useAuthStore()
+  // Store methods only
+  const {
+    fetchPredictions,
+    getPredictionProbability,
+    getRiskBadgeColor,
+    formatPredictionDate
+  } = usePredictionsStore()
+
+  // Cached data from store
   const {
     annualPredictions,
     quarterlyPredictions,
@@ -35,26 +45,36 @@ export function AnalyticsView() {
     systemQuarterlyPredictions,
     isLoading: isPredictionsLoading,
     error: predictionsError,
-    fetchPredictions,
-    getPredictionProbability,
-    getRiskBadgeColor,
-    formatPredictionDate,
-    getFilteredPredictions,
     activeDataFilter,
-    lastFetched
-  } = usePredictionsStore()
+    lastFetched,
+    hasData
+  } = useCachedPredictions('both')
 
   const [forceRefresh, setForceRefresh] = useState(0)
 
   const [activeTab, setActiveTab] = useState("annual")
 
-  // Only fetch predictions if we don't have any data and user is authenticated
+  // Only fetch predictions if we don't have any data at all and user is authenticated
   useEffect(() => {
-    if (isAuthenticated && user && annualPredictions.length === 0 && quarterlyPredictions.length === 0 && !isPredictionsLoading) {
-      console.log('📊 Analytics view - fetching predictions as none exist')
-      fetchPredictions()
+    if (isAuthenticated && user && !isPredictionsLoading) {
+      const hasAnyData = annualPredictions.length > 0 ||
+        quarterlyPredictions.length > 0 ||
+        systemAnnualPredictions.length > 0 ||
+        systemQuarterlyPredictions.length > 0
+
+      if (!hasAnyData) {
+        console.log('📊 Analytics view - no cached data found, fetching from API')
+        fetchPredictions()
+      } else {
+        console.log('📊 Analytics view - using cached data:', {
+          annual: annualPredictions.length,
+          quarterly: quarterlyPredictions.length,
+          systemAnnual: systemAnnualPredictions.length,
+          systemQuarterly: systemQuarterlyPredictions.length
+        })
+      }
     }
-  }, [isAuthenticated, user, annualPredictions.length, quarterlyPredictions.length, isPredictionsLoading, fetchPredictions])
+  }, [isAuthenticated, user?.id]) // Only depend on auth state and user ID - not data arrays
 
   // Listen for data filter changes to refresh the view
   useEffect(() => {
@@ -73,15 +93,22 @@ export function AnalyticsView() {
       setForceRefresh(prev => prev + 1)
     }
 
+    const handleDashboardRefresh = () => {
+      console.log('📊 Analytics view - dashboard refresh triggered, refreshing view')
+      setForceRefresh(prev => prev + 1)
+    }
+
     if (typeof window !== 'undefined') {
       window.addEventListener('data-filter-changed', handleDataFilterChanged as EventListener)
       window.addEventListener('prediction-created', handlePredictionCreated as EventListener)
       window.addEventListener('predictions-updated', handlePredictionsUpdated as EventListener)
+      window.addEventListener('refresh-dashboard-stats', handleDashboardRefresh as EventListener)
 
       return () => {
         window.removeEventListener('data-filter-changed', handleDataFilterChanged as EventListener)
         window.removeEventListener('prediction-created', handlePredictionCreated as EventListener)
         window.removeEventListener('predictions-updated', handlePredictionsUpdated as EventListener)
+        window.removeEventListener('refresh-dashboard-stats', handleDashboardRefresh as EventListener)
       }
     }
   }, [])
@@ -90,29 +117,27 @@ export function AnalyticsView() {
   const safePredictions = useMemo(() => Array.isArray(annualPredictions) ? annualPredictions : [], [annualPredictions, forceRefresh])
   const safeQuarterlyPredictions = useMemo(() => Array.isArray(quarterlyPredictions) ? quarterlyPredictions : [], [quarterlyPredictions, forceRefresh])
 
-  // Get filtered predictions based on data access settings (trigger with forceRefresh)
+  // Use cached filtered predictions (already filtered by the hook)
   const filteredAnnualPredictions = useMemo(() => {
-    const filtered = getFilteredPredictions('annual')
-    console.log('📊 Analytics - Annual predictions filtered:', {
+    console.log('📊 Analytics - Using cached annual predictions:', {
       activeDataFilter,
-      count: filtered.length,
-      sample: filtered.slice(0, 3).map(p => ({ symbol: p.company_symbol, access: p.organization_access }))
+      count: annualPredictions.length,
+      sample: annualPredictions.slice(0, 3).map((p: any) => ({ symbol: p.company_symbol, access: p.organization_access }))
     })
-    return filtered
-  }, [getFilteredPredictions, forceRefresh, annualPredictions, systemAnnualPredictions, activeDataFilter])
+    return annualPredictions
+  }, [annualPredictions, activeDataFilter, forceRefresh])
 
   const filteredQuarterlyPredictions = useMemo(() => {
-    const filtered = getFilteredPredictions('quarterly')
-    console.log('📊 Analytics - Quarterly predictions filtered:', {
+    console.log('📊 Analytics - Using cached quarterly predictions:', {
       activeDataFilter,
-      count: filtered.length,
+      count: quarterlyPredictions.length,
       systemQuarterlyCount: systemQuarterlyPredictions.length,
       userQuarterlyCount: quarterlyPredictions.length,
-      sample: filtered.slice(0, 3).map(p => ({ symbol: p.company_symbol, access: p.organization_access })),
+      sample: quarterlyPredictions.slice(0, 3).map((p: any) => ({ symbol: p.company_symbol, access: p.organization_access })),
       expectedFromSystem: activeDataFilter === 'system'
     })
-    return filtered
-  }, [getFilteredPredictions, forceRefresh, quarterlyPredictions, systemQuarterlyPredictions, activeDataFilter])
+    return quarterlyPredictions
+  }, [quarterlyPredictions, systemQuarterlyPredictions, activeDataFilter, forceRefresh])
 
   // Convert filtered predictions to match expected format
   const annualData = filteredAnnualPredictions.map((pred: any) => ({

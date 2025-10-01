@@ -3,6 +3,8 @@
 import { useAuthStore } from '@/lib/stores/auth-store'
 import { usePredictionsStore } from '@/lib/stores/predictions-store'
 import { useDashboardStatsStore } from '@/lib/stores/dashboard-stats-store'
+import { useOptimizedPredictionMutations } from '@/lib/hooks/use-optimized-prediction-mutations'
+import { useDashboardRefresh } from '@/lib/hooks/use-dashboard-refresh'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Button } from '@/components/ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -158,16 +160,21 @@ export function OrganizationSelector() {
 }
 
 export function RefreshButton() {
-  const { isLoading, refetchPredictions } = usePredictionsStore()
+  const { isLoading } = usePredictionsStore()
+  const { isLoading: isStatsLoading } = useDashboardStatsStore()
+  const { refreshAllData } = useDashboardRefresh()
+
+  const isRefreshing = isLoading || isStatsLoading
 
   return (
     <Button
-      onClick={() => refetchPredictions()}
+      onClick={refreshAllData}
       variant="outline"
       size="sm"
-      disabled={isLoading}
+      disabled={isRefreshing}
+      title="Refresh all dashboard data including predictions and statistics"
     >
-      {isLoading ? (
+      {isRefreshing ? (
         <Loader2 className="h-4 w-4 animate-spin" />
       ) : (
         <RefreshCw className="h-4 w-4" />
