@@ -58,7 +58,6 @@ export function RegisterForm() {
         username: data.username,
         full_name: data.full_name,
         password: data.password,
-        role: 'user',
       })
 
       if (response.success) {
