@@ -1,174 +1,37 @@
 'use client'
 
-import { useMemo, useEffect, useState } from 'react'
-import { usePredictionsStore } from '@/lib/stores/predictions-store'
-import { useAuthStore } from '@/lib/stores/auth-store'
 import { Card } from '@/components/ui/card'
-import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
-import { Skeleton } from '@/components/ui/skeleton'
-import { Loader2 } from 'lucide-react'
+import { useAuthStore } from '@/lib/stores/auth-store'
 import {
   AlertTriangle,
-  TrendingUp,
   BarChart3,
-  Activity,
-  Target,
-  Zap,
-  DollarSign,
-  PieChart,
-  RefreshCw,
-  Building2
+  Zap
 } from 'lucide-react'
 
 export function RiskInsightsView() {
-  const { isAuthenticated, user } = useAuthStore()
-  const {
-    annualPredictions,
-    quarterlyPredictions,
-    systemAnnualPredictions,
-    systemQuarterlyPredictions,
-    isLoading: isPredictionsLoading,
-    error: predictionsError,
-    fetchPredictions,
-    getPredictionProbability,
-    getRiskBadgeColor,
-    formatPredictionDate,
-    getFilteredPredictions,
-    activeDataFilter,
-    lastFetched
-  } = usePredictionsStore()
+  const { isAuthenticated } = useAuthStore()
 
-  const [forceRefresh, setForceRefresh] = useState(0)
-
-  // Only fetch predictions if we don't have any data and user is authenticated
-  useEffect(() => {
-    if (isAuthenticated && user && annualPredictions.length === 0 && !isPredictionsLoading) {
-      console.log('⚠️ Risk insights view - fetching predictions as none exist')
-      fetchPredictions()
-    }
-  }, [isAuthenticated, user, annualPredictions.length, isPredictionsLoading, fetchPredictions])
-
-  // Listen for data filter changes to refresh the view
-  useEffect(() => {
-    const handleDataFilterChanged = (event: CustomEvent) => {
-      console.log('⚠️ Risk insights view - data filter changed, refreshing:', event.detail)
-      setForceRefresh(prev => prev + 1)
-    }
-
-    if (typeof window !== 'undefined') {
-      window.addEventListener('data-filter-changed', handleDataFilterChanged as EventListener)
-      return () => {
-        window.removeEventListener('data-filter-changed', handleDataFilterChanged as EventListener)
-      }
-    }
-  }, [])
-
-  // Ensure predictions are arrays - use filtered data (trigger with forceRefresh)
-  const filteredPredictions = useMemo(() => getFilteredPredictions('annual'), [getFilteredPredictions, forceRefresh, annualPredictions, systemAnnualPredictions, activeDataFilter])
-  const safePredictions = Array.isArray(filteredPredictions) ? filteredPredictions : []
-
-  console.log('🔍 Risk insights using filtered predictions:', safePredictions.length)
-
-  // Calculate risk insights from real data
-  const riskInsights = useMemo(() => {
-    if (safePredictions.length === 0) return null
-
-    // High risk companies (default rate > 5% or risk category HIGH/CRITICAL)
-    const highRiskCompanies = safePredictions.filter((pred: any) =>
-      pred.default_probability > 0.05 ||
-      pred.risk_category === 'HIGH' ||
-      pred.risk_category === 'CRITICAL'
-    ).slice(0, 5)
-
-    // Top performing companies (lowest default rates with high confidence)
-    const topPerformingCompanies = safePredictions
-      .filter((pred: any) => pred.confidence > 0.8)
-      .sort((a: any, b: any) => a.default_probability - b.default_probability)
-      .slice(0, 5)
-
-    // Model performance metrics
-    const avgConfidence = safePredictions.reduce((acc: number, pred: any) => acc + pred.confidence, 0) / safePredictions.length
-    const highConfidencePredictions = safePredictions.filter((pred: any) => pred.confidence > 0.8).length
-    const lowRiskCompanies = safePredictions.filter((pred: any) => pred.risk_category === 'LOW').length
-
-    return {
-      highRiskCompanies,
-      topPerformingCompanies,
-      avgConfidence,
-      highConfidencePredictions,
-      lowRiskCompanies,
-      totalCompanies: safePredictions.length
-    }
-  }, [safePredictions])
-
-  if (isPredictionsLoading) {
+  // Only show content to authenticated users
+  if (!isAuthenticated) {
     return (
-      <div className="space-y-6">
-        <div className="flex items-center justify-between">
-          <div>
-            <h2 className="text-2xl font-bricolage font-bold text-gray-900 dark:text-white">
-              About
-            </h2>
-            <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
-              Deep dive into model performance metrics
-            </p>
-          </div>
-          <Skeleton className="h-9 w-32" />
-        </div>
-
-
-
-        {/* Model Performance Skeleton */}
-        <Card className="p-6">
-          <Skeleton className="h-6 w-64 mb-6" />
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-            {[...Array(3)].map((_, index) => (
-              <div key={index} className="text-center p-6 bg-gray-50 dark:bg-gray-800/50 rounded-lg">
-                <Skeleton className="h-12 w-20 mx-auto mb-2" />
-                <Skeleton className="h-4 w-32 mx-auto" />
-              </div>
-            ))}
-          </div>
-        </Card>
-
-        {/* Key Features & Capabilities Skeleton */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <Card className="p-6">
-            <Skeleton className="h-6 w-40 mb-6" />
-            <div className="space-y-4">
-              {[...Array(6)].map((_, index) => (
-                <div key={index} className="flex items-center space-x-3">
-                  <Skeleton className="w-3 h-3 rounded-full" />
-                  <Skeleton className="h-4 w-48" />
-                </div>
-              ))}
-            </div>
-          </Card>
-
-          <Card className="p-6">
-            <Skeleton className="h-6 w-48 mb-6" />
-            <div className="space-y-4">
-              {[...Array(4)].map((_, index) => (
-                <div key={index} className="flex items-center space-x-3">
-                  <Skeleton className="h-5 w-5 rounded-full" />
-                  <Skeleton className="h-4 w-56" />
-                </div>
-              ))}
-            </div>
-          </Card>
+      <div className="flex items-center justify-center min-h-[400px]">
+        <div className="text-center">
+          <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-2">
+            Authentication Required
+          </h3>
+          <p className="text-sm text-gray-600 dark:text-gray-400">
+            Please log in to view the About section.
+          </p>
         </div>
       </div>
     )
   }
-
-  // Always show static content regardless of data availability
   return (
     <div className="space-y-6 font-bricolage">
       {/* Risk Insights Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-2xl font-bricolage font-bold text-gray-900 dark:text-white">
+          <h2 className="text-2xl font-bricolage font-bold text-gray-900 dark:text-white mt-16">
             About
           </h2>
           <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">

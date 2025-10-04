@@ -8,8 +8,7 @@ import {
   CheckCircle,
   AlertCircle,
   Loader2,
-  Activity,
-  RefreshCw
+  Activity
 } from 'lucide-react'
 import { useJobStore, Job } from '@/lib/stores/job-store'
 import { formatDistanceToNow } from 'date-fns'
@@ -163,18 +162,7 @@ export function JobStatusDisplay({
             </div>
           )}
 
-          {/* Refresh button for active jobs */}
-          {(job.status === 'processing' || job.status === 'pending') && (
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => updateJobFromAPI(jobId)}
-              className="text-xs px-1 py-1 h-6 w-6 text-gray-400 hover:text-gray-600"
-              title="Refresh status"
-            >
-              <RefreshCw className="h-3 w-3" />
-            </Button>
-          )}
+
 
           {/* Download button for completed jobs */}
           {job.status === 'completed' && job.jobResult?.results && (

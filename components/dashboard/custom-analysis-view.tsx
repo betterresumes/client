@@ -22,7 +22,7 @@ import { BulkUploadSection } from './analysis/bulk-upload-section-new'
 import { JobStatusContainer } from './job-status-display'
 import { JobResultsDialog } from './job-results-dialog'
 import { jobsApi } from '@/lib/api/jobs'
-import { Loader2, Download, Trash2, X, FileSpreadsheet, ChevronDown, ChevronUp, Eye } from 'lucide-react'
+import { Loader2, Download, Trash2, X, FileSpreadsheet, ChevronDown, ChevronUp, Eye, RefreshCw } from 'lucide-react'
 
 // Simple Jobs Display Component - Just jobs, no upload widget integration
 function SimpleJobsDisplaySection({
@@ -1526,11 +1526,11 @@ export function CustomAnalysisView() {
   const isAnalysisLoading = isCreating || isUpdating
 
   return (
-    <div className="space-y-6">
+    <div className="">
       {/* Custom Analysis Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-2xl font-bricolage font-bold text-gray-900 dark:text-white">
+          <h2 className="text-2xl font-bricolage font-bold text-gray-900 dark:text-white mt-16">
             Custom Company Analysis
           </h2>
           <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
@@ -1545,7 +1545,7 @@ export function CustomAnalysisView() {
       </div>
 
       {/* Analysis Type Tabs */}
-      <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full mt-2">
         <TabsList className="grid grid-cols-2">
           <TabsTrigger value="individual">Individual Analysis</TabsTrigger>
           <TabsTrigger value="bulk">Bulk Analysis</TabsTrigger>
@@ -1620,6 +1620,22 @@ export function CustomAnalysisView() {
               >
                 <Download className="h-4 w-4" />
                 Download Template
+              </Button>
+
+              {/* Refresh Button */}
+              <Button
+                variant="outline"
+                onClick={() => {
+                  // Refresh bulk jobs data
+                  fetchBulkJobs()
+                  // Note: Individual jobs in useJobStore don't have a fetch function since they use updateJobFromAPI for individual updates
+                }}
+                size="sm"
+                className="border-gray-300 hover:bg-gray-50 flex items-center gap-2"
+                title="Refresh job status"
+              >
+                <RefreshCw className="h-4 w-4" />
+                Refresh
               </Button>
 
               {/* Upload Button */}

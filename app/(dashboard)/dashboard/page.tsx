@@ -166,14 +166,16 @@ export default function DashboardPage() {
         </Tabs>
       </div>
 
-      {/* Data Source Tabs and Controls on the right side only */}
-      <div className="flex flex-col items-end mt-2">
-        <div className="flex items-center space-x-3">
-          <DataSourceTabs />
-          <RefreshButton />
+      {/* Data Source Tabs and Controls on the right side only - Hide for custom-analysis and risk-insights tabs */}
+      {activeTab !== 'custom-analysis' && activeTab !== 'risk-insights' && (
+        <div className="flex flex-col items-end mt-2">
+          <div className="flex items-center space-x-3">
+            <DataSourceTabs />
+            <RefreshButton />
+          </div>
+          <LastUpdatedInfo />
         </div>
-        <LastUpdatedInfo />
-      </div>
+      )}
 
       {/* Organization selector for tenant admin */}
       <OrganizationSelector />
