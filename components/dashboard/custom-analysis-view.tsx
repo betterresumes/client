@@ -846,29 +846,80 @@ export function CustomAnalysisView() {
       // This ensures proper job management and immediate UI feedback
       const { uploadFile } = useBulkUploadStore.getState()
 
+      // Start upload in background but don't wait for completion
+      uploadFile(fileToUse, predictionType).then(jobId => {
+        // Dismiss loading toast
+        toast.dismiss('bulk-upload-analysis')
 
-      const jobId = await uploadFile(fileToUse, predictionType)
+        if (jobId) {
+          // Success message WITHOUT estimated time
+          toast.success(`Analysis started for "${fileToUse.name}"!`, {
+            description: `Processing started. Job ID: ${jobId.substring(0, 8)}...`
+          })
+        }
+      }).catch(error => {
+        // Dismiss loading toast on error
+        toast.dismiss('bulk-upload-analysis')
 
-      // Dismiss loading toast
-      toast.dismiss('bulk-upload-analysis')
+        // Handle error (this code will be moved below)
+        console.error('Bulk upload error:', error)
+        let errorMessage = 'Unknown error'
+        if (error.response?.data?.detail) {
+          errorMessage = error.response.data.detail
+        } else if (error.detail) {
+          errorMessage = error.detail
+        } else if (error.message) {
+          errorMessage = error.message
+        } else if (typeof error === 'string') {
+          errorMessage = error
+        }
 
-      if (!jobId) {
-        throw new Error('No job ID returned from bulk upload')
-      }
+        if (errorMessage.includes('Missing required columns')) {
+          const missingColumnsMatch = errorMessage.match(/Missing required columns: (.+)/)
+          const missingColumns = missingColumnsMatch ? missingColumnsMatch[1] : 'unknown columns'
 
-      const estimatedTimeMinutes = useBulkUploadStore.getState().jobs.find(j => j.id === jobId)?.estimated_time_minutes
+          const isQuarterlyColumns = missingColumns.includes('sga_margin') || missingColumns.includes('return_on_capital')
+          const isAnnualColumns = missingColumns.includes('long_term_debt_to_total_capital') || missingColumns.includes('return_on_assets')
 
-      // Success message with job details
-      toast.success(`Analysis started for "${fileToUse.name}"!`, {
-        description: estimatedTimeMinutes && estimatedTimeMinutes > 0
-          ? `Estimated completion: ${estimatedTimeMinutes} minutes. Job ID: ${jobId.substring(0, 8)}...`
-          : `Processing started. Job ID: ${jobId.substring(0, 8)}...`
+          let suggestedTab = 'unknown'
+          let currentFileType = 'unknown'
+
+          if (isQuarterlyColumns && predictionType === 'annual') {
+            suggestedTab = 'quarterly'
+            currentFileType = 'annual'
+          } else if (isAnnualColumns && predictionType === 'quarterly') {
+            suggestedTab = 'annual'
+            currentFileType = 'quarterly'
+          }
+
+          if (suggestedTab !== 'unknown') {
+            toast.error(`Wrong file type selected!`, {
+              description: `You uploaded a ${currentFileType} file but selected the ${predictionType} tab. Missing columns: ${missingColumns}`,
+              duration: 10000,
+              action: {
+                label: `Switch to ${suggestedTab}`,
+                onClick: () => {
+                  setPredictionType(suggestedTab as 'annual' | 'quarterly')
+                  toast.success(`Switched to ${suggestedTab} tab. Please try uploading again.`)
+                }
+              }
+            })
+          } else {
+            toast.error(`Column validation failed for "${fileToUse.name}"`, {
+              description: `Missing required columns: ${missingColumns}. Please check your file format.`,
+              duration: 8000
+            })
+          }
+        } else {
+          toast.error(`Analysis failed for "${fileToUse.name}": ${errorMessage}`)
+        }
       })
 
-      // Show helpful message for large files
-      if (estimatedTimeMinutes && estimatedTimeMinutes > 5) {
-        toast.info(`Large file processing. Check back in ${Math.round(estimatedTimeMinutes / 2)} minutes.`)
-      }
+      // Immediately dismiss loading toast and return success (don't wait for upload completion)
+      toast.dismiss('bulk-upload-analysis')
+      toast.success(`Upload started for "${fileToUse.name}"!`, {
+        description: 'Processing in background...'
+      })
 
       // Clear uploaded file state to allow new uploads
       setUploadedFiles(prev => ({
@@ -876,76 +927,11 @@ export function CustomAnalysisView() {
         [predictionType]: null
       }))
 
-
-
     } catch (error: any) {
-      // Dismiss loading toast on error
+      // This catch block is now mainly for immediate errors before async upload starts
       toast.dismiss('bulk-upload-analysis')
-
-      console.error('Bulk upload error:', {
-        error,
-        message: error.message,
-        detail: error.detail,
-        response: error.response?.data,
-        fullError: error
-      })
-
-      // Enhanced error handling for API errors - extract detailed error message
-      let errorMessage = 'Unknown error'
-
-      if (error.response?.data?.detail) {
-        errorMessage = error.response.data.detail
-      } else if (error.detail) {
-        errorMessage = error.detail
-      } else if (error.message) {
-        errorMessage = error.message
-      } else if (typeof error === 'string') {
-        errorMessage = error
-      }
-
-      if (errorMessage.includes('Missing required columns')) {
-        // Extract missing columns from error message
-        const missingColumnsMatch = errorMessage.match(/Missing required columns: (.+)/)
-        const missingColumns = missingColumnsMatch ? missingColumnsMatch[1] : 'unknown columns'
-
-        // Determine correct file type based on missing columns
-        const isQuarterlyColumns = missingColumns.includes('sga_margin') || missingColumns.includes('return_on_capital')
-        const isAnnualColumns = missingColumns.includes('long_term_debt_to_total_capital') || missingColumns.includes('return_on_assets')
-
-        let suggestedTab = 'unknown'
-        let currentFileType = 'unknown'
-
-        if (isQuarterlyColumns && predictionType === 'annual') {
-          suggestedTab = 'quarterly'
-          currentFileType = 'annual'
-        } else if (isAnnualColumns && predictionType === 'quarterly') {
-          suggestedTab = 'annual'
-          currentFileType = 'quarterly'
-        }
-
-        if (suggestedTab !== 'unknown') {
-          toast.error(`Wrong file type selected!`, {
-            description: `You uploaded a ${currentFileType} file but selected the ${predictionType} tab. Missing columns: ${missingColumns}`,
-            duration: 10000,
-            action: {
-              label: `Switch to ${suggestedTab}`,
-              onClick: () => {
-                setPredictionType(suggestedTab as 'annual' | 'quarterly')
-                toast.success(`Switched to ${suggestedTab} tab. Please try uploading again.`)
-              }
-            }
-          })
-        } else {
-          toast.error(`Column validation failed for "${fileToUse.name}"`, {
-            description: `Missing required columns: ${missingColumns}. Please check your file format.`,
-            duration: 8000
-          })
-        }
-      } else {
-        toast.error(`Analysis failed for "${fileToUse.name}": ${errorMessage}`)
-      }
-
-      // Re-throw the error so it can be caught by the caller (bulk-upload-section-new.tsx)
+      console.error('Immediate upload error:', error)
+      toast.error('Failed to start upload')
       throw error
     }
 
@@ -1732,8 +1718,8 @@ export function CustomAnalysisView() {
       {/* Upload Modal */}
       {showUploadModal && (
         <>
-          {/* Blur backdrop */}
-          <div className="fixed inset-0 z-40 backdrop-blur bg-black/20" />
+          {/* Enhanced Blur backdrop */}
+          <div className="fixed inset-0 z-40 backdrop-blur-md bg-black/40" />
 
           {/* Modal */}
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
@@ -2025,13 +2011,14 @@ export function CustomAnalysisView() {
                               // Process the first completed file only
                               const completedFile = uploadQueue.find(f => f.status === 'completed')
                               if (completedFile) {
+                                // Close modal immediately
+                                setShowUploadModal(false)
+                                setUploadQueue([])
+
                                 try {
                                   await handleBulkUpload(completedFile.file)
-                                  setShowUploadModal(false)
-                                  setUploadQueue([])
                                 } catch (error) {
-                                  // Error is already handled in handleBulkUpload, but keep modal open for retry
-
+                                  // Error is already handled in handleBulkUpload
                                 }
                               }
                             }}
@@ -2055,12 +2042,13 @@ export function CustomAnalysisView() {
                         {getCurrentUploadedFile() && uploadQueue.length === 0 && (
                           <Button
                             onClick={async () => {
+                              // Close modal immediately
+                              setShowUploadModal(false)
+
                               try {
                                 await handleBulkUpload(getCurrentUploadedFile()!)
-                                setShowUploadModal(false)
                               } catch (error) {
-                                // Error is already handled in handleBulkUpload, but keep modal open for retry
-
+                                // Error is already handled in handleBulkUpload
                               }
                             }}
                             disabled={false}

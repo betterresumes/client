@@ -355,11 +355,11 @@ export function BulkUploadSection({
         console.log(`🚀 Starting ${predictionType} analysis for validated file:`, uploadedFile.name)
 
         try {
+          // Reset the upload modal immediately (don't wait for completion)
+          setUploadedFile(null)
+
           // Call the bulk upload function and handle any API errors
           await onBulkUpload(uploadedFile)
-
-          // Reset the upload modal after successful start
-          setUploadedFile(null)
 
         } catch (uploadError: any) {
           // Handle API errors from the upload process

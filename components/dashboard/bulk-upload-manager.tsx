@@ -132,7 +132,7 @@ export function BulkUploadManager({ className }: BulkUploadManagerProps) {
 
     if (jobId) {
       toast.success(`${selectedType === 'annual' ? 'Annual' : 'Quarterly'} bulk upload started successfully!`, {
-        description: `Job ID: ${jobId.substring(0, 8)}... Processing will begin shortly.`
+        description: `Job ID: ${jobId.substring(0, 8)}... Processing in background.`
       })
     } else if (error) {
       toast.error(`Upload failed: ${error}`)
