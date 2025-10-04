@@ -348,7 +348,9 @@ export function CompanyAnalysisTable({
 
   // Action handlers
   const handleViewDetails = (item: any) => {
-    navigateToCompanyDetails(item.company_symbol, type)
+    // Navigate to company details for the exact prediction selected
+    const predictionId = item.id
+    navigateToCompanyDetails(item.company_symbol, type, predictionId)
   }
 
   const handleEdit = (item: any) => {

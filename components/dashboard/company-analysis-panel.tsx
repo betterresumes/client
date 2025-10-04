@@ -38,6 +38,29 @@ export function CompanyAnalysisPanel({
   const [selectedAnnualIndex, setSelectedAnnualIndex] = useState(0)
   const [selectedQuarterlyIndex, setSelectedQuarterlyIndex] = useState(0)
 
+  // When details page asks to focus a specific prediction, update the index
+  useEffect(() => {
+    const onSelectAnnual = (e: any) => {
+      const idx = e?.detail?.index
+      if (typeof idx === 'number' && idx >= 0 && idx < annualPredictions.length) {
+        setSelectedAnnualIndex(idx)
+      }
+    }
+    const onSelectQuarterly = (e: any) => {
+      const idx = e?.detail?.index
+      if (typeof idx === 'number' && idx >= 0 && idx < quarterlyPredictions.length) {
+        setSelectedQuarterlyIndex(idx)
+      }
+    }
+
+    window.addEventListener('company-details-select-annual-index', onSelectAnnual as EventListener)
+    window.addEventListener('company-details-select-quarterly-index', onSelectQuarterly as EventListener)
+    return () => {
+      window.removeEventListener('company-details-select-annual-index', onSelectAnnual as EventListener)
+      window.removeEventListener('company-details-select-quarterly-index', onSelectQuarterly as EventListener)
+    }
+  }, [annualPredictions.length, quarterlyPredictions.length])
+
   // Helper function to get risk category colors
   const getRiskColors = (category: string) => {
     switch (category) {
@@ -233,7 +256,7 @@ export function CompanyAnalysisPanel({
                         // Format the display text properly
                         const year = prediction.reporting_year || '2024'
                         const quarter = prediction.reporting_quarter || 'Annual'
-                        
+
                         return (
                           <SelectItem key={index} value={index.toString()}>
                             {year} {quarter}
@@ -383,11 +406,11 @@ export function CompanyAnalysisPanel({
                       {quarterlyPredictions.map((prediction, index) => {
                         // Format the display text properly
                         const year = prediction.reporting_year || '2024'
-                        const quarter = prediction.reporting_quarter || 
-                                       prediction.period || 
-                                       prediction.quarter || 
-                                       `Q${index + 1}`
-                        
+                        const quarter = prediction.reporting_quarter ||
+                          prediction.period ||
+                          prediction.quarter ||
+                          `Q${index + 1}`
+
                         return (
                           <SelectItem key={index} value={index.toString()}>
                             {year} {quarter}

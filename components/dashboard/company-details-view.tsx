@@ -27,6 +27,8 @@ import { Input } from '@/components/ui/input'
 
 export function CompanyDetailsView() {
   const { selectedCompany, selectedPredictionType, setSelectedCompany, clearSelection } = useDashboardStore()
+  // Also read the exact prediction id if provided via navigation
+  const { selectedPredictionId } = useDashboardStore()
   const { isAuthenticated, user } = useAuthStore()
   const { stats: dashboardStats, fetchStats } = useDashboardStatsStore()
   const [activeTab, setActiveTab] = useState<'annual' | 'quarterly'>('annual')
@@ -202,6 +204,29 @@ export function CompanyDetailsView() {
   // Determine which data is available for the selected company
   const hasAnnualData = currentAnnualPredictions.length > 0
   const hasQuarterlyData = currentQuarterlyPredictions.length > 0
+
+  // Preselect the exact prediction by id when navigating from table
+  useEffect(() => {
+    if (!selectedCompany) return
+
+    if (selectedPredictionId) {
+      if (selectedPredictionType === 'annual' && hasAnnualData) {
+        const idx = currentAnnualPredictions.findIndex((p: any) => p.id === selectedPredictionId)
+        if (idx >= 0) {
+          // Inform the analysis panel via a custom event
+          window.dispatchEvent(new CustomEvent('company-details-select-annual-index', { detail: { index: idx } }))
+          setActiveTab('annual')
+        }
+      }
+      if (selectedPredictionType === 'quarterly' && hasQuarterlyData) {
+        const idx = currentQuarterlyPredictions.findIndex((p: any) => p.id === selectedPredictionId)
+        if (idx >= 0) {
+          window.dispatchEvent(new CustomEvent('company-details-select-quarterly-index', { detail: { index: idx } }))
+          setActiveTab('quarterly')
+        }
+      }
+    }
+  }, [selectedCompany, selectedPredictionId, selectedPredictionType, hasAnnualData, hasQuarterlyData, currentAnnualPredictions, currentQuarterlyPredictions])
 
   // Switch to available tab if current tab has no data for selected company
   useEffect(() => {
