@@ -9,6 +9,7 @@ import type {
   QuarterlyPredictionRequest,
 } from '@/lib/types/prediction'
 import { useState } from 'react'
+import { useDashboardStatsStore } from '@/lib/stores/dashboard-stats-store'
 
 export function useOptimizedPredictionMutations() {
   const { addPrediction, replacePrediction, removePrediction, refetchPredictions } = usePredictionsStore()
@@ -18,35 +19,30 @@ export function useOptimizedPredictionMutations() {
 
   // CREATE ANNUAL PREDICTION
   const createAnnualPrediction = async (data: AnnualPredictionRequest) => {
-    const tempId = `temp-${Date.now()}`
     setIsCreating(true)
 
     try {
-      // Create temporary optimistic prediction
-      const tempPrediction = {
-        ...data,
-        id: tempId,
-        company_id: `temp-company-${Date.now()}`,
-        default_probability: 0,
-        risk_level: 'UNKNOWN',
-        confidence: 0,
-        organization_access: 'user', // Will be updated from API response
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-        created_by: 'current-user'
-      }
-
-      // Optimistically add to store
-      addPrediction(tempPrediction, 'annual')
-
-      // Make API call
+      // Make API call (no optimistic row to avoid showing incomplete data)
       const response = await predictionsApi.annual.createAnnualPrediction(data)
       if (!response.success || !response.data) {
         throw new Error(response.error?.message || 'Failed to create annual prediction')
       }
 
-      // Replace temp prediction with real one
-      replacePrediction(response.data, 'annual', tempId)
+      // Force-refresh predictions so table shows finalized values only
+      try {
+        await refetchPredictions()
+      } catch (err) {
+        console.warn('Refresh predictions after create (annual) failed:', err)
+      }
+
+      // Also refresh dashboard stats so cards reflect new data immediately
+      try {
+        const statsStore = useDashboardStatsStore.getState()
+        statsStore.invalidateCache()
+        await statsStore.fetchStats(true)
+      } catch (err) {
+        console.warn('Refresh dashboard stats after create (annual) failed:', err)
+      }
 
       toast.success('Annual prediction created successfully')
 
@@ -55,12 +51,11 @@ export function useOptimizedPredictionMutations() {
         window.dispatchEvent(new CustomEvent('prediction-created', {
           detail: { type: 'annual', prediction: response.data }
         }))
+        window.dispatchEvent(new CustomEvent('predictions-updated'))
       }
 
       return response.data
     } catch (error: any) {
-      // Remove optimistic prediction on error
-      removePrediction(tempId, 'annual')
       const formattedErrorMessage = formatApiError(error, 'Failed to create annual prediction')
       toast.error(formattedErrorMessage)
       throw error
@@ -71,33 +66,30 @@ export function useOptimizedPredictionMutations() {
 
   // CREATE QUARTERLY PREDICTION
   const createQuarterlyPrediction = async (data: QuarterlyPredictionRequest) => {
-    const tempId = `temp-${Date.now()}`
     setIsCreating(true)
 
     try {
-      const tempPrediction = {
-        ...data,
-        id: tempId,
-        company_id: `temp-company-${Date.now()}`,
-        ensemble_probability: 0,
-        logistic_probability: 0,
-        gbm_probability: 0,
-        risk_level: 'UNKNOWN',
-        confidence: 0,
-        organization_access: 'user',
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-        created_by: 'current-user'
-      }
-
-      addPrediction(tempPrediction, 'quarterly')
-
+      // Make API call (no optimistic row to avoid showing incomplete data)
       const response = await predictionsApi.quarterly.createQuarterlyPrediction(data)
       if (!response.success || !response.data) {
         throw new Error(response.error?.message || 'Failed to create quarterly prediction')
       }
 
-      replacePrediction(response.data, 'quarterly', tempId)
+      // Force-refresh predictions so table shows finalized values only
+      try {
+        await refetchPredictions()
+      } catch (err) {
+        console.warn('Refresh predictions after create (quarterly) failed:', err)
+      }
+
+      // Also refresh dashboard stats immediately
+      try {
+        const statsStore = useDashboardStatsStore.getState()
+        statsStore.invalidateCache()
+        await statsStore.fetchStats(true)
+      } catch (err) {
+        console.warn('Refresh dashboard stats after create (quarterly) failed:', err)
+      }
 
       toast.success('Quarterly prediction created successfully')
 
@@ -105,11 +97,11 @@ export function useOptimizedPredictionMutations() {
         window.dispatchEvent(new CustomEvent('prediction-created', {
           detail: { type: 'quarterly', prediction: response.data }
         }))
+        window.dispatchEvent(new CustomEvent('predictions-updated'))
       }
 
       return response.data
     } catch (error: any) {
-      removePrediction(tempId, 'quarterly')
       const formattedErrorMessage = formatApiError(error, 'Failed to create quarterly prediction')
       toast.error(formattedErrorMessage)
       throw error
@@ -127,13 +119,31 @@ export function useOptimizedPredictionMutations() {
         throw new Error(response.error?.message || 'Failed to update annual prediction')
       }
 
-      // Update the prediction in store
+      // Optionally update locally for instant feedback
       replacePrediction(response.data, 'annual', id)
+
+      // Ensure the list reflects final server state (no stale values)
+      try {
+        await refetchPredictions()
+      } catch (err) {
+        console.warn('Refresh predictions after update (annual) failed:', err)
+      }
+
+      // Refresh dashboard stats
+      try {
+        const statsStore = useDashboardStatsStore.getState()
+        statsStore.invalidateCache()
+        await statsStore.fetchStats(true)
+      } catch (err) {
+        console.warn('Refresh dashboard stats after update (annual) failed:', err)
+      }
 
       toast.success('Annual prediction updated successfully')
 
       if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('prediction-updated', { detail: { type: 'annual', id } }))
         window.dispatchEvent(new CustomEvent('predictions-updated'))
+        window.dispatchEvent(new CustomEvent('refresh-dashboard-stats'))
       }
 
       return response.data
@@ -157,10 +167,28 @@ export function useOptimizedPredictionMutations() {
 
       replacePrediction(response.data, 'quarterly', id)
 
+      // Ensure the list reflects final server state (no stale values)
+      try {
+        await refetchPredictions()
+      } catch (err) {
+        console.warn('Refresh predictions after update (quarterly) failed:', err)
+      }
+
+      // Refresh dashboard stats
+      try {
+        const statsStore = useDashboardStatsStore.getState()
+        statsStore.invalidateCache()
+        await statsStore.fetchStats(true)
+      } catch (err) {
+        console.warn('Refresh dashboard stats after update (quarterly) failed:', err)
+      }
+
       toast.success('Quarterly prediction updated successfully')
 
       if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('prediction-updated', { detail: { type: 'quarterly', id } }))
         window.dispatchEvent(new CustomEvent('predictions-updated'))
+        window.dispatchEvent(new CustomEvent('refresh-dashboard-stats'))
       }
 
       return response.data
@@ -185,10 +213,26 @@ export function useOptimizedPredictionMutations() {
       // Remove from store
       removePrediction(predictionId, 'annual')
 
+      // Ensure lists and stats reflect deletion
+      try {
+        await refetchPredictions()
+      } catch (err) {
+        console.warn('Refresh predictions after delete (annual) failed:', err)
+      }
+      try {
+        const statsStore = useDashboardStatsStore.getState()
+        statsStore.invalidateCache()
+        await statsStore.fetchStats(true)
+      } catch (err) {
+        console.warn('Refresh dashboard stats after delete (annual) failed:', err)
+      }
+
       toast.success('Annual prediction deleted successfully')
 
       if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('prediction-deleted', { detail: { type: 'annual', id: predictionId } }))
         window.dispatchEvent(new CustomEvent('predictions-updated'))
+        window.dispatchEvent(new CustomEvent('refresh-dashboard-stats'))
       }
 
       return predictionId
@@ -212,10 +256,26 @@ export function useOptimizedPredictionMutations() {
 
       removePrediction(predictionId, 'quarterly')
 
+      // Ensure lists and stats reflect deletion
+      try {
+        await refetchPredictions()
+      } catch (err) {
+        console.warn('Refresh predictions after delete (quarterly) failed:', err)
+      }
+      try {
+        const statsStore = useDashboardStatsStore.getState()
+        statsStore.invalidateCache()
+        await statsStore.fetchStats(true)
+      } catch (err) {
+        console.warn('Refresh dashboard stats after delete (quarterly) failed:', err)
+      }
+
       toast.success('Quarterly prediction deleted successfully')
 
       if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('prediction-deleted', { detail: { type: 'quarterly', id: predictionId } }))
         window.dispatchEvent(new CustomEvent('predictions-updated'))
+        window.dispatchEvent(new CustomEvent('refresh-dashboard-stats'))
       }
 
       return predictionId

@@ -7,6 +7,7 @@ import { AnnualPredictionRequest, QuarterlyPredictionRequest } from '@/lib/types
 import { predictionKeys } from '@/lib/hooks/use-predictions'
 import { usePredictionsStore } from '@/lib/stores/predictions-store'
 import { formatApiError } from '@/lib/utils/error-formatting'
+import { useDashboardStatsStore } from '@/lib/stores/dashboard-stats-store'
 
 export function usePredictionMutations() {
   const queryClient = useQueryClient()
@@ -28,7 +29,7 @@ export function usePredictionMutations() {
         return await predictionsApi.quarterly.updateQuarterlyPrediction(id, data as QuarterlyPredictionRequest)
       }
     },
-    onSuccess: (response, variables) => {
+    onSuccess: async (response, variables) => {
       const { type } = variables
 
       queryClient.invalidateQueries({ queryKey: predictionKeys.all })
@@ -38,7 +39,22 @@ export function usePredictionMutations() {
         queryClient.invalidateQueries({ queryKey: predictionKeys.quarterly() })
       }
 
-      refetchPredictions()
+      // Ensure fresh data everywhere
+      await refetchPredictions()
+      try {
+        const statsStore = useDashboardStatsStore.getState()
+        statsStore.invalidateCache()
+        await statsStore.fetchStats(true)
+      } catch (e) {
+        console.warn('Dashboard stats refresh after update failed:', e)
+      }
+
+      // Notify listeners
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('prediction-updated', { detail: { type } }))
+        window.dispatchEvent(new CustomEvent('predictions-updated'))
+        window.dispatchEvent(new CustomEvent('refresh-dashboard-stats'))
+      }
 
       toast.success(`${type === 'annual' ? 'Annual' : 'Quarterly'} prediction updated successfully! 🎉`)
 
@@ -72,7 +88,7 @@ export function usePredictionMutations() {
         return await predictionsApi.quarterly.deleteQuarterlyPrediction(id)
       }
     },
-    onSuccess: (response, variables) => {
+    onSuccess: async (response, variables) => {
       const { type } = variables
 
       queryClient.invalidateQueries({ queryKey: predictionKeys.all })
@@ -80,6 +96,27 @@ export function usePredictionMutations() {
         queryClient.invalidateQueries({ queryKey: predictionKeys.annual() })
       } else {
         queryClient.invalidateQueries({ queryKey: predictionKeys.quarterly() })
+      }
+
+      // Ensure lists and dashboard reflect deletion
+      try {
+        await refetchPredictions()
+      } catch (e) {
+        console.warn('Predictions refetch after delete failed:', e)
+      }
+      try {
+        const statsStore = useDashboardStatsStore.getState()
+        statsStore.invalidateCache()
+        await statsStore.fetchStats(true)
+      } catch (e) {
+        console.warn('Dashboard stats refresh after delete failed:', e)
+      }
+
+      // Notify listeners
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('prediction-deleted', { detail: { type, id: variables.id } }))
+        window.dispatchEvent(new CustomEvent('predictions-updated'))
+        window.dispatchEvent(new CustomEvent('refresh-dashboard-stats'))
       }
 
       toast.success(`${type === 'annual' ? 'Annual' : 'Quarterly'} prediction deleted successfully! 🗑️`)

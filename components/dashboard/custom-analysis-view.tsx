@@ -630,7 +630,7 @@ export function CustomAnalysisView() {
 
           }, 500)
           toast.success('Annual analysis completed successfully!', {
-            description: 'Your prediction has been added to the dashboard and is ready to view.',
+            description: 'Your prediction has been added to the summary and is ready to view.',
             duration: 4000
           })
         } catch (error: any) {
@@ -767,7 +767,7 @@ export function CustomAnalysisView() {
 
           }, 500)
           toast.success('Quarterly analysis completed successfully!', {
-            description: 'Your prediction has been added to the dashboard and is ready to view.',
+            description: 'Your prediction has been added to the summary and is ready to view.',
             duration: 4000
           })
         } catch (error: any) {
