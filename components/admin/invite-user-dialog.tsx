@@ -22,7 +22,7 @@ import { Badge } from '@/components/ui/badge'
 import { organizationsApi } from '@/lib/api/organizations'
 
 const inviteUserSchema = z.object({
-  emails: z.string().min(1, 'At least one email is required'),
+  emails: z.string().optional(),
 })
 
 type InviteUserFormData = z.infer<typeof inviteUserSchema>
@@ -55,7 +55,7 @@ export function InviteUserDialog({
   })
 
   const addEmailToList = () => {
-    const emailsText = form.getValues('emails')
+    const emailsText = form.getValues('emails') || ''
     const emails = emailsText
       .split(',')
       .map(email => email.trim())
@@ -65,6 +65,8 @@ export function InviteUserDialog({
       const newEmails = emails.filter(email => !emailList.includes(email))
       setEmailList(prev => [...prev, ...newEmails])
       form.setValue('emails', '')
+      // Clear any form errors since we have valid emails
+      form.clearErrors('emails')
     }
   }
 
@@ -75,6 +77,14 @@ export function InviteUserDialog({
   const onSubmit = async (data: InviteUserFormData) => {
     // Add any remaining emails in the input
     addEmailToList()
+
+    // Wait for state update, then check again
+    setTimeout(() => {
+      if (emailList.length === 0 && !(form.getValues('emails') || '').trim()) {
+        form.setError('emails', { message: 'At least one email is required' })
+        return
+      }
+    }, 0)
 
     if (emailList.length === 0) {
       setError('Please add at least one valid email address')
@@ -175,8 +185,14 @@ export function InviteUserDialog({
                 type="button"
                 variant="outline"
                 size="sm"
-                onClick={addEmailToList}
-                disabled={!form.getValues('emails')?.trim()}
+                onClick={() => {
+                  addEmailToList()
+                  // Clear form errors if we have emails in the list
+                  if (emailList.length > 0) {
+                    form.clearErrors('emails')
+                  }
+                }}
+                disabled={!(form.getValues('emails') || '').trim()}
               >
                 Add
               </Button>
@@ -184,7 +200,7 @@ export function InviteUserDialog({
             <p className="text-xs text-muted-foreground mt-1">
               Enter email addresses separated by commas, or press Enter/comma to add them to the list
             </p>
-            {form.formState.errors.emails && (
+            {form.formState.errors.emails && emailList.length === 0 && (
               <p className="text-sm text-red-600 mt-1">
                 {form.formState.errors.emails.message}
               </p>

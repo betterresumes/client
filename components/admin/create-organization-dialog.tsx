@@ -15,6 +15,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
+import { Badge } from '@/components/ui/badge'
 
 import { organizationsApi } from '@/lib/api/organizations'
 
@@ -157,7 +158,7 @@ export function CreateOrganizationDialog({
               />
             </div>
 
-            <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-4">
               <div className="space-y-2">
                 <Label htmlFor="max_users">Max Users</Label>
                 <Input
@@ -171,16 +172,24 @@ export function CreateOrganizationDialog({
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="default_role">Default Role</Label>
+                <Label htmlFor="default_role" className="flex items-center gap-2">
+                  Default User Role
+                  <Badge variant="secondary" className="text-xs">
+                    For new members
+                  </Badge>
+                </Label>
                 <select
                   id="default_role"
                   value={formData.default_role}
                   onChange={(e) => handleInputChange('default_role', e.target.value)}
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                 >
-                  <option value="org_member">Member</option>
-                  <option value="org_admin">Admin</option>
+                  <option value="org_member">Member (Regular User)</option>
+                  <option value="org_admin">Admin (Can Manage Organization)</option>
                 </select>
+                <p className="text-xs text-gray-500">
+                  You can assign specific org admins after creating the organization
+                </p>
               </div>
             </div>
           </div>

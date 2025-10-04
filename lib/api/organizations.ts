@@ -24,7 +24,7 @@ export const organizationsApi = {
     limit?: number;
     search?: string;
     is_active?: boolean;
-    tenant_id?: string; 
+    tenant_id?: string;
   }): Promise<ApiResponse<EnhancedOrganizationListResponse>> => {
     const searchParams = new URLSearchParams();
     if (params?.page !== undefined) searchParams.append('page', params.page.toString());
@@ -105,5 +105,18 @@ export const organizationsApi = {
 
   join: async (data: { email: string; join_token: string }): Promise<ApiResponse<any>> => {
     return await apiClient.post<any>('/auth/join', data);
+  },
+
+  // User management methods
+  addUserToOrg: async (orgId: string, data: { user_id: string; role?: string }): Promise<ApiResponse<any>> => {
+    return apiClient.post<any>(`/organizations/${orgId}/users`, data);
+  },
+
+  updateUserRole: async (orgId: string, userId: string, role: string): Promise<ApiResponse<any>> => {
+    return apiClient.patch<any>(`/organizations/${orgId}/users/${userId}/role`, { role });
+  },
+
+  removeUser: async (orgId: string, userId: string): Promise<ApiResponse<void>> => {
+    return apiClient.delete<void>(`/organizations/${orgId}/users/${userId}`);
   }
 };

@@ -335,6 +335,7 @@ export function TenantAdminManagement({ tenantId, initialOrganizations = [], onO
                   <TableHead>Organization</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead>Members</TableHead>
+                  <TableHead>Admins</TableHead>
                   <TableHead>Created</TableHead>
                   <TableHead>Actions</TableHead>
                 </TableRow>
@@ -348,9 +349,16 @@ export function TenantAdminManagement({ tenantId, initialOrganizations = [], onO
                           <Building className="h-5 w-5 text-white" />
                         </div>
                         <div className="min-w-0 flex-1">
-                          <div className="font-medium text-sm truncate" title={org.name}>{org.name}</div>
-                          <div className="text-xs text-muted-foreground truncate" title={org.description || 'No description'}>
-                            {org.description || 'No description'}
+                          <div className="font-medium text-sm" title={org.name}>
+                            {org.name && org.name.length > 25 ? `${org.name.substring(0, 25)}...` : org.name}
+                          </div>
+                          <div className="text-xs text-muted-foreground" title={org.description || 'No description'}>
+                            {org.description
+                              ? org.description.length > 40
+                                ? `${org.description.substring(0, 40)}...`
+                                : org.description
+                              : 'No description'
+                            }
                           </div>
                         </div>
                       </div>
@@ -372,6 +380,40 @@ export function TenantAdminManagement({ tenantId, initialOrganizations = [], onO
                       <div className="flex items-center text-sm">
                         <Users className="h-4 w-4 mr-1 text-gray-400" />
                         {org.total_members || 0}
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex items-center text-sm">
+                        {/* Handle different admin data structures */}
+                        {org.admin ? (
+                          <div className="flex flex-col">
+                            {org.admin.full_name && (
+                              <span className="font-medium text-sm">{org.admin.full_name}</span>
+                            )}
+                            <span className="text-xs text-gray-600">{org.admin.email}</span>
+                          </div>
+                        ) : org.org_admin ? (
+                          <div className="flex flex-col">
+                            {org.org_admin.full_name && (
+                              <span className="font-medium text-sm">{org.org_admin.full_name}</span>
+                            )}
+                            <span className="text-xs text-gray-600">{org.org_admin.email}</span>
+                          </div>
+                        ) : org.org_admins && org.org_admins.length > 0 ? (
+                          <div className="flex flex-col">
+                            {org.org_admins[0].full_name && (
+                              <span className="font-medium text-sm">{org.org_admins[0].full_name}</span>
+                            )}
+                            <span className="text-xs text-gray-600">{org.org_admins[0].email}</span>
+                            {org.org_admins.length > 1 && (
+                              <span className="text-xs text-gray-500">+{org.org_admins.length - 1} more</span>
+                            )}
+                          </div>
+                        ) : org.admin_count > 0 ? (
+                          <span className="font-medium text-sm">{org.admin_count} admin(s)</span>
+                        ) : (
+                          <span className="text-gray-500 text-sm">No admin assigned</span>
+                        )}
                       </div>
                     </TableCell>
                     <TableCell className="text-xs">
@@ -401,15 +443,7 @@ export function TenantAdminManagement({ tenantId, initialOrganizations = [], onO
                           }}
                           title="Assign Org Admin"
                         >
-                          <UserPlus className="h-3 w-3" />
-                        </Button>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className="h-8 px-2"
-                          title="View Members"
-                        >
-                          <Users className="h-3 w-3" />
+                          <Shield className="h-3 w-3" />
                         </Button>
                       </div>
                     </TableCell>

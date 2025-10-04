@@ -123,6 +123,7 @@ type ForgotPasswordFormData = z.infer<typeof forgotPasswordSchema>
 interface UserProfile {
   id: string
   email: string
+  username?: string
   full_name: string
   role: UserRole
   is_active: boolean
@@ -131,6 +132,25 @@ interface UserProfile {
   organization_id?: string
   tenant_id?: string
   sector?: string
+  organization?: {
+    id: string
+    name: string
+    slug: string
+    domain?: string
+    description?: string
+    is_active: boolean
+    join_enabled: boolean
+    default_role: string
+    max_users: number
+    current_users: number
+    created_at: string
+    join_token?: string
+  }
+  tenant?: {
+    id: string
+    name: string
+    domain?: string
+  }
 }
 
 // Use the imported types from lib
@@ -228,6 +248,7 @@ export default function SettingsPage() {
         const profile: UserProfile = {
           id: userData.id,
           email: userData.email,
+          username: userData.username,
           full_name: userData.full_name || '',
           role: userData.role as UserRole,
           is_active: userData.is_active,
@@ -236,6 +257,25 @@ export default function SettingsPage() {
           organization_id: userData.organization_id,
           tenant_id: userData.tenant_id,
           sector: userData.sector,
+          organization: userData.organization ? {
+            id: userData.organization.id,
+            name: userData.organization.name,
+            slug: userData.organization.slug,
+            domain: userData.organization.domain,
+            description: userData.organization.description,
+            is_active: userData.organization.is_active,
+            join_enabled: userData.organization.join_enabled,
+            default_role: userData.organization.default_role,
+            max_users: userData.organization.max_users,
+            current_users: userData.organization.current_users,
+            created_at: userData.organization.created_at,
+            join_token: userData.organization.join_token,
+          } : undefined,
+          tenant: userData.tenant ? {
+            id: userData.tenant.id,
+            name: userData.tenant.name,
+            domain: userData.tenant.domain,
+          } : undefined,
         }
         setProfile(profile)
         profileForm.reset({
@@ -661,7 +701,7 @@ export default function SettingsPage() {
       </div>
 
       <Tabs defaultValue="user-details" className="space-y-6">
-        <TabsList className={`ml-[3em]  w-grid ${profile.role === UserRole.SUPER_ADMIN ? 'grid-cols-3' :
+        <TabsList className={`ml-12 w-grid ${profile.role === UserRole.SUPER_ADMIN ? 'grid-cols-3' :
           profile.role === UserRole.TENANT_ADMIN ? 'grid-cols-3' :
             profile.role === 'org_admin' ? 'grid-cols-3' :
               'grid-cols-3'
@@ -709,140 +749,172 @@ export default function SettingsPage() {
 
         {/* User Details Tab */}
         <TabsContent value="user-details">
-          <div className="grid gap-6 md:grid-cols-3">
-            {/* Profile Overview Card */}
-            <Card className="md:col-span-1">
-              <CardHeader className="text-center">
-                <div className="flex justify-center mb-4">
-                  <Avatar className="h-24 w-24">
-                    <AvatarFallback className="text-2xl font-bold bg-gradient-to-br from-blue-500 to-purple-600 text-white">
-                      {getInitials(profile.full_name, profile.email)}
-                    </AvatarFallback>
-                  </Avatar>
-                </div>
-                <CardTitle className="text-xl">{profile.full_name || 'No Name'}</CardTitle>
-                <Badge variant="outline" className={`${getRoleColor(profile.role)} w-fit mx-auto`}>
-                  {getRoleIcon(profile.role)}
-                  <span className="ml-1">{getRoleDisplayName(profile.role)}</span>
-                </Badge>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="flex items-center space-x-3 text-sm text-gray-600">
-                  <Mail className="h-4 w-4" />
-                  <span className="truncate">{profile.email}</span>
-                </div>
-                <div className="flex items-center space-x-3 text-sm text-gray-600">
-                  <Calendar className="h-4 w-4" />
-                  <span>Joined {format(new Date(profile.created_at), 'MMM dd, yyyy')}</span>
-                </div>
-                {profile.last_login && (
-                  <div className="flex items-center space-x-3 text-sm text-gray-600">
-                    <CheckCircle className="h-4 w-4" />
-                    <span>Last login {format(new Date(profile.last_login), 'MMM dd, yyyy')}</span>
-                  </div>
-                )}
-                {profile.sector && (
-                  <div className="flex items-center space-x-3 text-sm text-gray-600">
-                    <Building className="h-4 w-4" />
-                    <span className="font-medium text-blue-600 bg-blue-50 px-2 py-1 rounded-full text-xs">
-                      {profile.sector}
-                    </span>
-                  </div>
-                )}
-                <div className="flex items-center space-x-3 text-sm">
-                  <div className={`h-3 w-3 rounded-full ${profile.is_active ? 'bg-green-500' : 'bg-red-500'}`}></div>
-                  <span className={profile.is_active ? 'text-green-700' : 'text-red-700'}>
-                    {profile.is_active ? 'Active' : 'Inactive'}
-                  </span>
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* Profile Edit Form */}
-            <Card className="md:col-span-2">
+          <div className="grid gap-6 max-w-4xl mx-auto">
+            {/* Complete User Profile Display */}
+            <Card>
               <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <User className="h-5 w-5" />
-                  Edit Profile
+                <CardTitle>
+                  User Profile Details
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                <form onSubmit={profileForm.handleSubmit(onProfileSubmit)} className="space-y-6">
-                  <div className="grid gap-4 md:grid-cols-2">
-                    <div className="space-y-2">
-                      <Label htmlFor="full_name">Full Name</Label>
-                      <Input
-                        id="full_name"
-                        {...profileForm.register('full_name')}
-                        placeholder="Enter your full name"
-                      />
-                      {profileForm.formState.errors.full_name && (
-                        <p className="text-sm text-red-600">
-                          {profileForm.formState.errors.full_name.message}
-                        </p>
+                <div className="space-y-6">
+                  {/* Personal Information Section */}
+                  <div>
+                    <h3 className="text-lg font-semibold mb-4 text-gray-900">
+                      Personal Information
+                    </h3>
+                    <div className="grid gap-4 md:grid-cols-2">
+                      {profile.full_name && (
+                        <div className="space-y-2">
+                          <Label className="text-sm font-medium text-gray-700">Full Name</Label>
+                          <div className="p-3 bg-gray-50 border rounded-md">
+                            <p className="text-sm font-medium">{profile.full_name}</p>
+                          </div>
+                        </div>
                       )}
-                    </div>
-
-                    <div className="space-y-2">
-                      <Label htmlFor="email">Email</Label>
-                      <Input
-                        id="email"
-                        type="email"
-                        {...profileForm.register('email')}
-                        placeholder="Enter your email"
-                      />
-                      {profileForm.formState.errors.email && (
-                        <p className="text-sm text-red-600">
-                          {profileForm.formState.errors.email.message}
-                        </p>
+                      {profile.username && (
+                        <div className="space-y-2">
+                          <Label className="text-sm font-medium text-gray-700">Username</Label>
+                          <div className="p-3 bg-gray-50 border rounded-md">
+                            <p className="text-sm font-medium">{profile.username}</p>
+                          </div>
+                        </div>
+                      )}
+                      <div className="space-y-2">
+                        <Label className="text-sm font-medium text-gray-700">Email Address</Label>
+                        <div className="p-3 bg-gray-50 border rounded-md">
+                          <p className="text-sm font-medium">{profile.email}</p>
+                        </div>
+                      </div>
+                      {profile.sector && (
+                        <div className="space-y-2">
+                          <Label className="text-sm font-medium text-gray-700">Industry Sector</Label>
+                          <div className="p-3 bg-gray-50 border rounded-md">
+                            <p className="text-sm font-medium">{profile.sector}</p>
+                          </div>
+                        </div>
                       )}
                     </div>
                   </div>
 
-                  <div className="space-y-2">
-                    <Label htmlFor="sector">Industry Sector</Label>
-                    <Select
-                      value={profileForm.watch('sector') || 'none'}
-                      onValueChange={(value) => profileForm.setValue('sector', value === 'none' ? undefined : value)}
-                    >
-                      <SelectTrigger className="w-full">
-                        <SelectValue placeholder="Select your industry sector" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="none">No sector selected</SelectItem>
-                        {SECTORS.map((sector) => (
-                          <SelectItem key={sector} value={sector}>
-                            <div className="flex items-center gap-2">
-                              <div className="w-2 h-2 rounded-full bg-blue-500"></div>
-                              {sector}
+                  {/* Account Information Section */}
+                  <div>
+                    <h3 className="text-lg font-semibold mb-4 text-gray-900">
+                      Account Information
+                    </h3>
+                    <div className="grid gap-4 md:grid-cols-2">
+                      <div className="space-y-2">
+                        <Label className="text-sm font-medium text-gray-700">Role</Label>
+                        <div className="p-3 bg-gray-50 border rounded-md">
+                          <span className="text-sm font-medium">{getRoleDisplayName(profile.role)}</span>
+                        </div>
+                      </div>
+                      <div className="space-y-2">
+                        <Label className="text-sm font-medium text-gray-700">Account Status</Label>
+                        <div className="p-3 bg-gray-50 border rounded-md">
+                          <span className={`text-sm font-medium ${profile.is_active ? 'text-green-700' : 'text-red-700'}`}>
+                            {profile.is_active ? 'Active' : 'Inactive'}
+                          </span>
+                        </div>
+                      </div>
+                      <div className="space-y-2">
+                        <Label className="text-sm font-medium text-gray-700">Member Since</Label>
+                        <div className="p-3 bg-gray-50 border rounded-md">
+                          <p className="text-sm font-medium">{format(new Date(profile.created_at), 'MMMM dd, yyyy')}</p>
+                        </div>
+                      </div>
+                      {profile.last_login && (
+                        <div className="space-y-2">
+                          <Label className="text-sm font-medium text-gray-700">Last Login</Label>
+                          <div className="p-3 bg-gray-50 border rounded-md">
+                            <p className="text-sm font-medium">{format(new Date(profile.last_login), 'MMMM dd, yyyy HH:mm')}</p>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Organization Information Section */}
+                  {profile.organization && (
+                    <div>
+                      <h3 className="text-lg font-semibold mb-4 text-gray-900">
+                        Organization Information
+                      </h3>
+                      <div className="grid gap-4 md:grid-cols-2">
+                        <div className="space-y-2">
+                          <Label className="text-sm font-medium text-gray-700">Organization Name</Label>
+                          <div className="p-3 bg-gray-50 border rounded-md">
+                            <p className="text-sm font-medium">{profile.organization.name}</p>
+                          </div>
+                        </div>
+                        <div className="space-y-2">
+                          <Label className="text-sm font-medium text-gray-700">Organization Status</Label>
+                          <div className="p-3 bg-gray-50 border rounded-md">
+                            <span className={`text-sm font-medium ${profile.organization.is_active ? 'text-green-700' : 'text-red-700'}`}>
+                              {profile.organization.is_active ? 'Active' : 'Inactive'}
+                            </span>
+                          </div>
+                        </div>
+                        {profile.organization.description && (
+                          <div className="space-y-2">
+                            <Label className="text-sm font-medium text-gray-700">Description</Label>
+                            <div className="p-3 bg-gray-50 border rounded-md">
+                              <p className="text-sm font-medium">{profile.organization.description}</p>
                             </div>
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    {profileForm.formState.errors.sector && (
-                      <p className="text-sm text-red-600">
-                        {profileForm.formState.errors.sector.message}
-                      </p>
-                    )}
-                  </div>
+                          </div>
+                        )}
+                        {profile.organization.domain && (
+                          <div className="space-y-2">
+                            <Label className="text-sm font-medium text-gray-700">Domain</Label>
+                            <div className="p-3 bg-gray-50 border rounded-md">
+                              <p className="text-sm font-medium">{profile.organization.domain}</p>
+                            </div>
+                          </div>
+                        )}
+                        <div className="space-y-2">
+                          <Label className="text-sm font-medium text-gray-700">Current Members</Label>
+                          <div className="p-3 bg-gray-50 border rounded-md">
+                            <p className="text-sm font-medium">{profile.organization.current_users} / {profile.organization.max_users}</p>
+                          </div>
+                        </div>
+                        <div className="space-y-2">
+                          <Label className="text-sm font-medium text-gray-700">Join Enabled</Label>
+                          <div className="p-3 bg-gray-50 border rounded-md">
+                            <span className={`text-sm font-medium ${profile.organization.join_enabled ? 'text-green-700' : 'text-red-700'}`}>
+                              {profile.organization.join_enabled ? 'Yes' : 'No'}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
 
-                  <div className="flex justify-end">
-                    <Button type="submit" disabled={saving}>
-                      {saving ? (
-                        <>
-                          <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                          Saving...
-                        </>
-                      ) : (
-                        <>
-                          <Save className="h-4 w-4 mr-2" />
-                          Save Changes
-                        </>
-                      )}
-                    </Button>
-                  </div>
-                </form>
+                  {/* Tenant Information Section */}
+                  {profile.tenant && (
+                    <div>
+                      <h3 className="text-lg font-semibold mb-4 text-gray-900">
+                        Tenant Information
+                      </h3>
+                      <div className="grid gap-4 md:grid-cols-2">
+                        <div className="space-y-2">
+                          <Label className="text-sm font-medium text-gray-700">Tenant Name</Label>
+                          <div className="p-3 bg-gray-50 border rounded-md">
+                            <p className="text-sm font-medium">{profile.tenant.name}</p>
+                          </div>
+                        </div>
+                        {profile.tenant.domain && (
+                          <div className="space-y-2">
+                            <Label className="text-sm font-medium text-gray-700">Tenant Domain</Label>
+                            <div className="p-3 bg-gray-50 border rounded-md">
+                              <p className="text-sm font-medium">{profile.tenant.domain}</p>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
               </CardContent>
             </Card>
           </div>
@@ -850,122 +922,124 @@ export default function SettingsPage() {
 
         {/* Security Tab */}
         <TabsContent value="security">
-          <Card>
-            <CardHeader>
-              <div className="flex items-center justify-between">
-                <CardTitle>Change Password</CardTitle>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setShowForgotPasswordDialog(true)}
-                >
-                  Forgot Password?
-                </Button>
-              </div>
-            </CardHeader>
-            <CardContent>
-              <form onSubmit={passwordForm.handleSubmit(onPasswordSubmit)} className="space-y-4">
-                <div>
-                  <Label htmlFor="current_password">Current Password</Label>
-                  <div className="relative">
-                    <Input
-                      id="current_password"
-                      type={showCurrentPassword ? 'text' : 'password'}
-                      {...passwordForm.register('current_password')}
-                      placeholder="Enter your current password"
-                    />
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      className="absolute right-0 top-0 h-full px-3"
-                      onClick={() => setShowCurrentPassword(!showCurrentPassword)}
-                    >
-                      {showCurrentPassword ? (
-                        <EyeOff className="h-4 w-4" />
-                      ) : (
-                        <Eye className="h-4 w-4" />
-                      )}
-                    </Button>
-                  </div>
-                  {passwordForm.formState.errors.current_password && (
-                    <p className="text-sm text-red-600 mt-1">
-                      {passwordForm.formState.errors.current_password.message}
-                    </p>
-                  )}
-                </div>
-
-                <div className="grid gap-4 md:grid-cols-2">
-                  <div>
-                    <Label htmlFor="new_password">New Password</Label>
-                    <div className="relative">
-                      <Input
-                        id="new_password"
-                        type={showNewPassword ? 'text' : 'password'}
-                        {...passwordForm.register('new_password')}
-                        placeholder="Enter new password"
-                      />
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        className="absolute right-0 top-0 h-full px-3"
-                        onClick={() => setShowNewPassword(!showNewPassword)}
-                      >
-                        {showNewPassword ? (
-                          <EyeOff className="h-4 w-4" />
-                        ) : (
-                          <Eye className="h-4 w-4" />
-                        )}
-                      </Button>
-                    </div>
-                    {passwordForm.formState.errors.new_password && (
-                      <p className="text-sm text-red-600 mt-1">
-                        {passwordForm.formState.errors.new_password.message}
-                      </p>
-                    )}
-                  </div>
-
-                  <div>
-                    <Label htmlFor="confirm_password">Confirm New Password</Label>
-                    <div className="relative">
-                      <Input
-                        id="confirm_password"
-                        type={showConfirmPassword ? 'text' : 'password'}
-                        {...passwordForm.register('confirm_password')}
-                        placeholder="Confirm new password"
-                      />
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        className="absolute right-0 top-0 h-full px-3"
-                        onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-                      >
-                        {showConfirmPassword ? (
-                          <EyeOff className="h-4 w-4" />
-                        ) : (
-                          <Eye className="h-4 w-4" />
-                        )}
-                      </Button>
-                    </div>
-                    {passwordForm.formState.errors.confirm_password && (
-                      <p className="text-sm text-red-600 mt-1">
-                        {passwordForm.formState.errors.confirm_password.message}
-                      </p>
-                    )}
-                  </div>
-                </div>
-
-                <div className="flex justify-end">
-                  <Button type="submit" disabled={saving}>
-                    <Lock className="h-4 w-4 mr-2" />
-                    {saving ? 'Changing...' : 'Change Password'}
+          <div className="max-w-4xl mx-auto">
+            <Card>
+              <CardHeader>
+                <div className="flex items-center justify-between">
+                  <CardTitle>Change Password</CardTitle>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setShowForgotPasswordDialog(true)}
+                  >
+                    Forgot Password?
                   </Button>
                 </div>
-              </form>
-            </CardContent>
-          </Card>
+              </CardHeader>
+              <CardContent>
+                <form onSubmit={passwordForm.handleSubmit(onPasswordSubmit)} className="space-y-4">
+                  <div>
+                    <Label htmlFor="current_password">Current Password</Label>
+                    <div className="relative">
+                      <Input
+                        id="current_password"
+                        type={showCurrentPassword ? 'text' : 'password'}
+                        {...passwordForm.register('current_password')}
+                        placeholder="Enter your current password"
+                      />
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="absolute right-0 top-0 h-full px-3"
+                        onClick={() => setShowCurrentPassword(!showCurrentPassword)}
+                      >
+                        {showCurrentPassword ? (
+                          <EyeOff className="h-4 w-4" />
+                        ) : (
+                          <Eye className="h-4 w-4" />
+                        )}
+                      </Button>
+                    </div>
+                    {passwordForm.formState.errors.current_password && (
+                      <p className="text-sm text-red-600 mt-1">
+                        {passwordForm.formState.errors.current_password.message}
+                      </p>
+                    )}
+                  </div>
+
+                  <div className="grid gap-4 md:grid-cols-2">
+                    <div>
+                      <Label htmlFor="new_password">New Password</Label>
+                      <div className="relative">
+                        <Input
+                          id="new_password"
+                          type={showNewPassword ? 'text' : 'password'}
+                          {...passwordForm.register('new_password')}
+                          placeholder="Enter new password"
+                        />
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          className="absolute right-0 top-0 h-full px-3"
+                          onClick={() => setShowNewPassword(!showNewPassword)}
+                        >
+                          {showNewPassword ? (
+                            <EyeOff className="h-4 w-4" />
+                          ) : (
+                            <Eye className="h-4 w-4" />
+                          )}
+                        </Button>
+                      </div>
+                      {passwordForm.formState.errors.new_password && (
+                        <p className="text-sm text-red-600 mt-1">
+                          {passwordForm.formState.errors.new_password.message}
+                        </p>
+                      )}
+                    </div>
+
+                    <div>
+                      <Label htmlFor="confirm_password">Confirm New Password</Label>
+                      <div className="relative">
+                        <Input
+                          id="confirm_password"
+                          type={showConfirmPassword ? 'text' : 'password'}
+                          {...passwordForm.register('confirm_password')}
+                          placeholder="Confirm new password"
+                        />
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          className="absolute right-0 top-0 h-full px-3"
+                          onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                        >
+                          {showConfirmPassword ? (
+                            <EyeOff className="h-4 w-4" />
+                          ) : (
+                            <Eye className="h-4 w-4" />
+                          )}
+                        </Button>
+                      </div>
+                      {passwordForm.formState.errors.confirm_password && (
+                        <p className="text-sm text-red-600 mt-1">
+                          {passwordForm.formState.errors.confirm_password.message}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="flex justify-end">
+                    <Button type="submit" disabled={saving}>
+                      <Lock className="h-4 w-4 mr-2" />
+                      {saving ? 'Changing...' : 'Change Password'}
+                    </Button>
+                  </div>
+                </form>
+              </CardContent>
+            </Card>
+          </div>
         </TabsContent>
 
         {/* Tenant Management Tab (Super Admin only) */}
