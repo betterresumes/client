@@ -35,14 +35,43 @@ export default function DashboardPage() {
         // Then fetch initial predictions
         fetchPredictions(false)
 
-        // Start background loading of remaining predictions after 10 seconds
-        setTimeout(() => {
-          console.log('⏳ Starting background loading of remaining predictions after 10 seconds')
-          fetchRemainingPredictions()
-        }, 10000)
+        // Start background loading of remaining predictions immediately (no delay)
+        console.log('⏳ Starting background loading of remaining predictions immediately')
+        fetchRemainingPredictions()
       })
     }
   }, [isAuthenticated, user, hasInitializedData, fetchPredictions, fetchRemainingPredictions, fetchStats])
+
+  // Handle prediction creation/update events - refresh remaining pages to include new data
+  useEffect(() => {
+    const handlePredictionEvents = () => {
+      console.log('🔄 Prediction created/updated - refreshing dashboard stats and remaining pages')
+      // First refresh dashboard stats to get updated totals
+      fetchStats(true).then(() => {
+        // Then fetch remaining predictions again to include newly created predictions
+        fetchRemainingPredictions()
+      })
+    }
+
+    // Listen for prediction creation/update events
+    const events = [
+      'prediction-created',
+      'prediction-created-stay-here', // For custom analysis predictions
+      'prediction-updated',
+      'predictions-updated',
+      'bulk-upload-completed'
+    ]
+
+    events.forEach(eventName => {
+      window.addEventListener(eventName, handlePredictionEvents)
+    })
+
+    return () => {
+      events.forEach(eventName => {
+        window.removeEventListener(eventName, handlePredictionEvents)
+      })
+    }
+  }, [fetchRemainingPredictions, fetchStats])
 
   // Reset initialization flag when user changes (for logout/login scenarios)
   useEffect(() => {

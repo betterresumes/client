@@ -995,20 +995,33 @@ export const usePredictionsStore = create<PredictionsStore>()(
                       }
                     }
 
-                    // Append new data to existing array
-                    set((currentState) => ({
-                      [dataType === 'annual' ? 'annualPredictions' :
+                    // Append new data to existing array (deduplicate by ID)
+                    set((currentState) => {
+                      const existingArray = currentState[dataType === 'annual' ? 'annualPredictions' :
                         dataType === 'quarterly' ? 'quarterlyPredictions' :
-                          dataType === 'systemAnnual' ? 'systemAnnualPredictions' : 'systemQuarterlyPredictions']:
-                        [...currentState[dataType === 'annual' ? 'annualPredictions' :
+                          dataType === 'systemAnnual' ? 'systemAnnualPredictions' : 'systemQuarterlyPredictions'] as Prediction[]
+
+                      // Create a map of existing predictions by ID for fast lookup
+                      const existingMap = new Map(existingArray.map(p => [p.id, p]))
+
+                      // Add new predictions, overwriting any duplicates
+                      transformedData.forEach(pred => {
+                        existingMap.set(pred.id, pred)
+                      })
+
+                      // Convert back to array
+                      const deduplicatedArray = Array.from(existingMap.values())
+
+                      return {
+                        [dataType === 'annual' ? 'annualPredictions' :
                           dataType === 'quarterly' ? 'quarterlyPredictions' :
-                            dataType === 'systemAnnual' ? 'systemAnnualPredictions' : 'systemQuarterlyPredictions'],
-                        ...transformedData],
-                      remainingPagesLoaded: {
-                        ...currentState.remainingPagesLoaded,
-                        [dataType]: page - 1 // Track how many additional pages loaded
+                            dataType === 'systemAnnual' ? 'systemAnnualPredictions' : 'systemQuarterlyPredictions']: deduplicatedArray,
+                        remainingPagesLoaded: {
+                          ...currentState.remainingPagesLoaded,
+                          [dataType]: page - 1 // Track how many additional pages loaded
+                        }
                       }
-                    }))
+                    })
 
                     console.log(`✅ Loaded ${dataType} page ${page}/${totalPages} (${transformedData.length} records)`)
                   }
@@ -1069,20 +1082,33 @@ export const usePredictionsStore = create<PredictionsStore>()(
 
                 if (response?.data) {
                   const rawData = response.data?.items || response.data?.predictions || response.data || []
-                  // Transform and append data (simplified for fallback)
-                  set((currentState) => ({
-                    [dataType === 'annual' ? 'annualPredictions' :
+                  // Transform and append data (simplified for fallback) with deduplication
+                  set((currentState) => {
+                    const existingArray = currentState[dataType === 'annual' ? 'annualPredictions' :
                       dataType === 'quarterly' ? 'quarterlyPredictions' :
-                        dataType === 'systemAnnual' ? 'systemAnnualPredictions' : 'systemQuarterlyPredictions']:
-                      [...currentState[dataType === 'annual' ? 'annualPredictions' :
+                        dataType === 'systemAnnual' ? 'systemAnnualPredictions' : 'systemQuarterlyPredictions'] as Prediction[]
+
+                    // Create a map of existing predictions by ID for fast lookup
+                    const existingMap = new Map(existingArray.map(p => [p.id, p]))
+
+                    // Add new predictions (raw data for fallback), overwriting any duplicates
+                    rawData.forEach((pred: any) => {
+                      existingMap.set(pred.id, pred)
+                    })
+
+                    // Convert back to array
+                    const deduplicatedArray = Array.from(existingMap.values())
+
+                    return {
+                      [dataType === 'annual' ? 'annualPredictions' :
                         dataType === 'quarterly' ? 'quarterlyPredictions' :
-                          dataType === 'systemAnnual' ? 'systemAnnualPredictions' : 'systemQuarterlyPredictions'],
-                      ...rawData],
-                    remainingPagesLoaded: {
-                      ...currentState.remainingPagesLoaded,
-                      [dataType]: page - 1
+                          dataType === 'systemAnnual' ? 'systemAnnualPredictions' : 'systemQuarterlyPredictions']: deduplicatedArray,
+                      remainingPagesLoaded: {
+                        ...currentState.remainingPagesLoaded,
+                        [dataType]: page - 1
+                      }
                     }
-                  }))
+                  })
                 }
               } catch (error) {
                 console.error(`Failed to load ${dataType} page ${page}:`, error)
@@ -1120,8 +1146,6 @@ export const usePredictionsStore = create<PredictionsStore>()(
             systemAnnual: 0,
             systemQuarterly: 0
           },
-          activeDataFilter: 'personal', // Reset to initial state (updated on next login)
-
           // Legacy server-side pagination
           // User data pagination - fetch larger amounts to handle big datasets
           annualPagination: {
@@ -1138,7 +1162,6 @@ export const usePredictionsStore = create<PredictionsStore>()(
             pageSize: 500, // Larger size to load more data efficiently
             hasMore: false
           },
-
           // System data pagination - fetch large amounts for comprehensive platform view
           systemAnnualPagination: {
             currentPage: 1,
@@ -1153,7 +1176,8 @@ export const usePredictionsStore = create<PredictionsStore>()(
             totalItems: 0,
             pageSize: 500, // Larger initial load for system data
             hasMore: false
-          }
+          },
+          activeDataFilter: 'personal'
         }),
 
         // Missing methods that are required by PredictionsStore interface
