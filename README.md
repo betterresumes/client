@@ -1,4 +1,4 @@
-# Financial Risk Prediction Platform
+# Accunoda.ao
 
 A modern web application for AI-powered financial risk assessment built with Next.js 15, React 19, and TypeScript.
 
@@ -140,4 +140,5 @@ npm run type-check   # Run TypeScript checks
 ```bash
 # API Configuration
 NEXT_PUBLIC_API_URL=http://localhost:8000/api/v1
+
 ```
