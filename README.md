@@ -1,7 +1,5 @@
 # Accunoda.ao
 
-A modern web application for AI-powered financial risk assessment built with Next.js 15, React 19, and TypeScript.
-
 ## 🎯 Overview
 
 This platform provides financial institutions, lenders, and risk analysts with advanced tools for predicting company default probabilities using machine learning models. The application features a multi-tenant architecture supporting different organizational levels and role-based access control.
@@ -17,7 +15,7 @@ This platform provides financial institutions, lenders, and risk analysts with a
 
 ```bash
 # Clone the repository
-git clone <repository-url>
+git clone https://github.com/accunodeai/client.git
 cd new-client
 
 # Install dependencies
@@ -142,3 +140,4 @@ npm run type-check   # Run TypeScript checks
 NEXT_PUBLIC_API_URL=http://localhost:8000/api/v1
 
 ```
+
