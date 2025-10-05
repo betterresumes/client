@@ -6,6 +6,7 @@ import { predictionsApi } from '@/lib/api/predictions'
 import { dashboardApi } from '@/lib/api/dashboard'
 import { organizationsApi } from '@/lib/api/organizations'
 import { useAuthStore } from '@/lib/stores/auth-store'
+import { useDashboardStatsStore } from '@/lib/stores/dashboard-stats-store'
 import { LocalStorageManager } from '@/lib/utils/storage-manager'
 
 interface Prediction {
@@ -76,6 +77,15 @@ interface PredictionsState {
   isInitialized: boolean
   isFetching: boolean
 
+  // Background pagination loading state
+  isLoadingRemaining: boolean
+  remainingPagesLoaded: {
+    annual: number
+    quarterly: number
+    systemAnnual: number
+    systemQuarterly: number
+  }
+
   // Legacy pagination for backward compatibility
   // Separate pagination for user and system data
   annualPagination: {
@@ -114,6 +124,7 @@ interface PredictionsState {
 type PredictionsStore = PredictionsState & {
   // Actions
   fetchPredictions: (forceRefresh?: boolean) => Promise<void>
+  fetchRemainingPredictions: () => Promise<void>
   refetchPredictions: () => Promise<void>
   loadMorePredictions: () => Promise<boolean>
   clearError: () => void
@@ -138,6 +149,9 @@ type PredictionsStore = PredictionsState & {
     transformedSystemAnnual: Prediction[]
     transformedSystemQuarterly: Prediction[]
   }>
+
+  // Fallback pagination method
+  loadRemainingPagesUsingPagination: () => Promise<void>
 
   // Utility functions
   getPredictionProbability: (prediction: Prediction) => number
@@ -171,6 +185,15 @@ export const usePredictionsStore = create<PredictionsStore>()(
         isInitialized: false,
         isFetching: false,
         activeDataFilter: 'personal', // Initial filter (updated based on user role after login)
+
+        // Background pagination loading state
+        isLoadingRemaining: false,
+        remainingPagesLoaded: {
+          annual: 0,
+          quarterly: 0,
+          systemAnnual: 0,
+          systemQuarterly: 0
+        },
 
         // Legacy server-side pagination
         // User data pagination - fetch larger amounts to handle big datasets
@@ -822,196 +845,254 @@ export const usePredictionsStore = create<PredictionsStore>()(
           }
         },
 
-        // Utility functions (unchanged)
-        getPredictionProbability: (prediction: Prediction) => {
-          return prediction.default_probability ||
-            prediction.probability ||
-            prediction.logistic_probability ||
-            prediction.ensemble_probability ||
-            0
-        },
-
-        getRiskBadgeColor: (riskLevel: string | undefined | null) => {
-          switch (riskLevel?.toUpperCase()) {
-            case 'LOW':
-              return 'bg-green-100 text-green-800 border-green-200'
-            case 'MEDIUM':
-              return 'bg-yellow-100 text-yellow-800 border-yellow-200'
-            case 'HIGH':
-              return 'bg-orange-100 text-orange-800 border-orange-200'
-            case 'CRITICAL':
-              return 'bg-red-100 text-red-800 border-red-200'
-            default:
-              return 'bg-gray-100 text-gray-800 border-gray-200'
-          }
-        },
-
-        formatPredictionDate: (prediction: Prediction) => {
-          if (prediction.reporting_quarter) {
-            return `${prediction.reporting_quarter} ${prediction.reporting_year}`
-          }
-          return prediction.reporting_year || 'Unknown'
-        },
-
-        // Helper function to calculate the latest data timestamp from predictions
-        getLatestDataTimestamp: (allPredictions: Prediction[]) => {
-          if (!allPredictions || allPredictions.length === 0) return null
-          return allPredictions.reduce((latest, pred) => {
-            const predTimestamp = pred.created_at ? new Date(pred.created_at).getTime() : 0
-            return Math.max(latest, predTimestamp)
-          }, 0)
-        },
-
-        refetchPredictions: async () => {
-          await get().fetchPredictions(true)
-        },
-
-        // Load more data by incrementing page numbers
-        loadMorePredictions: async () => {
+        // Background loading of remaining predictions after initial fetch
+        fetchRemainingPredictions: async () => {
           const state = get()
 
           // Get current user from auth store
           const authStore = useAuthStore.getState()
           const user = authStore.user
 
-          if (!user || state.isFetching) {
-            return false
+          if (!user || state.isLoadingRemaining) {
+            console.log('⏸️ Skipping background loading - no user or already loading')
+            return
           }
 
-          console.log('🔄 Loading more predictions...', {
-            currentUser: state.annualPagination.currentPage,
-            currentUserQ: state.quarterlyPagination.currentPage,
-            currentSystem: state.systemAnnualPagination.currentPage,
-            currentSystemQ: state.systemQuarterlyPagination.currentPage
-          })
-
-          set({ isFetching: true })
+          console.log('🔄 Starting background loading of remaining predictions...')
+          set({ isLoadingRemaining: true })
 
           try {
-            // Determine which pages to load next
-            const nextAnnualPage = state.annualPagination.hasMore ? state.annualPagination.currentPage + 1 : state.annualPagination.currentPage
-            const nextQuarterlyPage = state.quarterlyPagination.hasMore ? state.quarterlyPagination.currentPage + 1 : state.quarterlyPagination.currentPage
-            const nextSystemAnnualPage = state.systemAnnualPagination.hasMore ? state.systemAnnualPagination.currentPage + 1 : state.systemAnnualPagination.currentPage
-            const nextSystemQuarterlyPage = state.systemQuarterlyPagination.hasMore ? state.systemQuarterlyPagination.currentPage + 1 : state.systemQuarterlyPagination.currentPage
+            // Get dashboard stats to determine total counts
+            const dashboardStatsStore = useDashboardStatsStore.getState()
+            const dashboardStats = dashboardStatsStore.stats
 
-            let responses: any[] = []
-
-            if (user.role === 'super_admin') {
-              // Super admin: Only load system data
-              responses = await Promise.all([
-                state.systemAnnualPagination.hasMore ? predictionsApi.annual.getSystemAnnualPredictions({
-                  page: nextSystemAnnualPage,
-                  size: state.systemAnnualPagination.pageSize
-                }) : { success: true, data: [], meta: null },
-                state.systemQuarterlyPagination.hasMore ? predictionsApi.quarterly.getSystemQuarterlyPredictions({
-                  page: nextSystemQuarterlyPage,
-                  size: state.systemQuarterlyPagination.pageSize
-                }) : { success: true, data: [], meta: null }
-              ])
-            } else {
-              // All other users: Load all data types that have more pages
-              responses = await Promise.all([
-                state.annualPagination.hasMore ? predictionsApi.annual.getAnnualPredictions({
-                  page: nextAnnualPage,
-                  size: state.annualPagination.pageSize
-                }) : { success: true, data: [], meta: null },
-                state.quarterlyPagination.hasMore ? predictionsApi.quarterly.getQuarterlyPredictions({
-                  page: nextQuarterlyPage,
-                  size: state.quarterlyPagination.pageSize
-                }) : { success: true, data: [], meta: null },
-                state.systemAnnualPagination.hasMore ? predictionsApi.annual.getSystemAnnualPredictions({
-                  page: nextSystemAnnualPage,
-                  size: state.systemAnnualPagination.pageSize
-                }) : { success: true, data: [], meta: null },
-                state.systemQuarterlyPagination.hasMore ? predictionsApi.quarterly.getSystemQuarterlyPredictions({
-                  page: nextSystemQuarterlyPage,
-                  size: state.systemQuarterlyPagination.pageSize
-                }) : { success: true, data: [], meta: null }
-              ])
+            if (!dashboardStats) {
+              console.log('⚠️ No dashboard stats available, falling back to pagination metadata')
+              // Fallback to the old method if no dashboard stats
+              await get().loadRemainingPagesUsingPagination()
+              return
             }
 
-            // Process the new data
-            if (user.role === 'super_admin') {
-              const [systemAnnualResponse, systemQuarterlyResponse] = responses
+            console.log('📊 Using dashboard stats for pagination:', {
+              userTotal: dashboardStats.user_dashboard?.total_predictions || 0,
+              platformTotal: dashboardStats.platform_statistics?.total_predictions || 0,
+              userAnnual: dashboardStats.user_dashboard?.annual_predictions || 0,
+              userQuarterly: dashboardStats.user_dashboard?.quarterly_predictions || 0,
+              platformAnnual: dashboardStats.platform_statistics?.annual_predictions || 0,
+              platformQuarterly: dashboardStats.platform_statistics?.quarterly_predictions || 0
+            })
 
-              if (systemAnnualResponse.success || systemQuarterlyResponse.success) {
-                const { transformedSystemAnnual, transformedSystemQuarterly } = await get().processAllPredictionsData(
-                  { success: true, data: [], meta: null }, // Empty user annual response
-                  { success: true, data: [], meta: null }, // Empty user quarterly response
-                  systemAnnualResponse, systemQuarterlyResponse, user
-                )
+            // Determine which data types to load based on user role
+            const dataTypes = user.role === 'super_admin'
+              ? ['systemAnnual', 'systemQuarterly']
+              : ['annual', 'quarterly', 'systemAnnual', 'systemQuarterly']
 
-                // Append new data
-                set((state) => ({
-                  systemAnnualPredictions: [...state.systemAnnualPredictions, ...transformedSystemAnnual],
-                  systemQuarterlyPredictions: [...state.systemQuarterlyPredictions, ...transformedSystemQuarterly],
-                  isFetching: false,
-                  systemAnnualPagination: {
-                    ...state.systemAnnualPagination,
-                    currentPage: nextSystemAnnualPage,
-                    hasMore: nextSystemAnnualPage < (systemAnnualResponse.meta?.pages || 1)
-                  },
-                  systemQuarterlyPagination: {
-                    ...state.systemQuarterlyPagination,
-                    currentPage: nextSystemQuarterlyPage,
-                    hasMore: nextSystemQuarterlyPage < (systemQuarterlyResponse.meta?.pages || 1)
-                  }
-                }))
-                return true
+            // Load remaining pages for each data type in parallel
+            const loadPromises = dataTypes.map(async (dataType) => {
+              // Calculate total items for this data type
+              let totalItems = 0
+              if (dataType === 'annual' || dataType === 'quarterly') {
+                // User data
+                if (dataType === 'annual') {
+                  totalItems = dashboardStats.user_dashboard?.annual_predictions || 0
+                } else {
+                  totalItems = dashboardStats.user_dashboard?.quarterly_predictions || 0
+                }
+              } else {
+                // System data
+                if (dataType === 'systemAnnual') {
+                  totalItems = dashboardStats.platform_statistics?.annual_predictions || 0
+                } else {
+                  totalItems = dashboardStats.platform_statistics?.quarterly_predictions || 0
+                }
               }
-            } else {
-              const [userAnnualResponse, userQuarterlyResponse, systemAnnualResponse, systemQuarterlyResponse] = responses
 
-              if (userAnnualResponse.success || userQuarterlyResponse.success || systemAnnualResponse.success || systemQuarterlyResponse.success) {
-                const { transformedUserAnnual, transformedUserQuarterly, transformedSystemAnnual, transformedSystemQuarterly } =
-                  await get().processAllPredictionsData(
-                    userAnnualResponse, userQuarterlyResponse,
-                    systemAnnualResponse, systemQuarterlyResponse,
-                    user
-                  )
-
-                // Append new data
-                set((state) => ({
-                  annualPredictions: [...state.annualPredictions, ...transformedUserAnnual],
-                  quarterlyPredictions: [...state.quarterlyPredictions, ...transformedUserQuarterly],
-                  systemAnnualPredictions: [...state.systemAnnualPredictions, ...transformedSystemAnnual],
-                  systemQuarterlyPredictions: [...state.systemQuarterlyPredictions, ...transformedSystemQuarterly],
-                  isFetching: false,
-                  annualPagination: {
-                    ...state.annualPagination,
-                    currentPage: nextAnnualPage,
-                    hasMore: nextAnnualPage < (userAnnualResponse.meta?.pages || 1)
-                  },
-                  quarterlyPagination: {
-                    ...state.quarterlyPagination,
-                    currentPage: nextQuarterlyPage,
-                    hasMore: nextQuarterlyPage < (userQuarterlyResponse.meta?.pages || 1)
-                  },
-                  systemAnnualPagination: {
-                    ...state.systemAnnualPagination,
-                    currentPage: nextSystemAnnualPage,
-                    hasMore: nextSystemAnnualPage < (systemAnnualResponse.meta?.pages || 1)
-                  },
-                  systemQuarterlyPagination: {
-                    ...state.systemQuarterlyPagination,
-                    currentPage: nextSystemQuarterlyPage,
-                    hasMore: nextSystemQuarterlyPage < (systemQuarterlyResponse.meta?.pages || 1)
-                  }
-                }))
-                return true
+              // Skip if no items to load
+              if (totalItems <= 1000) {
+                console.log(`✅ ${dataType} has ${totalItems} items - no additional pages needed`)
+                return
               }
-            }
 
-            set({ isFetching: false })
-            return false
+              // Calculate how many pages to load (we already have page 1 with 1000 items)
+              const remainingItems = totalItems - 1000
+              const pagesToLoad = Math.ceil(remainingItems / 1000)
+              const totalPages = Math.ceil(totalItems / 1000)
+
+              console.log(`📄 Loading ${dataType}: ${totalItems} total, ${remainingItems} remaining, ${pagesToLoad} pages (2-${totalPages})`)
+
+              // Load pages 2 through totalPages
+              for (let page = 2; page <= totalPages; page++) {
+                try {
+                  let response
+
+                  // Call appropriate API based on data type
+                  switch (dataType) {
+                    case 'annual':
+                      response = await predictionsApi.annual.getAnnualPredictions({
+                        page,
+                        size: 1000
+                      })
+                      break
+                    case 'quarterly':
+                      response = await predictionsApi.quarterly.getQuarterlyPredictions({
+                        page,
+                        size: 1000
+                      })
+                      break
+                    case 'systemAnnual':
+                      response = await predictionsApi.annual.getSystemAnnualPredictions({
+                        page,
+                        size: 1000
+                      })
+                      break
+                    case 'systemQuarterly':
+                      response = await predictionsApi.quarterly.getSystemQuarterlyPredictions({
+                        page,
+                        size: 1000
+                      })
+                      break
+                  }
+
+                  if (response?.data) {
+                    // Process the data using existing transformation logic
+                    const rawData = response.data?.items || response.data?.predictions || response.data || []
+
+                    let transformedData: Prediction[] = []
+
+                    if (Array.isArray(rawData)) {
+                      if (dataType.includes('Annual')) {
+                        // Transform annual predictions
+                        transformedData = rawData.map((pred: any) => ({
+                          ...pred,
+                          default_probability: pred.probability || 0,
+                          risk_category: pred.risk_level,
+                          reporting_year: pred.reporting_year?.toString() || new Date().getFullYear().toString(),
+                          organization_access: dataType.startsWith('system') ? 'system' :
+                            (user.role === 'org_admin' || user.role === 'org_member' ? 'organization' : 'personal'),
+                          financial_ratios: {
+                            ltdtc: pred.long_term_debt_to_total_capital,
+                            roa: pred.return_on_assets,
+                            ebitint: pred.ebit_to_interest_expense
+                          }
+                        }))
+                      } else {
+                        // Transform quarterly predictions
+                        transformedData = rawData.map((pred: any) => ({
+                          ...pred,
+                          default_probability: pred.logistic_probability || 0,
+                          risk_category: pred.risk_level,
+                          reporting_year: pred.reporting_year?.toString() || new Date().getFullYear().toString(),
+                          reporting_quarter: pred.reporting_quarter?.toUpperCase() || "Q1",
+                          organization_access: dataType.startsWith('system') ? 'system' :
+                            (user.role === 'org_admin' || user.role === 'org_member' ? 'organization' : 'personal'),
+                          financial_ratios: {
+                            ltdtc: pred.long_term_debt_to_total_capital,
+                            sga: pred.sga_margin,
+                            roa: pred.return_on_capital,
+                            tdte: pred.total_debt_to_ebitda
+                          }
+                        }))
+                      }
+                    }
+
+                    // Append new data to existing array
+                    set((currentState) => ({
+                      [dataType === 'annual' ? 'annualPredictions' :
+                        dataType === 'quarterly' ? 'quarterlyPredictions' :
+                          dataType === 'systemAnnual' ? 'systemAnnualPredictions' : 'systemQuarterlyPredictions']:
+                        [...currentState[dataType === 'annual' ? 'annualPredictions' :
+                          dataType === 'quarterly' ? 'quarterlyPredictions' :
+                            dataType === 'systemAnnual' ? 'systemAnnualPredictions' : 'systemQuarterlyPredictions'],
+                        ...transformedData],
+                      remainingPagesLoaded: {
+                        ...currentState.remainingPagesLoaded,
+                        [dataType]: page - 1 // Track how many additional pages loaded
+                      }
+                    }))
+
+                    console.log(`✅ Loaded ${dataType} page ${page}/${totalPages} (${transformedData.length} records)`)
+                  }
+                } catch (pageError) {
+                  console.error(`❌ Failed to load ${dataType} page ${page}:`, pageError)
+                  // Continue to next page on error
+                }
+              }
+            })
+
+            // Wait for all data types to finish loading
+            await Promise.all(loadPromises)
+
+            console.log('✅ Background loading completed')
+            set({ isLoadingRemaining: false })
 
           } catch (error) {
-            console.error('Error loading more predictions:', error)
-            set({ isFetching: false, error: 'Failed to load more predictions' })
-            return false
+            console.error('❌ Background loading failed:', error)
+            set({ isLoadingRemaining: false, error: 'Failed to load remaining predictions' })
           }
         },
 
+        // Fallback method using pagination metadata (old implementation)
+        loadRemainingPagesUsingPagination: async () => {
+          const state = get()
+          const authStore = useAuthStore.getState()
+          const user = authStore.user
+
+          if (!user) return
+
+          const dataTypes = user.role === 'super_admin'
+            ? ['systemAnnual', 'systemQuarterly']
+            : ['annual', 'quarterly', 'systemAnnual', 'systemQuarterly']
+
+          const loadPromises = dataTypes.map(async (dataType) => {
+            const pagination = state[`${dataType}Pagination` as keyof typeof state] as any
+
+            if (!pagination?.hasMore) return
+
+            const totalPages = pagination.totalPages
+            for (let page = 2; page <= totalPages; page++) {
+              try {
+                let response
+                switch (dataType) {
+                  case 'annual':
+                    response = await predictionsApi.annual.getAnnualPredictions({ page, size: 1000 })
+                    break
+                  case 'quarterly':
+                    response = await predictionsApi.quarterly.getQuarterlyPredictions({ page, size: 1000 })
+                    break
+                  case 'systemAnnual':
+                    response = await predictionsApi.annual.getSystemAnnualPredictions({ page, size: 1000 })
+                    break
+                  case 'systemQuarterly':
+                    response = await predictionsApi.quarterly.getSystemQuarterlyPredictions({ page, size: 1000 })
+                    break
+                }
+
+                if (response?.data) {
+                  const rawData = response.data?.items || response.data?.predictions || response.data || []
+                  // Transform and append data (simplified for fallback)
+                  set((currentState) => ({
+                    [dataType === 'annual' ? 'annualPredictions' :
+                      dataType === 'quarterly' ? 'quarterlyPredictions' :
+                        dataType === 'systemAnnual' ? 'systemAnnualPredictions' : 'systemQuarterlyPredictions']:
+                      [...currentState[dataType === 'annual' ? 'annualPredictions' :
+                        dataType === 'quarterly' ? 'quarterlyPredictions' :
+                          dataType === 'systemAnnual' ? 'systemAnnualPredictions' : 'systemQuarterlyPredictions'],
+                      ...rawData],
+                    remainingPagesLoaded: {
+                      ...currentState.remainingPagesLoaded,
+                      [dataType]: page - 1
+                    }
+                  }))
+                }
+              } catch (error) {
+                console.error(`Failed to load ${dataType} page ${page}:`, error)
+              }
+            }
+          })
+
+          await Promise.all(loadPromises)
+          set({ isLoadingRemaining: false })
+        },
         invalidateCache: () => {
           set({
             lastFetched: null,
@@ -1032,37 +1113,96 @@ export const usePredictionsStore = create<PredictionsStore>()(
           lastDataUpdated: null,
           isInitialized: false,
           isFetching: false,
+          isLoadingRemaining: false,
+          remainingPagesLoaded: {
+            annual: 0,
+            quarterly: 0,
+            systemAnnual: 0,
+            systemQuarterly: 0
+          },
           activeDataFilter: 'personal', // Reset to initial state (updated on next login)
 
+          // Legacy server-side pagination
+          // User data pagination - fetch larger amounts to handle big datasets
           annualPagination: {
             currentPage: 1,
             totalPages: 0,
             totalItems: 0,
-            pageSize: 100,
+            pageSize: 500, // Larger size to load more data efficiently
             hasMore: false
           },
           quarterlyPagination: {
             currentPage: 1,
             totalPages: 0,
             totalItems: 0,
-            pageSize: 100,
+            pageSize: 500, // Larger size to load more data efficiently
             hasMore: false
           },
+
+          // System data pagination - fetch large amounts for comprehensive platform view
           systemAnnualPagination: {
             currentPage: 1,
             totalPages: 0,
             totalItems: 0,
-            pageSize: 100,
+            pageSize: 500, // Larger initial load for system data
             hasMore: false
           },
           systemQuarterlyPagination: {
             currentPage: 1,
             totalPages: 0,
             totalItems: 0,
-            pageSize: 100,
+            pageSize: 500, // Larger initial load for system data
             hasMore: false
           }
-        })
+        }),
+
+        // Missing methods that are required by PredictionsStore interface
+        refetchPredictions: async () => {
+          await get().fetchPredictions(true)
+        },
+
+        loadMorePredictions: async () => {
+          // This is a legacy method - we load all data in fetchPredictions now
+          return false
+        },
+
+        getPredictionProbability: (prediction: Prediction) => {
+          return prediction.default_probability || prediction.probability || prediction.logistic_probability || prediction.gbm_probability || prediction.ensemble_probability || 0
+        },
+
+        getRiskBadgeColor: (riskLevel: string | undefined | null) => {
+          switch (riskLevel?.toLowerCase()) {
+            case 'low':
+              return 'bg-green-100 text-green-800'
+            case 'medium':
+              return 'bg-yellow-100 text-yellow-800'
+            case 'high':
+              return 'bg-red-100 text-red-800'
+            default:
+              return 'bg-gray-100 text-gray-800'
+          }
+        },
+
+        formatPredictionDate: (prediction: Prediction) => {
+          if (prediction.reporting_quarter) {
+            return `${prediction.reporting_quarter} ${prediction.reporting_year}`
+          }
+          return prediction.reporting_year || new Date().getFullYear().toString()
+        },
+
+        getLatestDataTimestamp: (predictions: Prediction[]) => {
+          if (!predictions || predictions.length === 0) return null
+
+          let latestTimestamp = 0
+          predictions.forEach(pred => {
+            const createdAt = new Date(pred.created_at).getTime()
+            if (createdAt > latestTimestamp) {
+              latestTimestamp = createdAt
+            }
+          })
+
+          return latestTimestamp > 0 ? latestTimestamp : null
+        }
       }
     },
     {

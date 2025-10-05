@@ -12,13 +12,15 @@ import { DataSourceTabs, RefreshButton, LastUpdatedInfo, OrganizationSelector } 
 import { useDashboardStore } from '@/lib/stores/dashboard-store'
 import { useAuthStore } from '@/lib/stores/auth-store'
 import { usePredictionsStore } from '@/lib/stores/predictions-store'
+import { useDashboardStatsStore } from '@/lib/stores/dashboard-stats-store'
 
 export default function DashboardPage() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const { activeTab, setActiveTab } = useDashboardStore()
   const { user, isAdmin, isTenantAdmin, isAuthenticated } = useAuthStore()
-  const { fetchPredictions, annualPredictions, quarterlyPredictions, isLoading, isInitialized } = usePredictionsStore()
+  const { fetchPredictions, fetchRemainingPredictions, annualPredictions, quarterlyPredictions, isLoading, isInitialized } = usePredictionsStore()
+  const { fetchStats } = useDashboardStatsStore()
   const [hasInitializedData, setHasInitializedData] = useState(false)
   const [isNavigatingFromHistory, setIsNavigatingFromHistory] = useState(false)
 
@@ -28,11 +30,19 @@ export default function DashboardPage() {
       console.log('🚀 Dashboard page - initializing data for authenticated user:', user.email)
       setHasInitializedData(true)
 
-      // Always fetch data when dashboard loads to ensure fresh data
-      // But don't show loading if we already have cached data
-      fetchPredictions(false) // Don't force refresh, use cache if available
+      // First fetch dashboard stats (needed for accurate pagination)
+      fetchStats(false).then(() => {
+        // Then fetch initial predictions
+        fetchPredictions(false)
+
+        // Start background loading of remaining predictions after 10 seconds
+        setTimeout(() => {
+          console.log('⏳ Starting background loading of remaining predictions after 10 seconds')
+          fetchRemainingPredictions()
+        }, 10000)
+      })
     }
-  }, [isAuthenticated, user, hasInitializedData, fetchPredictions])
+  }, [isAuthenticated, user, hasInitializedData, fetchPredictions, fetchRemainingPredictions, fetchStats])
 
   // Reset initialization flag when user changes (for logout/login scenarios)
   useEffect(() => {
